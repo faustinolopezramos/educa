@@ -86,13 +86,26 @@ def teacher_available(
 
 
 def teacher_weekly_minutes(
-    db: Session, teacher_id: int, exclude_schedule_id: int | None = None
+    db: Session,
+    teacher_id: int,
+    term_start: date | None = None,
+    term_end: date | None = None,
+    exclude_schedule_id: int | None = None,
 ) -> int:
-    """Total scheduled minutes per week already assigned to the teacher."""
+    """Minutes per week the teacher already teaches during the given term.
+
+    "Weekly hours" is a load in a *given week*, so only classes that actually
+    run alongside the term in question count. A Spring course and a Summer
+    course never share a week, so they must not add up against the cap.
+    """
     stmt = select(Schedule).where(Schedule.teacher_id == teacher_id)
     if exclude_schedule_id is not None:
         stmt = stmt.where(Schedule.id != exclude_schedule_id)
-    return sum(_minutes(s.start_time, s.end_time) for s in db.scalars(stmt).all())
+    return sum(
+        _minutes(s.start_time, s.end_time)
+        for s in db.scalars(stmt).all()
+        if terms_overlap(term_start, term_end, s.term_start, s.term_end)
+    )
 
 
 def teacher_exceeds_load(
@@ -100,6 +113,8 @@ def teacher_exceeds_load(
     teacher_id: int,
     start_time: time,
     end_time: time,
+    term_start: date | None = None,
+    term_end: date | None = None,
     exclude_schedule_id: int | None = None,
 ) -> bool:
     """Whether adding this block would push the teacher past max_weekly_hours."""
@@ -107,7 +122,7 @@ def teacher_exceeds_load(
     if teacher is None or teacher.max_weekly_hours is None:
         return False
     projected = (
-        teacher_weekly_minutes(db, teacher_id, exclude_schedule_id)
+        teacher_weekly_minutes(db, teacher_id, term_start, term_end, exclude_schedule_id)
         + _minutes(start_time, end_time)
     )
     return projected > teacher.max_weekly_hours * 60

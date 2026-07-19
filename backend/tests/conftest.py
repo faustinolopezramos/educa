@@ -26,6 +26,7 @@ from app.core.security import hash_password
 from app.main import app
 from app.models import (
     Course,
+    CourseTeacher,
     Enrollment,
     Language,
     Level,
@@ -129,6 +130,13 @@ def world(db: Session):
         start_date=term_start, end_date=term_end,
     )
     db.add_all([course_a, course_b])
+    db.flush()
+
+    # Each teacher is assigned to their own course (the prerequisite for a slot).
+    db.add_all([
+        CourseTeacher(course_id=course_a.id, teacher_id=teacher_a.id, is_lead=True),
+        CourseTeacher(course_id=course_b.id, teacher_id=teacher_b.id, is_lead=True),
+    ])
     db.flush()
 
     schedule_a = Schedule(

@@ -28,6 +28,7 @@ class Enrollment(Base):
     payment_status: Mapped[PaymentStatus] = mapped_column(
         SqlEnum(PaymentStatus, name="payment_status"), default=PaymentStatus.pending
     )
+    attendance_blocked: Mapped[bool] = mapped_column(default=False)
 
     student: Mapped["User"] = relationship(back_populates="enrollments")
     course: Mapped["Course"] = relationship(back_populates="enrollments")

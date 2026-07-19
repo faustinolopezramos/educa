@@ -7,6 +7,7 @@ provider call is processed, and everything else is refused.
 
 import hashlib
 import hmac
+import time
 
 import pytest
 
@@ -31,7 +32,12 @@ def zoom_meeting(db, world):
     return meeting
 
 
-def zoom_headers(body: bytes, timestamp: str = "1700000000", secret: str = SECRET) -> dict:
+def zoom_headers(
+    body: bytes, timestamp: str | None = None, secret: str = SECRET
+) -> dict:
+    # Default to "just now": the receiver refuses signatures older than a few
+    # minutes, so a fixed timestamp would rot into a failing test.
+    timestamp = timestamp or str(int(time.time()))
     message = b"v0:" + timestamp.encode() + b":" + body
     digest = hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
     return {
@@ -92,6 +98,36 @@ def test_a_missing_timestamp_is_rejected(client, secret, zoom_meeting):
     headers = zoom_headers(body)
     del headers["x-zm-request-timestamp"]
     assert client.post("/webhooks/zoom", content=body, headers=headers).status_code == 401
+
+
+def test_a_replayed_event_is_rejected_even_though_it_is_signed(
+    client, secret, zoom_meeting
+):
+    """A captured delivery stays perfectly signed forever; age is what stops it."""
+    body = b'{"event":"meeting.ended","object":{"id":"zoom-123"}}'
+    stale = str(int(time.time()) - 3600)
+    res = client.post(
+        "/webhooks/zoom", content=body, headers=zoom_headers(body, timestamp=stale)
+    )
+    assert res.status_code == 401
+    assert zoom_meeting.status is MeetingStatus.scheduled
+
+
+def test_a_timestamp_from_the_future_is_rejected(client, secret, zoom_meeting):
+    body = b'{"event":"meeting.ended","object":{"id":"zoom-123"}}'
+    ahead = str(int(time.time()) + 3600)
+    res = client.post(
+        "/webhooks/zoom", content=body, headers=zoom_headers(body, timestamp=ahead)
+    )
+    assert res.status_code == 401
+
+
+def test_an_unparsable_timestamp_is_rejected(client, secret, zoom_meeting):
+    body = b'{"event":"meeting.ended","object":{"id":"zoom-123"}}'
+    res = client.post(
+        "/webhooks/zoom", content=body, headers=zoom_headers(body, timestamp="tomorrow")
+    )
+    assert res.status_code == 401
 
 
 def test_a_wrong_google_token_is_rejected(client, secret, zoom_meeting):

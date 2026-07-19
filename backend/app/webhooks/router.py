@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -25,9 +26,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
+# A signature stays valid forever, so a captured request could be replayed to
+# re-end a meeting or restore a stale recording URL. Zoom signs the timestamp
+# along with the body, which lets us refuse anything too old to be in flight.
+_MAX_TIMESTAMP_SKEW_SECONDS = 5 * 60
+
 _unauthorized = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature"
 )
+
+
+def _timestamp_is_fresh(raw: str) -> bool:
+    """Whether a signed timestamp is recent enough to be a live delivery.
+
+    Zoom sends seconds since the epoch. Anything outside the window — in either
+    direction, since a future timestamp is just as unexplainable — is refused.
+    """
+    try:
+        sent_at = int(raw)
+    except (TypeError, ValueError):
+        return False
+    return abs(time.time() - sent_at) <= _MAX_TIMESTAMP_SKEW_SECONDS
 
 
 def _signature_is_valid(provider: ProviderName, request: Request, body: bytes) -> bool:
@@ -48,6 +67,9 @@ def _signature_is_valid(provider: ProviderName, request: Request, body: bytes) -
         signature = request.headers.get("x-zm-signature")
         timestamp = request.headers.get("x-zm-request-timestamp")
         if not signature or not timestamp:
+            return False
+        if not _timestamp_is_fresh(timestamp):
+            logger.warning("Rejected zoom webhook: stale or unparsable timestamp")
             return False
         message = b"v0:" + timestamp.encode() + b":" + body
         expected = "v0=" + hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()

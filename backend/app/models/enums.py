@@ -38,3 +38,20 @@ class MeetingStatus(str, enum.Enum):
     live = "live"
     ended = "ended"
     cancelled = "cancelled"
+
+
+class SessionStatus(str, enum.Enum):
+    scheduled = "scheduled"
+    held = "held"
+    cancelled = "cancelled"
+
+
+class Modality(str, enum.Enum):
+    presencial = "presencial"
+    virtual = "virtual"
+
+
+class ProposalStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"

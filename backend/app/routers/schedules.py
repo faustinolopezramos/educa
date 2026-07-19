@@ -2,11 +2,16 @@ from datetime import date, time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role
+from app.core.deps import (
+    get_current_user,
+    require_role,
+    student_course_ids,
+    teacher_teaches_course,
+)
+from app.core.http import commit_or_conflict
 from app.models import Course, Room, Schedule, User, UserRole
 from app.schemas.schedule import (
     ConflictCheck,
@@ -76,7 +81,13 @@ def _soft_warnings(
                 "message": "El horario está fuera de la disponibilidad del profesor",
             }
         )
-    if teacher_exceeds_load(db, teacher_id, start_time, end_time, exclude_schedule_id):
+    # The load cap is per week, so it only counts classes running in the same
+    # term as this one.
+    course = db.get(Course, course_id)
+    term_start, term_end = _course_term(course) if course else (None, None)
+    if teacher_exceeds_load(
+        db, teacher_id, start_time, end_time, term_start, term_end, exclude_schedule_id
+    ):
         warnings.append(
             {
                 "reason": "max_hours",
@@ -119,17 +130,13 @@ def _raise_hard_conflicts(
 
 def _commit_or_conflict(db: Session) -> None:
     """Commit, converting a DB exclusion-constraint violation into a 409."""
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "message": "Choque de horario detectado (profesor o aula ocupada)",
-                "reason": "constraint",
-            },
-        )
+    commit_or_conflict(
+        db,
+        {
+            "message": "Choque de horario detectado (profesor o aula ocupada)",
+            "reason": "constraint",
+        },
+    )
 
 
 @router.get("", response_model=list[ScheduleRead])
@@ -140,7 +147,18 @@ def list_schedules(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Schedule]:
+    """The timetable, scoped to what the caller has a reason to see.
+
+    Staff read the academy's timetable: an admin plans against all of it, and a
+    teacher needs to see when rooms and colleagues are busy (`mine=true` narrows
+    it to their own classes). A student is not staff, so they get the timetable
+    of the courses they are actively enrolled in and nothing else — the rest
+    would be a directory of who teaches what, and when.
+    """
     stmt = select(Schedule)
+    if current_user.role == UserRole.student:
+        enrolled = student_course_ids(db, current_user.id)
+        stmt = stmt.where(Schedule.course_id.in_(enrolled or [-1]))
     if course_id is not None:
         stmt = stmt.where(Schedule.course_id == course_id)
     if teacher_id is not None:
@@ -231,7 +249,7 @@ def available_teachers(
             continue
         if not teacher_available(db, t.id, day_of_week, start_time, end_time):
             continue
-        if teacher_exceeds_load(db, t.id, start_time, end_time):
+        if teacher_exceeds_load(db, t.id, start_time, end_time, term_start, term_end):
             continue
         if teacher_conflicts(
             db, t.id, day_of_week, start_time, end_time, term_start, term_end
@@ -254,6 +272,16 @@ def create_schedule(
     teacher = db.get(User, payload.teacher_id)
     if teacher is None or teacher.role != UserRole.teacher:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "teacher_id must be a teacher")
+    # Scheduling is downstream of assignment: the teacher must already teach the
+    # course before they can be given a slot in it.
+    if not teacher_teaches_course(db, teacher.id, payload.course_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "message": "El profesor no está asignado a este curso; asígnalo primero",
+                "reason": "not_assigned",
+            },
+        )
     if payload.room_id is not None and db.get(Room, payload.room_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
 
@@ -346,6 +374,17 @@ def update_schedule(
     course = db.get(Course, new_course_id)
     if course is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    # After any teacher/course change, the resulting pair must still be assigned.
+    if ("teacher_id" in data or "course_id" in data) and not teacher_teaches_course(
+        db, new_teacher, new_course_id
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "message": "El profesor no está asignado a este curso; asígnalo primero",
+                "reason": "not_assigned",
+            },
+        )
     if new_room is not None and db.get(Room, new_room) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
     term_start, term_end = _course_term(course)

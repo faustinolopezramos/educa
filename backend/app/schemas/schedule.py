@@ -1,6 +1,10 @@
 from datetime import date, time
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
+
+from app.models.enums import Modality, ProviderName
+from app.schemas.base import PatchModel
 
 
 class ScheduleCreate(BaseModel):
@@ -20,7 +24,15 @@ class ScheduleCreate(BaseModel):
         return self
 
 
-class ScheduleUpdate(BaseModel):
+class ScheduleUpdate(PatchModel):
+    # room_id is nullable: null legitimately means "no room / online".
+    NON_NULLABLE: ClassVar[tuple[str, ...]] = (
+        "course_id",
+        "teacher_id",
+        "day_of_week",
+        "start_time",
+        "end_time",
+    )
     course_id: int | None = None
     teacher_id: int | None = None
     room_id: int | None = None
@@ -52,6 +64,9 @@ class ScheduleRead(BaseModel):
     end_time: time
     term_start: date | None
     term_end: date | None
+    modality: Modality
+    join_url: str | None
+    provider: ProviderName | None
 
 
 # ---- Conflict detection (live validation for the calendar) ----

@@ -14,10 +14,12 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.models import (
     Course,
+    CourseTeacher,
     Enrollment,
     Language,
     Level,
     MeetingProvider,
+    Modality,
     ProviderName,
     Room,
     Schedule,
@@ -141,6 +143,23 @@ def seed() -> None:
                 )
             )
 
+        # --- Assign the teacher to the course (prerequisite for scheduling) ---
+        if (
+            db.scalar(
+                select(CourseTeacher).where(
+                    CourseTeacher.course_id == course.id,
+                    CourseTeacher.teacher_id == teacher.id,
+                )
+            )
+            is None
+        ):
+            db.add(
+                CourseTeacher(
+                    course_id=course.id, teacher_id=teacher.id, is_lead=True
+                )
+            )
+            db.flush()
+
         # --- Schedule (Mon 09:00-10:30) ---
         schedule = db.scalar(
             select(Schedule).where(
@@ -157,9 +176,18 @@ def seed() -> None:
                 end_time=time(10, 30),
                 term_start=course.start_date,
                 term_end=course.end_date,
+                # A virtual class with a fixed link reused for every session.
+                modality=Modality.virtual,
+                provider=ProviderName.manual,
+                join_url="https://example.com/demo-meeting",
             )
             db.add(schedule)
             db.flush()
+
+        # --- Class sessions for the term (one per Monday) ---
+        from app.services.sessions import generate_sessions
+
+        generate_sessions(db, schedule)
 
         # --- Enrollment ---
         enrollment = db.scalar(
@@ -171,7 +199,7 @@ def seed() -> None:
         if enrollment is None:
             db.add(Enrollment(student_id=student.id, course_id=course.id))
 
-        # --- A demo virtual meeting starting in 15 min (manual provider) ---
+        # --- A demo virtual meeting on the next schedule session (manual provider) ---
         manual = db.scalar(
             select(MeetingProvider).where(MeetingProvider.name == ProviderName.manual)
         )
@@ -179,7 +207,24 @@ def seed() -> None:
             select(VirtualMeeting).where(VirtualMeeting.schedule_id == schedule.id)
         )
         if existing_meeting is None and manual is not None:
-            start = datetime.now(timezone.utc) + timedelta(minutes=15)
+            from app.models import ClassSession
+
+            next_session = (
+                db.query(ClassSession)
+                .filter(
+                    ClassSession.schedule_id == schedule.id,
+                    ClassSession.date >= date.today(),
+                    ClassSession.status == "scheduled",
+                )
+                .order_by(ClassSession.date)
+                .first()
+            )
+            session_date = next_session.date if next_session else date.today()
+            start = datetime.combine(
+                session_date,
+                schedule.start_time,
+                tzinfo=timezone.utc,
+            )
             db.add(
                 VirtualMeeting(
                     schedule_id=schedule.id,

@@ -10,8 +10,9 @@ import {
 import { Card } from "../../components/ui";
 import { useCourses, useEnrollments, useGrades } from "../../lib/queries";
 
-// Single-series categorical hue (validated blue from the dataviz palette).
-const SERIES = "#2a78d6";
+// Serie principal en el verde pino de la marca.
+const SERIES = "#0F6E62";
+const FAIL = "#A8412C";
 const MAX_SCORE = 10;
 
 export function StudentGrades() {
@@ -82,14 +83,14 @@ export function StudentGrades() {
           <div style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} outerRadius="72%">
-                <PolarGrid stroke="#e2e8f0" />
+                <PolarGrid stroke="#E6DFD0" />
                 <PolarAngleAxis
                   dataKey="course"
-                  tick={{ fill: "#52514e", fontSize: 12 }}
+                  tick={{ fill: "#57503F", fontSize: 12 }}
                 />
                 <PolarRadiusAxis
                   domain={[0, MAX_SCORE]}
-                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  tick={{ fill: "#9C9484", fontSize: 10 }}
                 />
                 <Radar
                   name="Promedio"
@@ -124,7 +125,7 @@ function ProgressBar({ label, score }: { label: string; score: number }) {
       <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
         <div
           className="h-full rounded-full"
-          style={{ width: `${pct}%`, backgroundColor: passing ? SERIES : "#e34948" }}
+          style={{ width: `${pct}%`, backgroundColor: passing ? SERIES : FAIL }}
         />
       </div>
     </div>

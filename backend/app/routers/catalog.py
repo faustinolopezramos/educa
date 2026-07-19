@@ -1,10 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role, teacher_teaches_course
-from app.models import Course, Enrollment, Language, Level, Schedule, User, UserRole
+from app.core.http import commit_or_conflict
+from app.models import (
+    Course,
+    CourseTeacher,
+    Enrollment,
+    EnrollmentStatus,
+    Language,
+    Level,
+    Schedule,
+    User,
+    UserRole,
+)
 from app.schemas.catalog import (
     CourseCreate,
     CourseRead,
@@ -16,7 +27,9 @@ from app.schemas.catalog import (
     LevelRead,
     LevelUpdate,
 )
+from app.schemas.teacher import CourseTeacherAssign, CourseTeacherRead
 from app.schemas.user import UserBrief
+from app.services.scheduling import teacher_qualified_for_course
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -174,6 +187,33 @@ def update_course(
     if course is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
     data = payload.model_dump(exclude_unset=True)
+
+    # Capacity is a promise to the students already in the room: it may grow
+    # freely, but it cannot be cut below the seats currently taken.
+    if data.get("max_students") is not None:
+        active_count = (
+            db.scalar(
+                select(func.count())
+                .select_from(Enrollment)
+                .where(
+                    Enrollment.course_id == course_id,
+                    Enrollment.status == EnrollmentStatus.active,
+                )
+            )
+            or 0
+        )
+        if data["max_students"] < active_count:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": (
+                        f"El curso ya tiene {active_count} alumno(s) matriculado(s); "
+                        f"el cupo no puede bajar de esa cifra"
+                    ),
+                    "reason": "capacity_below_enrolled",
+                },
+            )
+
     for field, value in data.items():
         setattr(course, field, value)
     # Keep the denormalized term on this course's schedules in sync so conflict
@@ -184,7 +224,18 @@ def update_course(
         ).all():
             sched.term_start = course.start_date
             sched.term_end = course.end_date
-    db.commit()
+    # Widening a course's term can push its schedules into a clash with the
+    # teacher's or room's other classes, which the exclusion constraint catches.
+    commit_or_conflict(
+        db,
+        {
+            "message": (
+                "Las nuevas fechas hacen que un horario de este curso choque con "
+                "otra clase del profesor o del aula"
+            ),
+            "reason": "term_conflict",
+        },
+    )
     db.refresh(course)
     return course
 
@@ -198,7 +249,8 @@ def list_course_students(
     """Roster of a course, so a teacher can put names next to enrollment rows.
 
     Scoped on purpose: teachers get the students of the courses they teach and
-    nothing else.
+    nothing else. Only *active* enrollments count — someone who cancelled is no
+    longer in the room to be marked or graded.
     """
     if db.get(Course, course_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
@@ -210,10 +262,118 @@ def list_course_students(
         db.scalars(
             select(User)
             .join(Enrollment, Enrollment.student_id == User.id)
-            .where(Enrollment.course_id == course_id)
+            .where(
+                Enrollment.course_id == course_id,
+                Enrollment.status == EnrollmentStatus.active,
+            )
             .order_by(User.full_name)
         ).all()
     )
+
+
+# ---------------- Course ↔ teacher assignment ----------------
+@router.get("/courses/{course_id}/teachers", response_model=list[CourseTeacherRead])
+def list_course_teachers(
+    course_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[CourseTeacherRead]:
+    """Who is assigned to teach this course. Readable by any authenticated user
+    (a student may want to know who teaches their course)."""
+    if db.get(Course, course_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    rows = db.scalars(
+        select(CourseTeacher).where(CourseTeacher.course_id == course_id)
+    ).all()
+    return [
+        CourseTeacherRead(
+            id=r.id,
+            course_id=r.course_id,
+            teacher_id=r.teacher_id,
+            is_lead=r.is_lead,
+            teacher_name=db.get(User, r.teacher_id).full_name,
+        )
+        for r in rows
+    ]
+
+
+@router.post(
+    "/courses/{course_id}/teachers",
+    response_model=CourseTeacherRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def assign_course_teacher(
+    course_id: int,
+    payload: CourseTeacherAssign,
+    db: Session = Depends(get_db),
+    _: User = Depends(admin_only),
+) -> CourseTeacherRead:
+    if db.get(Course, course_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    teacher = db.get(User, payload.teacher_id)
+    if teacher is None or teacher.role != UserRole.teacher:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "teacher_id must be a teacher")
+    if not teacher_qualified_for_course(db, teacher.id, course_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "message": "El profesor no está calificado para el idioma de este curso",
+                "reason": "qualification",
+            },
+        )
+    if db.scalar(
+        select(CourseTeacher).where(
+            CourseTeacher.course_id == course_id,
+            CourseTeacher.teacher_id == teacher.id,
+        )
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "El profesor ya está asignado")
+    row = CourseTeacher(
+        course_id=course_id, teacher_id=teacher.id, is_lead=payload.is_lead
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return CourseTeacherRead(
+        id=row.id,
+        course_id=row.course_id,
+        teacher_id=row.teacher_id,
+        is_lead=row.is_lead,
+        teacher_name=teacher.full_name,
+    )
+
+
+@router.delete(
+    "/courses/{course_id}/teachers/{teacher_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def unassign_course_teacher(
+    course_id: int,
+    teacher_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(admin_only),
+) -> None:
+    row = db.scalar(
+        select(CourseTeacher).where(
+            CourseTeacher.course_id == course_id,
+            CourseTeacher.teacher_id == teacher_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assignment not found")
+    # A teacher cannot be dropped from a course while they still run a class in
+    # it: those schedules would be left with an unassigned teacher.
+    if db.scalar(
+        select(Schedule.id).where(
+            Schedule.course_id == course_id, Schedule.teacher_id == teacher_id
+        )
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "El profesor aún tiene horarios en este curso; reasígnalos antes de quitarlo.",
+        )
+    db.delete(row)
+    db.commit()
 
 
 @router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)

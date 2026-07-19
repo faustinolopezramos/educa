@@ -9,5 +9,43 @@ body,
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-slate-50 font-sans text-slate-900 antialiased;
+}
+
+/* Enlaces por defecto en la paleta pino (evita el azul del navegador). */
+a {
+  @apply text-brand-600;
+  text-decoration: none;
+}
+a:hover {
+  @apply text-brand-700;
+}
+
+::selection {
+  background: #0f6e62;
+  color: #f5f2ea;
+}
+
+/* Cifras tabulares alineadas en tablas y datos. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }

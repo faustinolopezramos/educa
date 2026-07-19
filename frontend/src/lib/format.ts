@@ -25,6 +25,17 @@ export function formatTime(hhmmss: string): string {
   return hhmmss.slice(0, 5);
 }
 
+/** Today as "YYYY-MM-DD" in the viewer's own timezone.
+ *
+ * Not `toISOString().slice(0, 10)`: that is the UTC day, which for anyone west
+ * of Greenwich rolls over during the evening — an 8pm class in Mexico City
+ * would have its attendance filed under tomorrow.
+ */
+export function todayLocal(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 // Short label of the timezone as seen at `iso`, e.g. "GMT-6".
 export function timeZoneLabel(iso: string, timeZone?: string): string {
   try {

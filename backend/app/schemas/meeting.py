@@ -1,8 +1,10 @@
 from datetime import datetime
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
 from app.models.enums import MeetingStatus, ProviderName
+from app.schemas.base import PatchModel
 
 
 # ---- Provider ----
@@ -30,7 +32,9 @@ class VirtualMeetingCreate(BaseModel):
     join_url: str | None = None
 
 
-class VirtualMeetingUpdate(BaseModel):
+class VirtualMeetingUpdate(PatchModel):
+    # The URLs and end_time are nullable; status and start_time are not.
+    NON_NULLABLE: ClassVar[tuple[str, ...]] = ("status", "start_time")
     join_url: str | None = None
     host_url: str | None = None
     status: MeetingStatus | None = None

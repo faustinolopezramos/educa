@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
-import { Button, Card, Input } from "../../components/ui";
+import { PromptModal } from "../../components/PromptModal";
+import { Button, Card, EmptyState, Input, SectionHeading } from "../../components/ui";
 import {
   useCreateGrade,
   useGrades,
@@ -24,13 +25,19 @@ interface Props {
 export function GradeTable({ enrollments, students }: Props) {
   const { data: allGrades = [] } = useGrades();
   const [extraColumns, setExtraColumns] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false);
 
   const enrollmentIds = useMemo(
     () => new Set(enrollments.map((e) => e.id)),
     [enrollments],
   );
+  // Course-level evaluations only (exams/finals). Per-session grades live in
+  // the class-session panel, keyed by day, not in this exam gradebook.
   const grades = useMemo(
-    () => allGrades.filter((g) => enrollmentIds.has(g.enrollment_id)),
+    () =>
+      allGrades.filter(
+        (g) => enrollmentIds.has(g.enrollment_id) && g.session_id === null,
+      ),
     [allGrades, enrollmentIds],
   );
 
@@ -41,15 +48,19 @@ export function GradeTable({ enrollments, students }: Props) {
     return [...names];
   }, [grades, extraColumns]);
 
-  function addColumn() {
-    const name = window.prompt("Nombre de la evaluación (ej. Examen Unidad 2)");
+  function addColumn(name: string) {
     if (name && !columns.includes(name)) setExtraColumns((c) => [...c, name]);
+    setAdding(false);
   }
 
   if (enrollments.length === 0) {
     return (
       <Card>
-        <p className="text-sm text-slate-400">No hay alumnos matriculados.</p>
+        <EmptyState
+          icon="◎"
+          title="Sin alumnos matriculados"
+          message="Cuando haya alumnos en este curso podrás registrar sus exámenes aquí."
+        />
       </Card>
     );
   }
@@ -57,8 +68,8 @@ export function GradeTable({ enrollments, students }: Props) {
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-medium">Calificaciones</h3>
-        <Button variant="secondary" className="text-xs" onClick={addColumn}>
+        <SectionHeading className="mb-0">Calificaciones</SectionHeading>
+        <Button variant="secondary" className="text-xs" onClick={() => setAdding(true)}>
           + Evaluación
         </Button>
       </div>
@@ -112,6 +123,17 @@ export function GradeTable({ enrollments, students }: Props) {
         Escala {SCORE_MIN}–{SCORE_MAX}. Los cambios se guardan automáticamente al salir
         de la celda.
       </p>
+      {adding && (
+        <PromptModal
+          title="Nueva evaluación"
+          label="Nombre de la evaluación"
+          placeholder="Ej. Examen Unidad 2"
+          confirmLabel="Añadir"
+          required
+          onClose={() => setAdding(false)}
+          onSubmit={addColumn}
+        />
+      )}
     </Card>
   );
 }

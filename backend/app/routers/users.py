@@ -8,6 +8,7 @@ from app.core.deps import require_role
 from app.core.security import hash_password
 from app.models import User, UserRole
 from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.services.audit import record, snapshot
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -65,16 +66,19 @@ def update_user(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> User:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    before = snapshot(user)
     data = payload.model_dump(exclude_unset=True)
     if "password" in data:
         user.password_hash = hash_password(data.pop("password"))
     for field, value in data.items():
         setattr(user, field, value)
+    # snapshot() redacts password_hash, so an audit row never leaks a secret.
+    record(db, current_user, "update", "user", user.id, before, snapshot(user))
     db.commit()
     db.refresh(user)
     return user
@@ -94,6 +98,7 @@ def delete_user(
             status.HTTP_409_CONFLICT,
             "No puedes eliminar tu propia cuenta; pide a otro administrador que lo haga.",
         )
+    record(db, current_user, "delete", "user", user.id, before=snapshot(user))
     db.delete(user)
     try:
         db.commit()

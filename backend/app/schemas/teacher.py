@@ -45,3 +45,20 @@ class AvailabilityRead(BaseModel):
 class AvailableTeacher(BaseModel):
     id: int
     full_name: str
+
+
+# ---- Course ↔ teacher assignment ----
+class CourseTeacherAssign(BaseModel):
+    teacher_id: int
+    is_lead: bool = False
+
+
+class CourseTeacherRead(BaseModel):
+    """A teacher assigned to a course, with the name for labelling a row."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    course_id: int
+    teacher_id: int
+    is_lead: bool
+    teacher_name: str

@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_role, teacher_course_ids
 from app.models import Course, Enrollment, EnrollmentStatus, User, UserRole
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentRead, EnrollmentUpdate
+from app.services.audit import record, snapshot
 from app.services.scheduling import student_schedule_conflicts
 
 router = APIRouter(prefix="/enrollments", tags=["enrollments"])
@@ -119,13 +120,15 @@ def update_enrollment(
     enrollment_id: int,
     payload: EnrollmentUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> Enrollment:
     enrollment = db.get(Enrollment, enrollment_id)
     if enrollment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    before = snapshot(enrollment)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(enrollment, field, value)
+    record(db, current_user, "update", "enrollment", enrollment.id, before, snapshot(enrollment))
     db.commit()
     db.refresh(enrollment)
     return enrollment
@@ -135,10 +138,11 @@ def update_enrollment(
 def delete_enrollment(
     enrollment_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> None:
     enrollment = db.get(Enrollment, enrollment_id)
     if enrollment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    record(db, current_user, "delete", "enrollment", enrollment.id, before=snapshot(enrollment))
     db.delete(enrollment)
     db.commit()

@@ -2,8 +2,15 @@ import axios from "axios";
 
 const TOKEN_KEY = "educa_token";
 
+const API_URL = import.meta.env.VITE_API_URL;
+if (!API_URL) {
+  throw new Error(
+    "Falta VITE_API_URL. Crea un archivo .env en frontend/ con: VITE_API_URL=http://localhost:8000",
+  );
+}
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000",
+  baseURL: API_URL,
 });
 
 export function getToken(): string | null {

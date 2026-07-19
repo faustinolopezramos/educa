@@ -1,12 +1,21 @@
-"""Unit tests for the pure scheduling-conflict logic (no DB required).
+"""Scheduling-conflict logic.
 
-Run with:  pytest backend/tests/test_scheduling.py
-(Install first: pip install pytest)
+Most of this is pure and needs no database; the weekly-load cap is the
+exception, since it has to read the teacher's other classes to add them up.
 """
 
 from datetime import date, time
 
-from app.services.scheduling import intervals_overlap, terms_overlap
+import pytest
+
+from app.models import Course, CourseTeacher, Language, Level, Schedule, UserRole
+from app.services.scheduling import (
+    intervals_overlap,
+    teacher_exceeds_load,
+    teacher_weekly_minutes,
+    terms_overlap,
+)
+from tests.conftest import make_user
 
 
 def t(h: int, m: int = 0) -> time:
@@ -66,3 +75,69 @@ def test_open_end_overlaps():
         terms_overlap(date(2026, 1, 1), None, date(2027, 1, 1), date(2027, 2, 1))
         is True
     )
+
+
+# ---- weekly load cap (needs the teacher's other classes, so: DB) ----
+@pytest.fixture
+def loaded_teacher(db):
+    """A teacher capped at 5h/week who already teaches 4h every Spring week."""
+    teacher = make_user(db, "load@test.com", UserRole.teacher)
+    teacher.max_weekly_hours = 5
+
+    language = Language(name="Italiano")
+    db.add(language)
+    db.flush()
+    level = Level(language_id=language.id, code="A2", name="A2")
+    db.add(level)
+    db.flush()
+    course = Course(
+        level_id=level.id, name="Italiano primavera", max_students=10,
+        start_date=SPRING[0], end_date=SPRING[1],
+    )
+    db.add(course)
+    db.flush()
+    db.add(CourseTeacher(course_id=course.id, teacher_id=teacher.id))
+    db.flush()
+    # 4 hours a week, spread over two days so nothing self-overlaps.
+    for day in (0, 1):
+        db.add(
+            Schedule(
+                course_id=course.id, teacher_id=teacher.id, day_of_week=day,
+                start_time=t(9), end_time=t(11),
+                term_start=SPRING[0], term_end=SPRING[1],
+            )
+        )
+    db.flush()
+    return teacher
+
+
+def test_load_counts_classes_running_in_the_same_term(db, loaded_teacher):
+    assert teacher_weekly_minutes(db, loaded_teacher.id, *SPRING) == 240
+
+
+def test_load_ignores_classes_from_a_term_that_never_overlaps(db, loaded_teacher):
+    """A Spring class and a Summer class never share a week, so they never add up."""
+    assert teacher_weekly_minutes(db, loaded_teacher.id, *SUMMER) == 0
+
+
+def test_a_summer_block_does_not_inherit_the_spring_load(db, loaded_teacher):
+    """The bug this pins: 4h of Spring made every Summer hour look over-cap."""
+    assert (
+        teacher_exceeds_load(db, loaded_teacher.id, t(9), t(13), *SUMMER) is False
+    ), "4h in Summer is under the 5h cap on its own"
+
+
+def test_the_cap_still_bites_within_one_term(db, loaded_teacher):
+    # 4h already booked in Spring + 2h more = 6h > the 5h cap.
+    assert teacher_exceeds_load(db, loaded_teacher.id, t(15), t(17), *SPRING) is True
+
+
+def test_a_block_that_fits_under_the_cap_is_allowed(db, loaded_teacher):
+    # 4h + 1h = 5h, exactly the cap.
+    assert teacher_exceeds_load(db, loaded_teacher.id, t(15), t(16), *SPRING) is False
+
+
+def test_an_uncapped_teacher_never_exceeds(db, loaded_teacher):
+    loaded_teacher.max_weekly_hours = None
+    db.flush()
+    assert teacher_exceeds_load(db, loaded_teacher.id, t(8), t(20), *SPRING) is False

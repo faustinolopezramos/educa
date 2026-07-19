@@ -7,7 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_access_token
-from app.models import Enrollment, EnrollmentStatus, Schedule, User, UserRole
+from app.models import (
+    CourseTeacher,
+    Enrollment,
+    EnrollmentStatus,
+    PaymentStatus,
+    User,
+    UserRole,
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -50,12 +57,17 @@ def require_role(*roles: UserRole) -> Callable[[User], User]:
 
 
 def teacher_teaches_course(db: Session, teacher_id: int, course_id: int) -> bool:
-    """True if the teacher has at least one schedule in the given course."""
+    """True if the teacher is assigned to the given course.
+
+    Assignment (`course_teachers`), not scheduling, is the source of truth:
+    a teacher assigned but not yet scheduled still teaches the course, and every
+    schedule's teacher is required to be assigned, so this stays a superset.
+    """
     return (
         db.scalar(
-            select(Schedule.id).where(
-                Schedule.teacher_id == teacher_id,
-                Schedule.course_id == course_id,
+            select(CourseTeacher.id).where(
+                CourseTeacher.teacher_id == teacher_id,
+                CourseTeacher.course_id == course_id,
             )
         )
         is not None
@@ -63,14 +75,31 @@ def teacher_teaches_course(db: Session, teacher_id: int, course_id: int) -> bool
 
 
 def teacher_course_ids(db: Session, teacher_id: int) -> list[int]:
-    """Distinct course IDs the teacher is assigned to (via schedules)."""
+    """Distinct course IDs the teacher is assigned to."""
     return list(
         db.scalars(
-            select(Schedule.course_id)
-            .where(Schedule.teacher_id == teacher_id)
+            select(CourseTeacher.course_id)
+            .where(CourseTeacher.teacher_id == teacher_id)
             .distinct()
         ).all()
     )
+
+
+def student_is_solvent(db: Session, student_id: int) -> bool:
+    """False when the student has any active enrollment with an overdue payment.
+
+    "Solvente" here mirrors the dashboard's payment nudge: an `overdue` cuota is
+    the delinquent state, while `pending` is simply not-yet-due. Cancelled or
+    completed enrollments don't count — they no longer carry a live obligation.
+    """
+    delinquent = db.scalar(
+        select(Enrollment.id).where(
+            Enrollment.student_id == student_id,
+            Enrollment.status == EnrollmentStatus.active,
+            Enrollment.payment_status == PaymentStatus.overdue,
+        )
+    )
+    return delinquent is None
 
 
 def student_course_ids(db: Session, student_id: int) -> list[int]:

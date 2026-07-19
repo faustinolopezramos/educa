@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, String
+from sqlalchemy import Date, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -19,6 +19,8 @@ class Course(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     max_students: Mapped[int] = mapped_column(Integer, default=20)
+    # Minimum final grade (0–10) to pass the course and earn a level certificate.
+    passing_score: Mapped[float] = mapped_column(Float, default=6.0)
 
     level: Mapped["Level"] = relationship(back_populates="courses")
     schedules: Mapped[list["Schedule"]] = relationship(
