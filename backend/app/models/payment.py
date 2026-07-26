@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import DateTime
+from sqlalchemy import Enum as SqlEnum
+from sqlalchemy import Float, ForeignKey, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+from app.models.enums import PaymentKind
+
+
+class Payment(Base):
+    """A single ledger entry against an enrollment's account: either a
+    `charge` (cobro — money owed) or a `payment` (pago — money received).
+    The running balance of an enrollment is sum(charge) - sum(payment),
+    computed on read rather than stored, so it can never drift out of sync.
+    """
+
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    enrollment_id: Mapped[int] = mapped_column(
+        ForeignKey("enrollments.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[PaymentKind] = mapped_column(SqlEnum(PaymentKind, name="payment_kind"))
+    amount: Mapped[float] = mapped_column(Float)
+    method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    paid_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    recorded_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    enrollment: Mapped["Enrollment"] = relationship(back_populates="payments")

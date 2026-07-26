@@ -19,6 +19,7 @@ export function useCreateEnrollment() {
     }: {
       student_id: number;
       course_id: number;
+      amount?: number;
       force?: boolean;
     }) =>
       (

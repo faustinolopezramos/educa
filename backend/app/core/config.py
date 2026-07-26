@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     # JWT
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 1440
+    jwt_expire_minutes: int = 30
+    # Short-ish on purpose: the refresh token lives in localStorage (readable
+    # by any script running on the page), so a shorter life plus rotation
+    # (see RefreshSession) bounds how long a stolen one stays useful.
+    refresh_token_expire_days: int = 7
 
     # Encryption for provider credentials at rest
     fernet_key: str = ""

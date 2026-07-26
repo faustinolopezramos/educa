@@ -23,9 +23,9 @@ def test_generation_is_idempotent(db, world):
     second = generate_sessions(db, schedule)
     assert second == [], "second run creates nothing"
     total = db.scalars(
-        __import__("sqlalchemy").select(ClassSession.id).where(
-            ClassSession.schedule_id == schedule.id
-        )
+        __import__("sqlalchemy")
+        .select(ClassSession.id)
+        .where(ClassSession.schedule_id == schedule.id)
     ).all()
     assert len(total) == len(first)
 
@@ -54,7 +54,9 @@ def test_ensure_rejects_a_date_off_the_class_weekday(db, world):
 def test_generate_endpoint_creates_the_term(client, world):
     headers = auth(client, "admin@test.com")
     res = client.post(
-        "/sessions/generate", headers=headers, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=headers,
+        json={"schedule_id": world["schedule_a"].id},
     )
     assert res.status_code == 200, res.text
     assert len(res.json()) > 0
@@ -74,7 +76,9 @@ def test_ensure_endpoint_is_get_or_create(client, world, db):
 def test_a_teacher_cannot_generate_for_a_schedule_they_do_not_teach(client, world):
     headers = auth(client, "teacher_b@test.com")
     res = client.post(
-        "/sessions/generate", headers=headers, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=headers,
+        json={"schedule_id": world["schedule_a"].id},
     )
     assert res.status_code == 404, "not-owned schedule is a 404, not a 403"
 
@@ -82,10 +86,14 @@ def test_a_teacher_cannot_generate_for_a_schedule_they_do_not_teach(client, worl
 def test_a_student_only_sees_sessions_of_their_courses(client, world):
     admin = auth(client, "admin@test.com")
     client.post(
-        "/sessions/generate", headers=admin, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=admin,
+        json={"schedule_id": world["schedule_a"].id},
     )
     client.post(
-        "/sessions/generate", headers=admin, json={"schedule_id": world["schedule_b"].id}
+        "/sessions/generate",
+        headers=admin,
+        json={"schedule_id": world["schedule_b"].id},
     )
     student = auth(client, "student@test.com")  # enrolled in course_a only
     body = client.get("/sessions", headers=student).json()

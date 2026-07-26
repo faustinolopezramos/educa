@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.main import app
+from app.services.sequences import next_enrollment_code
 from app.models import (
     Course,
     CourseTeacher,
@@ -73,13 +74,21 @@ def db(engine) -> Session:
 @pytest.fixture
 def client(db: Session) -> TestClient:
     app.dependency_overrides[get_db] = lambda: db
+    # The login rate limiter tracks attempts per client IP in a module-level
+    # dict that outlives any one request, so without clearing it here, tests
+    # that call auth() a few times each start tripping each other's 429s.
+    from app.main import _login_attempts
+
+    _login_attempts.clear()
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
 
 
 # ---------------- Factories ----------------
-def make_user(db: Session, email: str, role: UserRole, password: str = "secret123") -> User:
+def make_user(
+    db: Session, email: str, role: UserRole, password: str = "secret123"
+) -> User:
     user = User(
         email=email,
         full_name=f"Test {role.value}",
@@ -122,50 +131,76 @@ def world(db: Session):
 
     term_start, term_end = date.today(), date.today() + timedelta(days=90)
     course_a = Course(
-        level_id=level.id, name="Curso A", max_students=10,
-        start_date=term_start, end_date=term_end,
+        level_id=level.id,
+        name="Curso A",
+        max_students=10,
+        start_date=term_start,
+        end_date=term_end,
     )
     course_b = Course(
-        level_id=level.id, name="Curso B", max_students=10,
-        start_date=term_start, end_date=term_end,
+        level_id=level.id,
+        name="Curso B",
+        max_students=10,
+        start_date=term_start,
+        end_date=term_end,
     )
     db.add_all([course_a, course_b])
     db.flush()
 
     # Each teacher is assigned to their own course (the prerequisite for a slot).
-    db.add_all([
-        CourseTeacher(course_id=course_a.id, teacher_id=teacher_a.id, is_lead=True),
-        CourseTeacher(course_id=course_b.id, teacher_id=teacher_b.id, is_lead=True),
-    ])
+    db.add_all(
+        [
+            CourseTeacher(course_id=course_a.id, teacher_id=teacher_a.id, is_lead=True),
+            CourseTeacher(course_id=course_b.id, teacher_id=teacher_b.id, is_lead=True),
+        ]
+    )
     db.flush()
 
     schedule_a = Schedule(
-        course_id=course_a.id, teacher_id=teacher_a.id, day_of_week=0,
-        start_time=time(9, 0), end_time=time(10, 0),
-        term_start=term_start, term_end=term_end,
+        course_id=course_a.id,
+        teacher_id=teacher_a.id,
+        day_of_week=0,
+        start_time=time(9, 0),
+        end_time=time(10, 0),
+        term_start=term_start,
+        term_end=term_end,
     )
     schedule_b = Schedule(
-        course_id=course_b.id, teacher_id=teacher_b.id, day_of_week=1,
-        start_time=time(11, 0), end_time=time(12, 0),
-        term_start=term_start, term_end=term_end,
+        course_id=course_b.id,
+        teacher_id=teacher_b.id,
+        day_of_week=1,
+        start_time=time(11, 0),
+        end_time=time(12, 0),
+        term_start=term_start,
+        term_end=term_end,
     )
     db.add_all([schedule_a, schedule_b])
     db.flush()
 
-    enrollment = Enrollment(student_id=student.id, course_id=course_a.id)
+    enrollment = Enrollment(
+        student_id=student.id,
+        course_id=course_a.id,
+        enrollment_code=next_enrollment_code(db, year=date.today().year),
+    )
     db.add(enrollment)
     db.flush()
 
     start = datetime.now(timezone.utc) + timedelta(minutes=30)
     meeting_a = VirtualMeeting(
-        schedule_id=schedule_a.id, provider_id=manual.id,
-        join_url="https://example.com/a", host_url="https://example.com/a?host=1",
-        start_time=start, end_time=start + timedelta(hours=1),
+        schedule_id=schedule_a.id,
+        provider_id=manual.id,
+        join_url="https://example.com/a",
+        host_url="https://example.com/a?host=1",
+        start_time=start,
+        end_time=start + timedelta(hours=1),
     )
     meeting_b = VirtualMeeting(
-        schedule_id=schedule_b.id, provider_id=manual.id,
-        join_url="https://example.com/b", host_url="https://example.com/b?host=1",
-        start_time=start, end_time=start + timedelta(hours=1),
+        schedule_id=schedule_b.id,
+        provider_id=manual.id,
+        join_url="https://example.com/b",
+        host_url="https://example.com/b?host=1",
+        start_time=start,
+        end_time=start + timedelta(hours=1),
     )
     db.add_all([meeting_a, meeting_b])
     db.flush()

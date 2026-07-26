@@ -4,11 +4,11 @@ Revision ID: d2e3f4a5b6c7
 Revises: c1d2e3f4a5b6
 Create Date: 2026-07-16 10:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = "d2e3f4a5b6c7"

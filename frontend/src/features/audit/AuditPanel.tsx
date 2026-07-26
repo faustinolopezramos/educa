@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Badge, Card, Table, Td, Th } from "../../components/ui";
+import { Badge, Button, Card, Table, Td, Th } from "../../components/ui";
 import { formatDateTime } from "../../lib/format";
 import { useAudit } from "../../lib/queries";
 import type { AuditLog } from "../../lib/types";
@@ -47,10 +47,23 @@ function fmt(v: unknown): string {
   return v === null || v === undefined ? "∅" : String(v);
 }
 
+const PAGE_SIZE = 100;
+
 /** Read-only view of the change trail. Admin-only (route gate + API gate). */
 export function AuditPanel() {
   const [entity, setEntity] = useState("");
-  const { data: rows = [], isLoading } = useAudit(entity ? { entity } : {});
+  const [page, setPage] = useState(0);
+  const { data, isLoading } = useAudit(
+    entity ? { entity, offset: page * PAGE_SIZE, limit: PAGE_SIZE } : { offset: page * PAGE_SIZE, limit: PAGE_SIZE },
+  );
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  function switchEntity(e: string) {
+    setEntity(e);
+    setPage(0);
+  }
 
   return (
     <Card>
@@ -60,7 +73,7 @@ export function AuditPanel() {
           {ENTITIES.map((e) => (
             <button
               key={e.id}
-              onClick={() => setEntity(e.id)}
+              onClick={() => switchEntity(e.id)}
               className={`rounded-md px-2 py-1 text-xs ${
                 entity === e.id
                   ? "bg-brand-600 text-white"
@@ -78,32 +91,60 @@ export function AuditPanel() {
       ) : rows.length === 0 ? (
         <p className="text-sm text-slate-400">Sin cambios registrados.</p>
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Cuándo</Th>
-              <Th>Acción</Th>
-              <Th>Entidad</Th>
-              <Th>Cambio</Th>
-              <Th>Actor</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <Td>{formatDateTime(r.at)}</Td>
-                <Td>
-                  <Badge color={ACTION_COLOR[r.action]}>{r.action}</Badge>
-                </Td>
-                <Td>
-                  {r.entity} #{r.entity_id}
-                </Td>
-                <Td>{diff(r)}</Td>
-                <Td>{r.actor_id ? `#${r.actor_id}` : "sistema"}</Td>
+        <>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Cuándo</Th>
+                <Th>Acción</Th>
+                <Th>Entidad</Th>
+                <Th>Cambio</Th>
+                <Th>Actor</Th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <Td>{formatDateTime(r.at)}</Td>
+                  <Td>
+                    <Badge color={ACTION_COLOR[r.action]}>{r.action}</Badge>
+                  </Td>
+                  <Td>
+                    {r.entity} #{r.entity_id}
+                  </Td>
+                  <Td>{diff(r)}</Td>
+                  <Td>{r.actor_id ? `#${r.actor_id}` : "sistema"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          {totalPages > 1 && (
+            <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
+              <span>{total} registros</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  className="text-xs"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  ← Anterior
+                </Button>
+                <span className="self-center">
+                  {page + 1} / {totalPages}
+                </span>
+                <Button
+                  variant="secondary"
+                  className="text-xs"
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Siguiente →
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </Card>
   );

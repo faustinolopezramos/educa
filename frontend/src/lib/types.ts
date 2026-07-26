@@ -7,6 +7,14 @@ export interface User {
   role: Role;
   timezone: string;
   max_weekly_hours: number | null;
+  phone: string | null;
+  address: string | null;
+  nationality_id: number | null;
+}
+
+export interface Nationality {
+  id: number;
+  name: string;
 }
 
 /** Just enough to label a row. What the scoped roster endpoints return. */
@@ -17,13 +25,17 @@ export interface UserBrief {
 
 export interface LoginResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
   user: User;
 }
 
+export type TrackKind = "language" | "digital_skill" | "business_skill";
+
 export interface Language {
   id: number;
   name: string;
+  kind: TrackKind;
 }
 
 export interface Level {
@@ -80,7 +92,7 @@ export interface Room {
   is_virtual: boolean;
 }
 
-export type Modality = "presencial" | "virtual";
+export type Modality = "presencial" | "semi_presencial" | "virtual";
 export type ProviderName = "manual" | "zoom" | "google" | "teams";
 export type ProposalStatus = "pending" | "approved" | "rejected";
 
@@ -139,16 +151,48 @@ export interface TeacherAvailability {
   end_time: string;
 }
 
-export type EnrollmentStatus = "active" | "completed" | "cancelled";
+export type EnrollmentStatus = "enrolled" | "active" | "inactive" | "certified" | "withdrawn";
 export type PaymentStatus = "pending" | "paid" | "overdue";
 
 export interface Enrollment {
   id: number;
   student_id: number;
   course_id: number;
+  enrollment_code: string;
   status: EnrollmentStatus;
   payment_status: PaymentStatus;
   attendance_blocked: boolean;
+  amount: number;
+}
+
+export type PaymentKind = "charge" | "payment";
+
+export interface Payment {
+  id: number;
+  enrollment_id: number;
+  kind: PaymentKind;
+  amount: number;
+  method: string | null;
+  paid_at: string;
+  recorded_by: number | null;
+  notes: string | null;
+}
+
+export interface EnrollmentLedger {
+  enrollment_id: number;
+  charged: number;
+  paid: number;
+  balance: number;
+  movements: Payment[];
+}
+
+export interface Invoice {
+  id: number;
+  enrollment_id: number;
+  code: string;
+  total_amount: number;
+  issued_at: string;
+  issued_by: number | null;
 }
 
 export type SessionStatus = "scheduled" | "held" | "cancelled";

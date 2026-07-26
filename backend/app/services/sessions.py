@@ -19,7 +19,10 @@ from app.models import AcademicHoliday, ClassSession, SessionStatus, Schedule
 
 
 def is_holiday(db: Session, on: date) -> bool:
-    return db.scalar(select(AcademicHoliday.id).where(AcademicHoliday.date == on)) is not None
+    return (
+        db.scalar(select(AcademicHoliday.id).where(AcademicHoliday.date == on))
+        is not None
+    )
 
 
 def _holidays_in(db: Session, start: date, end: date) -> set[date]:
@@ -60,9 +63,7 @@ def generate_sessions(db: Session, schedule: Schedule) -> list[ClassSession]:
         return []
     existing = set(
         db.scalars(
-            select(ClassSession.date).where(
-                ClassSession.schedule_id == schedule.id
-            )
+            select(ClassSession.date).where(ClassSession.schedule_id == schedule.id)
         ).all()
     )
     holidays = _holidays_in(db, dates[0], dates[-1])
@@ -100,7 +101,9 @@ def ensure_session(db: Session, schedule: Schedule, on: date) -> ClassSession:
     return session
 
 
-def cancel_session(db: Session, session: ClassSession, reason: str | None) -> ClassSession:
+def cancel_session(
+    db: Session, session: ClassSession, reason: str | None
+) -> ClassSession:
     """Mark a session as not held. Idempotent-ish: re-cancelling just updates
     the reason. Its attendance/grades stay for the record but the session no
     longer counts as a class that took place."""

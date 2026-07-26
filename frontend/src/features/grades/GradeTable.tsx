@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PromptModal } from "../../components/PromptModal";
 import { Button, Card, EmptyState, Input, SectionHeading } from "../../components/ui";
@@ -7,11 +7,8 @@ import {
   useGrades,
   useUpdateGrade,
 } from "../../lib/queries";
+import { SCORE_MAX, SCORE_MIN } from "../../lib/constants";
 import type { Enrollment, Grade, UserBrief } from "../../lib/types";
-
-// Must match the bounds the API enforces in backend/app/schemas/grade.py.
-const SCORE_MIN = 0;
-const SCORE_MAX = 10;
 
 interface Props {
   enrollments: Enrollment[];
@@ -152,6 +149,15 @@ function GradeCell({
   const [value, setValue] = useState(grade ? String(grade.score) : "");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const focused = useRef(false);
+
+  // Resyncs with the server value after an invalidation (e.g. someone else's
+  // edit, or the real value replacing our optimistic one) — but not while the
+  // user is actively typing in this cell.
+  useEffect(() => {
+    if (focused.current) return;
+    setValue(grade ? String(grade.score) : "");
+  }, [grade?.score]);
 
   function commit() {
     const trimmed = value.trim();
@@ -187,7 +193,13 @@ function GradeCell({
         aria-invalid={error ? true : undefined}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onBlur={() => {
+          focused.current = false;
+          commit();
+        }}
       />
       {error && <p className="mt-0.5 text-xs text-red-600">{error}</p>}
     </div>

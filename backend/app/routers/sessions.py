@@ -11,7 +11,14 @@ from app.core.deps import (
     student_course_ids,
     teacher_course_ids,
 )
-from app.models import ClassSession, Enrollment, EnrollmentStatus, Schedule, User, UserRole
+from app.models import (
+    ClassSession,
+    Enrollment,
+    EnrollmentStatus,
+    Schedule,
+    User,
+    UserRole,
+)
 from app.schemas.session import (
     ClassSessionRead,
     SessionCancel,
@@ -42,7 +49,9 @@ def _visible_sessions(db: Session, user: User) -> Select:
     if user.role == UserRole.admin:
         return stmt
     if user.role == UserRole.teacher:
-        return stmt.where(Schedule.course_id.in_(teacher_course_ids(db, user.id) or [-1]))
+        return stmt.where(
+            Schedule.course_id.in_(teacher_course_ids(db, user.id) or [-1])
+        )
     return stmt.where(Schedule.course_id.in_(student_course_ids(db, user.id) or [-1]))
 
 
@@ -122,9 +131,7 @@ def generate(
     return created
 
 
-@router.post(
-    "/ensure", response_model=ClassSessionRead, status_code=status.HTTP_200_OK
-)
+@router.post("/ensure", response_model=ClassSessionRead, status_code=status.HTTP_200_OK)
 def ensure(
     payload: SessionEnsure,
     db: Session = Depends(get_db),

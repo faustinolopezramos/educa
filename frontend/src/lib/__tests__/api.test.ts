@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { getToken, setToken, apiErrorMessage } from "../api";
 
 describe("Token Management", () => {

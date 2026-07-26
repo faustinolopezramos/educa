@@ -129,9 +129,7 @@ def create_grade(
         after=snapshot(grade),
     )
     db.commit()
-    response.status_code = (
-        status.HTTP_200_OK if before else status.HTTP_201_CREATED
-    )
+    response.status_code = status.HTTP_200_OK if before else status.HTTP_201_CREATED
     return grade
 
 

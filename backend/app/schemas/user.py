@@ -1,6 +1,6 @@
 from typing import Annotated, ClassVar
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, model_validator
 
 from app.models.enums import UserRole
 from app.schemas.base import PatchModel
@@ -18,9 +18,7 @@ def _validate_password(value: str) -> str:
             f"La contraseña debe tener al menos {PASSWORD_MIN_LENGTH} caracteres"
         )
     if len(value.encode("utf-8")) > BCRYPT_MAX_BYTES:
-        raise ValueError(
-            f"La contraseña no puede superar {BCRYPT_MAX_BYTES} bytes"
-        )
+        raise ValueError(f"La contraseña no puede superar {BCRYPT_MAX_BYTES} bytes")
     return value
 
 
@@ -33,6 +31,9 @@ class UserBase(BaseModel):
     role: UserRole = UserRole.student
     timezone: str = "UTC"
     max_weekly_hours: int | None = None
+    phone: str | None = None
+    address: str | None = None
+    nationality_id: int | None = None
 
 
 class UserCreate(UserBase):
@@ -54,6 +55,36 @@ class UserUpdate(PatchModel):
     timezone: str | None = None
     password: Password | None = None
     max_weekly_hours: int | None = None
+    phone: str | None = None
+    address: str | None = None
+    nationality_id: int | None = None
+
+
+class UserSelfUpdate(PatchModel):
+    """What a user may change about their own profile.
+
+    Deliberately narrower than UserUpdate: no role, email, or
+    max_weekly_hours — those stay admin-only. A password change must be
+    accompanied by the current password, since the caller is proving it's
+    really them and not an admin resetting a forgotten one.
+    """
+
+    NON_NULLABLE: ClassVar[tuple[str, ...]] = ("full_name", "timezone", "password")
+    full_name: str | None = None
+    timezone: str | None = None
+    password: Password | None = None
+    current_password: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    nationality_id: int | None = None
+
+    @model_validator(mode="after")
+    def _password_requires_current(self) -> "UserSelfUpdate":
+        if self.password is not None and not self.current_password:
+            raise ValueError(
+                "Debes indicar tu contraseña actual para establecer una nueva"
+            )
+        return self
 
 
 class UserRead(UserBase):

@@ -153,9 +153,7 @@ def issue_certificate(
     enrollment = db.get(Enrollment, enrollment_id)
     if enrollment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
-    if db.scalar(
-        select(Certificate).where(Certificate.enrollment_id == enrollment_id)
-    ):
+    if db.scalar(select(Certificate).where(Certificate.enrollment_id == enrollment_id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "El certificado ya fue emitido")
 
     result = compute_final_grade(db, enrollment)
@@ -219,13 +217,15 @@ def certificate_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    """The certificate as a print-ready PDF. Owner student or staff only."""
+    """The certificate as a print-ready PDF.
+
+    Visible to the student (their own), the course's teacher, or an admin —
+    same scoping as `enrollment_certificate` and `get_final_grade`.
+    """
     certificate = db.get(Certificate, certificate_id)
     if certificate is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Certificate not found")
-    enrollment = db.get(Enrollment, certificate.enrollment_id)
-    if current_user.role == UserRole.student and enrollment.student_id != current_user.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Certificate not found")
+    enrollment = _visible_enrollment(db, current_user, certificate.enrollment_id)
 
     course = db.get(Course, enrollment.course_id)
     level = db.get(Level, certificate.level_id)

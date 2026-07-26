@@ -1,13 +1,24 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role, teacher_course_ids
-from app.models import Course, Enrollment, EnrollmentStatus, User, UserRole
+from app.models import (
+    Course,
+    Enrollment,
+    EnrollmentStatus,
+    Payment,
+    PaymentKind,
+    User,
+    UserRole,
+)
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentRead, EnrollmentUpdate
 from app.services.audit import record, snapshot
 from app.services.scheduling import student_schedule_conflicts
+from app.services.sequences import next_enrollment_code
 
 router = APIRouter(prefix="/enrollments", tags=["enrollments"])
 
@@ -108,8 +119,23 @@ def create_enrollment(
                 },
             )
 
-    enrollment = Enrollment(**payload.model_dump())
+    enrollment = Enrollment(
+        **payload.model_dump(),
+        enrollment_code=next_enrollment_code(db, year=datetime.now(timezone.utc).year),
+    )
     db.add(enrollment)
+    db.flush()
+    # Seed the ledger with the agreed cuota so the balance starts consistent;
+    # a zero-amount enrollment (amount left at the 0.0 default) adds no charge.
+    if enrollment.amount:
+        db.add(
+            Payment(
+                enrollment_id=enrollment.id,
+                kind=PaymentKind.charge,
+                amount=enrollment.amount,
+                notes="Cuota inicial de matrícula",
+            )
+        )
     db.commit()
     db.refresh(enrollment)
     return enrollment
@@ -128,7 +154,15 @@ def update_enrollment(
     before = snapshot(enrollment)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(enrollment, field, value)
-    record(db, current_user, "update", "enrollment", enrollment.id, before, snapshot(enrollment))
+    record(
+        db,
+        current_user,
+        "update",
+        "enrollment",
+        enrollment.id,
+        before,
+        snapshot(enrollment),
+    )
     db.commit()
     db.refresh(enrollment)
     return enrollment
@@ -143,6 +177,13 @@ def delete_enrollment(
     enrollment = db.get(Enrollment, enrollment_id)
     if enrollment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
-    record(db, current_user, "delete", "enrollment", enrollment.id, before=snapshot(enrollment))
+    record(
+        db,
+        current_user,
+        "delete",
+        "enrollment",
+        enrollment.id,
+        before=snapshot(enrollment),
+    )
     db.delete(enrollment)
     db.commit()

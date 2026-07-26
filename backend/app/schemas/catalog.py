@@ -3,23 +3,43 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
+from app.models.enums import TrackKind
 from app.schemas.base import PatchModel
+
+
+# ---- Nationality ----
+class NationalityCreate(BaseModel):
+    name: str
+
+
+class NationalityUpdate(PatchModel):
+    NON_NULLABLE: ClassVar[tuple[str, ...]] = ("name",)
+    name: str | None = None
+
+
+class NationalityRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
 
 
 # ---- Language ----
 class LanguageCreate(BaseModel):
     name: str
+    kind: TrackKind = TrackKind.language
 
 
 class LanguageUpdate(PatchModel):
-    NON_NULLABLE: ClassVar[tuple[str, ...]] = ("name",)
+    NON_NULLABLE: ClassVar[tuple[str, ...]] = ("name", "kind")
     name: str | None = None
+    kind: TrackKind | None = None
 
 
 class LanguageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
+    kind: TrackKind
 
 
 # ---- Level ----

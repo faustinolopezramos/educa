@@ -4,12 +4,12 @@ Revision ID: f4a5b6c7d8e9
 Revises: e3f4a5b6c7d8
 Create Date: 2026-07-16 12:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "f4a5b6c7d8e9"
@@ -21,9 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 # create_type=False on the column-bound instances so add_column / create_table
 # reference the type instead of trying to CREATE it a second time. The types are
 # created once, explicitly, at the top of upgrade().
-modality = postgresql.ENUM(
-    "presencial", "virtual", name="modality", create_type=False
-)
+modality = postgresql.ENUM("presencial", "virtual", name="modality", create_type=False)
 proposal_status = postgresql.ENUM(
     "pending", "approved", "rejected", name="proposal_status", create_type=False
 )
@@ -36,21 +34,17 @@ def upgrade() -> None:
     postgresql.ENUM("presencial", "virtual", name="modality").create(
         bind, checkfirst=True
     )
-    postgresql.ENUM(
-        "pending", "approved", "rejected", name="proposal_status"
-    ).create(bind, checkfirst=True)
+    postgresql.ENUM("pending", "approved", "rejected", name="proposal_status").create(
+        bind, checkfirst=True
+    )
 
     # --- schedules: effective location ---
     op.add_column(
         "schedules",
-        sa.Column(
-            "modality", modality, nullable=False, server_default="presencial"
-        ),
+        sa.Column("modality", modality, nullable=False, server_default="presencial"),
     )
     op.add_column("schedules", sa.Column("join_url", sa.Text(), nullable=True))
-    op.add_column(
-        "schedules", sa.Column("provider", provider_name, nullable=True)
-    )
+    op.add_column("schedules", sa.Column("provider", provider_name, nullable=True))
 
     # --- location proposals ---
     op.create_table(
@@ -82,9 +76,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        op.f("ix_location_proposals_status"), table_name="location_proposals"
-    )
+    op.drop_index(op.f("ix_location_proposals_status"), table_name="location_proposals")
     op.drop_index(
         op.f("ix_location_proposals_schedule_id"), table_name="location_proposals"
     )

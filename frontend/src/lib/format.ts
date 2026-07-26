@@ -57,7 +57,9 @@ export const PAYMENT_LABELS: Record<string, string> = {
 };
 
 export const ENROLLMENT_LABELS: Record<string, string> = {
+  enrolled: "Inscrito",
   active: "Activo",
-  completed: "Completado",
-  cancelled: "Cancelado",
+  inactive: "Inactivo",
+  certified: "Certificado",
+  withdrawn: "Desistió",
 };

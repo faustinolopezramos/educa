@@ -4,12 +4,12 @@ Revision ID: a5b6c7d8e9f0
 Revises: f4a5b6c7d8e9
 Create Date: 2026-07-16 14:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "a5b6c7d8e9f0"

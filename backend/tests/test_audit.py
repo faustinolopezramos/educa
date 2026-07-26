@@ -9,12 +9,14 @@ from tests.conftest import auth
 def session_a(client, world):
     admin = auth(client, "admin@test.com")
     return client.post(
-        "/sessions/generate", headers=admin, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=admin,
+        json={"schedule_id": world["schedule_a"].id},
     ).json()[0]
 
 
 def _audit(client, headers, **params):
-    return client.get("/audit", headers=headers, params=params).json()
+    return client.get("/audit", headers=headers, params=params).json()["items"]
 
 
 def test_grading_and_regrading_leaves_a_trail(client, world):
@@ -37,7 +39,9 @@ def test_attendance_correction_is_audited(client, world, session_a):
     teacher = auth(client, "teacher_a@test.com")
     admin = auth(client, "admin@test.com")
     base = {"enrollment_id": world["enrollment"].id, "session_id": session_a["id"]}
-    mark = client.post("/attendance", headers=teacher, json={**base, "status": "present"}).json()
+    mark = client.post(
+        "/attendance", headers=teacher, json={**base, "status": "present"}
+    ).json()
     client.post("/attendance", headers=teacher, json={**base, "status": "absent"})
 
     rows = _audit(client, admin, entity="attendance", entity_id=mark["id"])
@@ -48,11 +52,13 @@ def test_attendance_correction_is_audited(client, world, session_a):
 def test_enrollment_status_change_is_audited(client, world):
     admin = auth(client, "admin@test.com")
     client.patch(
-        f"/enrollments/{world['enrollment'].id}", headers=admin, json={"status": "completed"}
+        f"/enrollments/{world['enrollment'].id}",
+        headers=admin,
+        json={"status": "certified"},
     )
     rows = _audit(client, admin, entity="enrollment", entity_id=world["enrollment"].id)
     assert rows[0]["before"]["status"] == "active"
-    assert rows[0]["after"]["status"] == "completed"
+    assert rows[0]["after"]["status"] == "certified"
 
 
 def test_a_user_password_change_never_records_the_hash(client, world):
@@ -81,11 +87,21 @@ def test_a_rolled_back_change_leaves_no_audit_row(client, world, session_a):
     teacher = auth(client, "teacher_a@test.com")
     admin = auth(client, "admin@test.com")
     eid = world["enrollment"].id
-    client.post("/grades", headers=teacher, json={"enrollment_id": eid, "evaluation_name": "A", "score": 5})
-    g2 = client.post("/grades", headers=teacher, json={"enrollment_id": eid, "evaluation_name": "B", "score": 5}).json()
+    client.post(
+        "/grades",
+        headers=teacher,
+        json={"enrollment_id": eid, "evaluation_name": "A", "score": 5},
+    )
+    g2 = client.post(
+        "/grades",
+        headers=teacher,
+        json={"enrollment_id": eid, "evaluation_name": "B", "score": 5},
+    ).json()
 
     before_rows = _audit(client, admin, entity="grade", entity_id=g2["id"])
-    res = client.patch(f"/grades/{g2['id']}", headers=teacher, json={"evaluation_name": "A"})
+    res = client.patch(
+        f"/grades/{g2['id']}", headers=teacher, json={"evaluation_name": "A"}
+    )
     assert res.status_code == 409
     after_rows = _audit(client, admin, entity="grade", entity_id=g2["id"])
     assert len(after_rows) == len(before_rows), "the failed rename recorded nothing"

@@ -139,6 +139,32 @@ def test_admin_sees_every_meeting_with_host_urls(client, world):
     assert all(m["host_url"] is not None for m in body)
 
 
+# ---------------- Providers still under construction (Zoom/Google) ----------------
+def test_creating_a_meeting_with_an_unimplemented_provider_is_a_clear_501(
+    client, world
+):
+    """Zoom/Google are registered but their integration is still a stub
+    (Phase 1). Creating a meeting with one must surface a clear 501, not an
+    unhandled 500."""
+    admin = auth(client, "admin@test.com")
+    upsert = client.put(
+        "/meetings/providers", headers=admin, json={"name": "zoom", "is_active": True}
+    )
+    assert upsert.status_code == 200, upsert.text
+
+    res = client.post(
+        "/meetings",
+        headers=admin,
+        json={
+            "schedule_id": world["schedule_a"].id,
+            "provider": "zoom",
+            "start_time": "2026-08-01T10:00:00Z",
+        },
+    )
+    assert res.status_code == 501
+    assert "zoom" in res.json()["detail"]
+
+
 def test_admin_can_edit_any_meeting(client, world):
     headers = auth(client, "admin@test.com")
     res = client.patch(

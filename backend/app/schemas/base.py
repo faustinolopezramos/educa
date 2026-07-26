@@ -1,8 +1,22 @@
 """Shared shapes for request payloads."""
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, model_validator
+
+T = TypeVar("T")
+
+
+class PaginationParams(BaseModel):
+    offset: int = 0
+    limit: int = 100
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    offset: int
+    limit: int
 
 
 class PatchModel(BaseModel):

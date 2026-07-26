@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 
 from app.models import AuditLog, User
 
-
 # Never copy secrets into the audit trail, even to record that they changed.
 _REDACTED = {"password_hash", "api_credentials_encrypted"}
 

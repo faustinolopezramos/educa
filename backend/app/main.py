@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from fastapi import FastAPI, Request, Response
@@ -19,6 +19,7 @@ from app.routers import (
     locations,
     meetings,
     notifications,
+    payments,
     reports,
     rooms,
     schedules,
@@ -30,19 +31,24 @@ from app.webhooks import router as webhooks
 
 # ---- In-memory rate limiter for login ----
 _login_attempts: dict[str, list[datetime]] = defaultdict(list)
-LOGIN_RATE_LIMIT = 5       # max attempts
-LOGIN_RATE_WINDOW = 60     # seconds
+LOGIN_RATE_LIMIT = 5  # max attempts
+LOGIN_RATE_WINDOW = 60  # seconds
 
 
 async def rate_limit_middleware(request: Request, call_next):
     if request.url.path == "/auth/login" and request.method == "POST":
         client_ip = request.client.host if request.client else "unknown"
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         window_start = now - timedelta(seconds=LOGIN_RATE_WINDOW)
-        _login_attempts[client_ip] = [
-            t for t in _login_attempts[client_ip] if t > window_start
-        ]
-        if len(_login_attempts[client_ip]) >= LOGIN_RATE_LIMIT:
+        recent = [t for t in _login_attempts[client_ip] if t > window_start]
+        if recent:
+            _login_attempts[client_ip] = recent
+        else:
+            # Nothing left in the window: drop the key instead of leaving an
+            # empty list behind — otherwise every IP that has ever hit
+            # /auth/login stays in memory for the life of the process.
+            _login_attempts.pop(client_ip, None)
+        if len(recent) >= LOGIN_RATE_LIMIT:
             from fastapi.responses import JSONResponse
 
             return JSONResponse(
@@ -58,10 +64,16 @@ async def cache_middleware(request: Request, call_next):
     response = await call_next(request)
     if request.method == "GET":
         path = request.url.path
-        if path.startswith(("/catalog/", "/rooms", "/health")):
+        if path == "/health":
+            # Unauthenticated and identical for everyone: safe for a shared cache.
             response.headers.setdefault("Cache-Control", "max-age=30")
+        elif path.startswith(("/catalog/", "/rooms")):
+            # These require auth. `private` keeps a shared proxy/CDN from ever
+            # serving a cached body to a request it never checked the
+            # Authorization header on.
+            response.headers.setdefault("Cache-Control", "private, max-age=30")
         elif path.startswith(("/schedules", "/teachers", "/holidays")):
-            response.headers.setdefault("Cache-Control", "max-age=15")
+            response.headers.setdefault("Cache-Control", "private, max-age=15")
     return response
 
 
@@ -99,5 +111,6 @@ app.include_router(grading.router)
 app.include_router(meetings.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
+app.include_router(payments.router)
 app.include_router(audit.router)
 app.include_router(webhooks.router)

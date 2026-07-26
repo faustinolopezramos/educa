@@ -30,6 +30,12 @@ describe("EnrollWizard", () => {
       mutate: vi.fn().mockResolvedValue({}),
       isPending: false,
     } as any);
+
+    vi.mocked(queries.useEnrollments).mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    } as any);
   });
 
   it("should render step 1: select course", () => {

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func as sa_func
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -7,6 +8,7 @@ from app.core.database import get_db
 from app.core.deps import require_role
 from app.core.security import hash_password
 from app.models import User, UserRole
+from app.schemas.base import PaginatedResponse
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.audit import record, snapshot
 
@@ -15,16 +17,23 @@ router = APIRouter(prefix="/users", tags=["users"])
 admin_only = require_role(UserRole.admin)
 
 
-@router.get("", response_model=list[UserRead])
+@router.get("", response_model=PaginatedResponse[UserRead])
 def list_users(
     role: UserRole | None = None,
+    offset: int = 0,
+    limit: int = Query(default=200, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(admin_only),
-) -> list[User]:
-    stmt = select(User)
-    if role is not None:
-        stmt = stmt.where(User.role == role)
-    return list(db.scalars(stmt).all())
+) -> PaginatedResponse[UserRead]:
+    filters = [User.role == role] if role is not None else []
+    total = db.scalar(select(sa_func.count(User.id)).where(*filters)) or 0
+    rows = db.scalars(select(User).where(*filters).offset(offset).limit(limit)).all()
+    return PaginatedResponse(
+        items=[UserRead.model_validate(u) for u in rows],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -41,6 +50,9 @@ def create_user(
         role=payload.role,
         timezone=payload.timezone,
         max_weekly_hours=payload.max_weekly_hours,
+        phone=payload.phone,
+        address=payload.address,
+        nationality_id=payload.nationality_id,
         password_hash=hash_password(payload.password),
     )
     db.add(user)
@@ -75,6 +87,7 @@ def update_user(
     data = payload.model_dump(exclude_unset=True)
     if "password" in data:
         user.password_hash = hash_password(data.pop("password"))
+        user.token_version += 1
     for field, value in data.items():
         setattr(user, field, value)
     # snapshot() redacts password_hash, so an audit row never leaks a secret.

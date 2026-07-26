@@ -54,7 +54,9 @@ def build_certificate_pdf(
     centered(height - 40 * mm, "Educa", "Helvetica-Bold", 22, BRAND)
     centered(height - 52 * mm, "CERTIFICADO DE APROVECHAMIENTO", "Helvetica", 13, MUTED)
 
-    centered(height - 78 * mm, "Se otorga el presente certificado a", "Helvetica", 12, INK)
+    centered(
+        height - 78 * mm, "Se otorga el presente certificado a", "Helvetica", 12, INK
+    )
     centered(height - 96 * mm, student_name, "Helvetica-Bold", 26, BRAND_DARK)
 
     centered(

@@ -37,7 +37,11 @@ DANGER = colors.HexColor("#dc2626")
 DANGER_TINT = colors.HexColor("#fef2f2")
 LINE = colors.HexColor("#e2e8f0")
 
-PERIOD_LABEL = {"day": "Reporte diario", "week": "Reporte semanal", "month": "Reporte mensual"}
+PERIOD_LABEL = {
+    "day": "Reporte diario",
+    "week": "Reporte semanal",
+    "month": "Reporte mensual",
+}
 
 
 def _pct(rate: float | None) -> str:
@@ -52,19 +56,33 @@ def _styles() -> dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
     return {
         "h2": ParagraphStyle(
-            "h2", parent=base["Heading2"], textColor=INK, fontSize=12, spaceBefore=6,
+            "h2",
+            parent=base["Heading2"],
+            textColor=INK,
+            fontSize=12,
+            spaceBefore=6,
             spaceAfter=6,
         ),
         "kpi_value": ParagraphStyle(
-            "kpi_value", alignment=TA_CENTER, fontName="Helvetica-Bold", fontSize=18,
-            textColor=BRAND_DARK, leading=20,
+            "kpi_value",
+            alignment=TA_CENTER,
+            fontName="Helvetica-Bold",
+            fontSize=18,
+            textColor=BRAND_DARK,
+            leading=20,
         ),
         "kpi_label": ParagraphStyle(
-            "kpi_label", alignment=TA_CENTER, fontName="Helvetica", fontSize=8,
-            textColor=MUTED, leading=10,
+            "kpi_label",
+            alignment=TA_CENTER,
+            fontName="Helvetica",
+            fontSize=8,
+            textColor=MUTED,
+            leading=10,
         ),
         "cell": ParagraphStyle("cell", fontName="Helvetica", fontSize=9, textColor=INK),
-        "muted": ParagraphStyle("muted", fontName="Helvetica", fontSize=9, textColor=MUTED),
+        "muted": ParagraphStyle(
+            "muted", fontName="Helvetica", fontSize=9, textColor=MUTED
+        ),
     }
 
 
@@ -156,9 +174,7 @@ def build_report_pdf(report: Report) -> bytes:
         rightMargin=18 * mm,
         title=f"Educa — {title}",
     )
-    frame = Frame(
-        doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="body"
-    )
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="body")
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_decorate)])
 
     story: list = [_kpi_row(report, st), Spacer(1, 8 * mm)]

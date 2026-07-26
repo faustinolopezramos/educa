@@ -97,7 +97,9 @@ def test_a_missing_timestamp_is_rejected(client, secret, zoom_meeting):
     body = b'{"event":"meeting.ended","object":{"id":"zoom-123"}}'
     headers = zoom_headers(body)
     del headers["x-zm-request-timestamp"]
-    assert client.post("/webhooks/zoom", content=body, headers=headers).status_code == 401
+    assert (
+        client.post("/webhooks/zoom", content=body, headers=headers).status_code == 401
+    )
 
 
 def test_a_replayed_event_is_rejected_even_though_it_is_signed(

@@ -5,9 +5,13 @@ import type { Certificate, CourseEvaluation, FinalGrade, Grade } from "../types"
 import { useList } from "./common";
 
 // ---- Grades ----
+// Shared with the optimistic updates below, so a future change to this key
+// can't silently desync the cache read from the cache write.
+export const GRADES_ALL_KEY = ["grades", "all"] as const;
+
 export const useGrades = (enrollmentId?: number) =>
   useList<Grade>(
-    ["grades", enrollmentId ?? "all"],
+    enrollmentId ? ["grades", enrollmentId] : [...GRADES_ALL_KEY],
     enrollmentId ? `/grades?enrollment_id=${enrollmentId}` : "/grades",
   );
 
@@ -20,7 +24,29 @@ export function useCreateGrade() {
       score: number;
       session_id?: number | null;
     }) => (await api.post<Grade>("/grades", payload)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["grades"] }),
+    onMutate: async (payload) => {
+      const key = GRADES_ALL_KEY;
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData<Grade[]>(key);
+      if (prev) {
+        const optimistic: Grade = {
+          id: -Date.now(),
+          enrollment_id: payload.enrollment_id,
+          session_id: payload.session_id ?? null,
+          evaluation_name: payload.evaluation_name,
+          score: payload.score,
+        };
+        qc.setQueryData<Grade[]>(key, [...prev, optimistic]);
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(GRADES_ALL_KEY, ctx.prev);
+    },
+    onSettled: (_d, _e, v) => {
+      qc.invalidateQueries({ queryKey: ["grades", v.enrollment_id] });
+      qc.invalidateQueries({ queryKey: GRADES_ALL_KEY });
+    },
   });
 }
 
@@ -35,7 +61,22 @@ export function useUpdateGrade() {
       evaluation_name?: string;
       score?: number;
     }) => (await api.patch<Grade>(`/grades/${id}`, patch)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["grades"] }),
+    onMutate: async ({ id, ...patch }) => {
+      const key = GRADES_ALL_KEY;
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData<Grade[]>(key);
+      if (prev) {
+        qc.setQueryData<Grade[]>(
+          key,
+          prev.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+        );
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(GRADES_ALL_KEY, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["grades"] }),
   });
 }
 

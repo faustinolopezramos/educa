@@ -13,8 +13,10 @@ import {
   Select,
 } from "../components/ui";
 import { GradeTable } from "../features/grades/GradeTable";
+import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
 import { apiErrorMessage } from "../lib/api";
+import { SCORE_MAX, SCORE_MIN, DAILY_EVALUATION } from "../lib/constants";
 import { dayName, formatTime, todayLocal } from "../lib/format";
 import { notify } from "../lib/toast";
 import {
@@ -40,8 +42,15 @@ import type {
   ClassSession,
   Enrollment,
   Grade,
+  Modality,
   Schedule,
 } from "../lib/types";
+
+const MODALITY_LABELS: Record<Modality, string> = {
+  presencial: "Presencial",
+  semi_presencial: "Semi presencial",
+  virtual: "Virtual",
+};
 
 function onMutationError(fallback: string) {
   return (e: unknown) => notify(apiErrorMessage(e, fallback), "error");
@@ -71,6 +80,14 @@ export default function TeacherDashboard() {
       <div>
         <PageTitle subtitle="Solo tus cursos">Reporte de mis clases</PageTitle>
         <ReportView />
+      </div>
+    );
+  }
+  if (section === "perfil") {
+    return (
+      <div>
+        <PageTitle subtitle="Cuenta">Mi perfil</PageTitle>
+        <ProfilePanel />
       </div>
     );
   }
@@ -243,9 +260,6 @@ function NowBar({
   );
 }
 
-// Daily grade recorded per class session.
-const DAILY_EVALUATION = "Nota del día";
-
 function ClassDetail({ schedule }: { schedule: Schedule }) {
   const { data: enrollments = [] } = useEnrollments(schedule.course_id);
   const { data: students = [] } = useCourseStudents(schedule.course_id);
@@ -263,6 +277,9 @@ function ClassDetail({ schedule }: { schedule: Schedule }) {
     const todays = sessions.find((s) => s.date === today);
     const past = [...sessions].reverse().find((s) => s.date <= today);
     setSessionId((todays ?? past ?? sessions[0]).id);
+    // Only re-run when the session count or the schedule changes — `sessions`
+    // is a new array on every background refetch, and depending on it directly
+    // would silently reset a teacher's manual session selection back to "hoy".
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions.length, schedule.id]);
 
@@ -343,7 +360,7 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
   const { data: proposals = [] } = useLocationProposals();
   const propose = useProposeLocation();
 
-  const [modality, setModality] = useState<"presencial" | "virtual">(schedule.modality);
+  const [modality, setModality] = useState<Modality>(schedule.modality);
   const [joinUrl, setJoinUrl] = useState(schedule.join_url ?? "");
   const [roomId, setRoomId] = useState(schedule.room_id ?? 0);
 
@@ -359,7 +376,7 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
         scheduleId: schedule.id,
         modality,
         join_url: modality === "virtual" ? joinUrl : null,
-        room_id: modality === "presencial" ? roomId || null : null,
+        room_id: modality !== "virtual" ? roomId || null : null,
       },
       {
         onSuccess: () => notify("Propuesta enviada para aprobación", "success"),
@@ -389,7 +406,9 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
           )
         ) : (
           <>
-            <Badge color="slate">Presencial</Badge>
+            <Badge color="slate">
+              {schedule.modality === "semi_presencial" ? "Semi presencial" : "Presencial"}
+            </Badge>
             <span className="text-slate-600">
               {roomName(schedule.room_id) ?? "sin aula"}
             </span>
@@ -405,14 +424,14 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
       ) : (
         <div className="space-y-3">
           <div className="flex gap-2">
-            {(["presencial", "virtual"] as const).map((m) => (
+            {(["presencial", "semi_presencial", "virtual"] as const).map((m) => (
               <Button
                 key={m}
                 variant={modality === m ? "primary" : "secondary"}
                 className="text-xs"
                 onClick={() => setModality(m)}
               >
-                {m === "virtual" ? "Virtual" : "Presencial"}
+                {MODALITY_LABELS[m]}
               </Button>
             ))}
           </div>
@@ -665,9 +684,6 @@ function AttendanceMarks({
     </div>
   );
 }
-
-const SCORE_MIN = 0;
-const SCORE_MAX = 10;
 
 function DailyGradeInput({
   enrollmentId,

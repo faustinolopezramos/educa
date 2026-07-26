@@ -11,9 +11,7 @@ class TeacherLanguage(Base):
 
     __tablename__ = "teacher_languages"
     __table_args__ = (
-        UniqueConstraint(
-            "teacher_id", "language_id", name="uq_teacher_language"
-        ),
+        UniqueConstraint("teacher_id", "language_id", name="uq_teacher_language"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

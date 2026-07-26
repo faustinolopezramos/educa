@@ -18,7 +18,9 @@ def session_a(client, world):
     """A concrete class session of course_a (teacher_a's Monday class)."""
     headers = auth(client, "admin@test.com")
     res = client.post(
-        "/sessions/generate", headers=headers, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=headers,
+        json={"schedule_id": world["schedule_a"].id},
     )
     assert res.status_code == 200, res.text
     return res.json()[0]
@@ -32,9 +34,13 @@ def test_correcting_a_mark_updates_it_instead_of_adding_a_second_row(
     enrollment_id = world["enrollment"].id
     base = {"enrollment_id": enrollment_id, "session_id": session_a["id"]}
 
-    first = client.post("/attendance", headers=headers, json={**base, "status": "present"})
+    first = client.post(
+        "/attendance", headers=headers, json={**base, "status": "present"}
+    )
     assert first.status_code == 201, first.text
-    second = client.post("/attendance", headers=headers, json={**base, "status": "late"})
+    second = client.post(
+        "/attendance", headers=headers, json={**base, "status": "late"}
+    )
     assert second.status_code == 200, "correcting an existing mark is not a creation"
     assert second.json()["id"] == first.json()["id"]
 
@@ -49,7 +55,9 @@ def test_correcting_a_mark_updates_it_instead_of_adding_a_second_row(
 def test_marking_different_sessions_creates_separate_rows(client, world):
     headers = auth(client, "admin@test.com")
     sessions = client.post(
-        "/sessions/generate", headers=headers, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=headers,
+        json={"schedule_id": world["schedule_a"].id},
     ).json()
     assert len(sessions) >= 2
     t = auth(client, "teacher_a@test.com")
@@ -57,7 +65,11 @@ def test_marking_different_sessions_creates_separate_rows(client, world):
         res = client.post(
             "/attendance",
             headers=t,
-            json={"enrollment_id": world["enrollment"].id, "session_id": s["id"], "status": "present"},
+            json={
+                "enrollment_id": world["enrollment"].id,
+                "session_id": s["id"],
+                "status": "present",
+            },
         )
         assert res.status_code == 201
     rows = client.get(
@@ -70,12 +82,18 @@ def test_a_student_cannot_be_marked_for_another_courses_session(client, world):
     """session_b belongs to course_b; the enrollment is in course_a."""
     headers = auth(client, "admin@test.com")
     session_b = client.post(
-        "/sessions/generate", headers=headers, json={"schedule_id": world["schedule_b"].id}
+        "/sessions/generate",
+        headers=headers,
+        json={"schedule_id": world["schedule_b"].id},
     ).json()[0]
     res = client.post(
         "/attendance",
         headers=headers,
-        json={"enrollment_id": world["enrollment"].id, "session_id": session_b["id"], "status": "present"},
+        json={
+            "enrollment_id": world["enrollment"].id,
+            "session_id": session_b["id"],
+            "status": "present",
+        },
     )
     assert res.status_code == 400
 
@@ -105,12 +123,21 @@ def test_a_session_grade_and_a_course_grade_coexist(client, world, session_a):
     r1 = client.post(
         "/grades",
         headers=headers,
-        json={"enrollment_id": enrollment_id, "evaluation_name": "Participación", "score": 8, "session_id": session_a["id"]},
+        json={
+            "enrollment_id": enrollment_id,
+            "evaluation_name": "Participación",
+            "score": 8,
+            "session_id": session_a["id"],
+        },
     )
     r2 = client.post(
         "/grades",
         headers=headers,
-        json={"enrollment_id": enrollment_id, "evaluation_name": "Participación", "score": 6},
+        json={
+            "enrollment_id": enrollment_id,
+            "evaluation_name": "Participación",
+            "score": 6,
+        },
     )
     assert r1.status_code == 201 and r2.status_code == 201
     rows = client.get(f"/grades?enrollment_id={enrollment_id}", headers=headers).json()
@@ -137,7 +164,11 @@ def test_a_teacher_cannot_grade_a_course_they_do_not_teach(client, world):
     res = client.post(
         "/grades",
         headers=headers,
-        json={"enrollment_id": world["enrollment"].id, "evaluation_name": "Examen 1", "score": 10},
+        json={
+            "enrollment_id": world["enrollment"].id,
+            "evaluation_name": "Examen 1",
+            "score": 10,
+        },
     )
     assert res.status_code == 403
 
@@ -147,6 +178,10 @@ def test_a_teacher_cannot_mark_attendance_for_another_course(client, world, sess
     res = client.post(
         "/attendance",
         headers=headers,
-        json={"enrollment_id": world["enrollment"].id, "session_id": session_a["id"], "status": "present"},
+        json={
+            "enrollment_id": world["enrollment"].id,
+            "session_id": session_a["id"],
+            "status": "present",
+        },
     )
     assert res.status_code == 403

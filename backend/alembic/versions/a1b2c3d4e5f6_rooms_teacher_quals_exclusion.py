@@ -4,11 +4,11 @@ Revision ID: a1b2c3d4e5f6
 Revises: d96770d01d1c
 Create Date: 2026-07-14 14:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f6"
@@ -94,9 +94,7 @@ def upgrade() -> None:
     )
 
     # --- users: teaching-hours cap ---
-    op.add_column(
-        "users", sa.Column("max_weekly_hours", sa.Integer(), nullable=True)
-    )
+    op.add_column("users", sa.Column("max_weekly_hours", sa.Integer(), nullable=True))
 
     # --- schedules: room + denormalized term ---
     op.add_column("schedules", sa.Column("room_id", sa.Integer(), nullable=True))
@@ -115,14 +113,12 @@ def upgrade() -> None:
     )
 
     # Backfill term bounds from the parent course for existing rows.
-    op.execute(
-        """
+    op.execute("""
         UPDATE schedules s
         SET term_start = c.start_date, term_end = c.end_date
         FROM courses c
         WHERE s.course_id = c.id
-        """
-    )
+        """)
 
     # --- exclusion constraints (race-proof double-booking guard) ---
     op.execute(_TEACHER_EXCLUDE)
@@ -130,7 +126,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE schedules DROP CONSTRAINT IF EXISTS ex_schedule_room_overlap")
+    op.execute(
+        "ALTER TABLE schedules DROP CONSTRAINT IF EXISTS ex_schedule_room_overlap"
+    )
     op.execute(
         "ALTER TABLE schedules DROP CONSTRAINT IF EXISTS ex_schedule_teacher_overlap"
     )

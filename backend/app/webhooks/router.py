@@ -72,7 +72,9 @@ def _signature_is_valid(provider: ProviderName, request: Request, body: bytes) -
             logger.warning("Rejected zoom webhook: stale or unparsable timestamp")
             return False
         message = b"v0:" + timestamp.encode() + b":" + body
-        expected = "v0=" + hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+        expected = (
+            "v0=" + hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+        )
         return hmac.compare_digest(expected, signature)
 
     if provider is ProviderName.google:
@@ -88,9 +90,7 @@ def _find_meeting(db: Session, external_id: str | None) -> VirtualMeeting | None
     if not external_id:
         return None
     return db.scalar(
-        select(VirtualMeeting).where(
-            VirtualMeeting.external_meeting_id == external_id
-        )
+        select(VirtualMeeting).where(VirtualMeeting.external_meeting_id == external_id)
     )
 
 

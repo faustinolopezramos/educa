@@ -6,7 +6,9 @@ from tests.conftest import auth
 # ---------------- Course roster (what the teacher dashboard needs) ----------------
 def test_teacher_can_list_the_students_of_their_own_course(client, world):
     headers = auth(client, "teacher_a@test.com")
-    res = client.get(f"/catalog/courses/{world['course_a'].id}/students", headers=headers)
+    res = client.get(
+        f"/catalog/courses/{world['course_a'].id}/students", headers=headers
+    )
     assert res.status_code == 200
     body = res.json()
     assert [s["full_name"] for s in body] == ["Test student"]
@@ -16,25 +18,34 @@ def test_teacher_can_list_the_students_of_their_own_course(client, world):
 
 def test_teacher_cannot_list_the_students_of_another_course(client, world):
     headers = auth(client, "teacher_a@test.com")
-    res = client.get(f"/catalog/courses/{world['course_b'].id}/students", headers=headers)
+    res = client.get(
+        f"/catalog/courses/{world['course_b'].id}/students", headers=headers
+    )
     assert res.status_code == 403
 
 
 def test_student_cannot_list_a_roster(client, world):
     headers = auth(client, "student@test.com")
-    res = client.get(f"/catalog/courses/{world['course_a'].id}/students", headers=headers)
+    res = client.get(
+        f"/catalog/courses/{world['course_a'].id}/students", headers=headers
+    )
     assert res.status_code == 403
 
 
 def test_admin_can_list_any_roster(client, world):
     headers = auth(client, "admin@test.com")
-    res = client.get(f"/catalog/courses/{world['course_b'].id}/students", headers=headers)
+    res = client.get(
+        f"/catalog/courses/{world['course_b'].id}/students", headers=headers
+    )
     assert res.status_code == 200
 
 
 def test_teachers_may_not_read_the_full_user_directory(client, world):
     headers = auth(client, "teacher_a@test.com")
-    assert client.get("/users", params={"role": "student"}, headers=headers).status_code == 403
+    assert (
+        client.get("/users", params={"role": "student"}, headers=headers).status_code
+        == 403
+    )
 
 
 # ---------------- Enrollments ----------------
@@ -101,7 +112,11 @@ def test_grade_score_must_be_within_the_advertised_scale(client, world):
         res = client.post(
             "/grades",
             headers=headers,
-            json={"enrollment_id": enrollment_id, "evaluation_name": "T1", "score": bad},
+            json={
+                "enrollment_id": enrollment_id,
+                "evaluation_name": "T1",
+                "score": bad,
+            },
         )
         assert res.status_code == 422, f"score={bad} should be rejected"
 
@@ -127,7 +142,11 @@ def test_grade_update_is_also_bounded(client, world):
     created = client.post(
         "/grades",
         headers=headers,
-        json={"enrollment_id": world["enrollment"].id, "evaluation_name": "T", "score": 5},
+        json={
+            "enrollment_id": world["enrollment"].id,
+            "evaluation_name": "T",
+            "score": 5,
+        },
     ).json()
     res = client.patch(f"/grades/{created['id']}", headers=headers, json={"score": 99})
     assert res.status_code == 422
@@ -175,7 +194,7 @@ def test_a_password_longer_than_bcrypt_can_hash_is_rejected(client, world):
 
 
 def test_the_password_limit_counts_bytes_not_characters(client, world):
-    """"é" is two bytes: 40 of them exceed bcrypt's limit while looking short."""
+    """ "é" is two bytes: 40 of them exceed bcrypt's limit while looking short."""
     headers = auth(client, "admin@test.com")
     res = client.post("/users", headers=headers, json=_new_user("é" * 40))
     assert res.status_code == 422
@@ -198,7 +217,9 @@ def test_changing_a_password_is_held_to_the_same_rule(client, world):
 
 # ---------------- Webhooks ----------------
 def test_webhook_without_a_signature_is_rejected(client, world):
-    res = client.post("/webhooks/zoom", json={"event": "meeting.ended", "meeting_id": "x"})
+    res = client.post(
+        "/webhooks/zoom", json={"event": "meeting.ended", "meeting_id": "x"}
+    )
     assert res.status_code == 401
 
 

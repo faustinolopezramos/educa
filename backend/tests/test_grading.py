@@ -9,7 +9,9 @@ from tests.conftest import auth
 def session_a(client, world):
     admin = auth(client, "admin@test.com")
     return client.post(
-        "/sessions/generate", headers=admin, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=admin,
+        json={"schedule_id": world["schedule_a"].id},
     ).json()[0]
 
 
@@ -39,8 +41,16 @@ def test_weights_change_the_final_grade(client, world):
     cid = world["course_a"].id
     eid = world["enrollment"].id
     # Examen final worth 3x the daily grade.
-    client.post(f"/catalog/courses/{cid}/evaluations", headers=admin, json={"name": "Examen final", "weight": 3})
-    client.post(f"/catalog/courses/{cid}/evaluations", headers=admin, json={"name": "Participación", "weight": 1})
+    client.post(
+        f"/catalog/courses/{cid}/evaluations",
+        headers=admin,
+        json={"name": "Examen final", "weight": 3},
+    )
+    client.post(
+        f"/catalog/courses/{cid}/evaluations",
+        headers=admin,
+        json={"name": "Participación", "weight": 1},
+    )
 
     _grade(client, teacher, eid, "Participación", 10)
     _grade(client, teacher, eid, "Examen final", 6)
@@ -55,7 +65,9 @@ def test_daily_grades_average_into_one_component(client, world, db):
     admin = auth(client, "admin@test.com")
     teacher = auth(client, "teacher_a@test.com")
     sessions = client.post(
-        "/sessions/generate", headers=admin, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=admin,
+        json={"schedule_id": world["schedule_a"].id},
     ).json()
     eid = world["enrollment"].id
     _grade(client, teacher, eid, "Nota del día", 4, session_id=sessions[0]["id"])
@@ -72,7 +84,9 @@ def test_daily_grades_average_into_one_component(client, world, db):
 
 def test_no_grades_means_no_final_and_not_passed(client, world):
     teacher = auth(client, "teacher_a@test.com")
-    body = client.get(f"/enrollments/{world['enrollment'].id}/final-grade", headers=teacher).json()
+    body = client.get(
+        f"/enrollments/{world['enrollment'].id}/final-grade", headers=teacher
+    ).json()
     assert body["final_score"] is None
     assert body["passed"] is False
 
@@ -81,17 +95,29 @@ def test_a_student_sees_their_own_final_grade_but_not_others(client, world):
     admin = auth(client, "admin@test.com")
     _grade(client, admin, world["enrollment"].id, "Examen", 7)
     student = auth(client, "student@test.com")
-    assert client.get(f"/enrollments/{world['enrollment'].id}/final-grade", headers=student).status_code == 200
+    assert (
+        client.get(
+            f"/enrollments/{world['enrollment'].id}/final-grade", headers=student
+        ).status_code
+        == 200
+    )
     # The outsider is not on this enrollment.
     outsider = auth(client, "outsider@test.com")
-    assert client.get(f"/enrollments/{world['enrollment'].id}/final-grade", headers=outsider).status_code == 404
+    assert (
+        client.get(
+            f"/enrollments/{world['enrollment'].id}/final-grade", headers=outsider
+        ).status_code
+        == 404
+    )
 
 
 # ---------------- Certificates ----------------
 def test_a_passing_student_gets_a_certificate(client, world):
     admin = auth(client, "admin@test.com")
     _grade(client, admin, world["enrollment"].id, "Examen", 9)
-    res = client.post(f"/enrollments/{world['enrollment'].id}/certificate", headers=admin)
+    res = client.post(
+        f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+    )
     assert res.status_code == 201, res.text
     cert = res.json()
     assert cert["code"].startswith("EDUCA-")
@@ -101,7 +127,9 @@ def test_a_passing_student_gets_a_certificate(client, world):
 def test_a_failing_student_cannot_get_a_certificate(client, world):
     admin = auth(client, "admin@test.com")
     _grade(client, admin, world["enrollment"].id, "Examen", 3)
-    res = client.post(f"/enrollments/{world['enrollment'].id}/certificate", headers=admin)
+    res = client.post(
+        f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+    )
     assert res.status_code == 409
     assert res.json()["detail"]["reason"] == "not_passed"
 
@@ -109,14 +137,26 @@ def test_a_failing_student_cannot_get_a_certificate(client, world):
 def test_a_certificate_cannot_be_issued_twice(client, world):
     admin = auth(client, "admin@test.com")
     _grade(client, admin, world["enrollment"].id, "Examen", 8)
-    assert client.post(f"/enrollments/{world['enrollment'].id}/certificate", headers=admin).status_code == 201
-    assert client.post(f"/enrollments/{world['enrollment'].id}/certificate", headers=admin).status_code == 409
+    assert (
+        client.post(
+            f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+        ).status_code
+        == 409
+    )
 
 
 def test_certificate_pdf_downloads_for_the_owner(client, world):
     admin = auth(client, "admin@test.com")
     _grade(client, admin, world["enrollment"].id, "Examen", 8)
-    cert = client.post(f"/enrollments/{world['enrollment'].id}/certificate", headers=admin).json()
+    cert = client.post(
+        f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+    ).json()
     student = auth(client, "student@test.com")
     res = client.get(f"/certificates/{cert['id']}/pdf", headers=student)
     assert res.status_code == 200
@@ -124,10 +164,49 @@ def test_certificate_pdf_downloads_for_the_owner(client, world):
     assert res.content[:5] == b"%PDF-"
 
 
+def test_certificate_pdf_downloads_for_the_teaching_teacher(client, world):
+    admin = auth(client, "admin@test.com")
+    _grade(client, admin, world["enrollment"].id, "Examen", 8)
+    cert = client.post(
+        f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+    ).json()
+    teacher_a = auth(client, "teacher_a@test.com")
+    res = client.get(f"/certificates/{cert['id']}/pdf", headers=teacher_a)
+    assert res.status_code == 200
+    assert res.content[:5] == b"%PDF-"
+
+
+def test_certificate_pdf_denied_for_a_teacher_who_does_not_teach_the_course(
+    client, world
+):
+    """The certificate belongs to course_a; teacher_b only teaches course_b."""
+    admin = auth(client, "admin@test.com")
+    _grade(client, admin, world["enrollment"].id, "Examen", 8)
+    cert = client.post(
+        f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+    ).json()
+    teacher_b = auth(client, "teacher_b@test.com")
+    res = client.get(f"/certificates/{cert['id']}/pdf", headers=teacher_b)
+    assert res.status_code == 404
+
+
+def test_certificate_pdf_denied_for_an_outsider_student(client, world):
+    admin = auth(client, "admin@test.com")
+    _grade(client, admin, world["enrollment"].id, "Examen", 8)
+    cert = client.post(
+        f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+    ).json()
+    outsider = auth(client, "outsider@test.com")
+    res = client.get(f"/certificates/{cert['id']}/pdf", headers=outsider)
+    assert res.status_code == 404
+
+
 def test_certificate_verification_by_code(client, world):
     admin = auth(client, "admin@test.com")
     _grade(client, admin, world["enrollment"].id, "Examen", 8)
-    cert = client.post(f"/enrollments/{world['enrollment'].id}/certificate", headers=admin).json()
+    cert = client.post(
+        f"/enrollments/{world['enrollment'].id}/certificate", headers=admin
+    ).json()
     student = auth(client, "student@test.com")
     res = client.get(f"/certificates/{cert['code']}", headers=student)
     assert res.status_code == 200
@@ -138,4 +217,9 @@ def test_only_admin_issues_certificates(client, world):
     admin = auth(client, "admin@test.com")
     _grade(client, admin, world["enrollment"].id, "Examen", 8)
     teacher = auth(client, "teacher_a@test.com")
-    assert client.post(f"/enrollments/{world['enrollment'].id}/certificate", headers=teacher).status_code == 403
+    assert (
+        client.post(
+            f"/enrollments/{world['enrollment'].id}/certificate", headers=teacher
+        ).status_code
+        == 403
+    )

@@ -14,6 +14,7 @@ import { RoomsPanel } from "../features/admin/RoomsPanel";
 import { SchedulesPanel } from "../features/admin/SchedulesPanel";
 import { TeachersPanel } from "../features/admin/TeachersPanel";
 import { UsersPanel } from "../features/admin/UsersPanel";
+import { ProfilePanel } from "../features/profile/ProfilePanel";
 
 const SECTION_TITLES: Record<string, string> = {
   pendientes: "Pendientes",
@@ -27,6 +28,7 @@ const SECTION_TITLES: Record<string, string> = {
   holidays: "Festivos",
   reports: "Reportes",
   audit: "Auditoría",
+  perfil: "Mi perfil",
 };
 
 export default function AdminDashboard() {
@@ -47,6 +49,7 @@ export default function AdminDashboard() {
     holidays: <HolidaysPanel />,
     reports: <ReportView />,
     audit: <AuditPanel />,
+    perfil: <ProfilePanel />,
   };
 
   return (

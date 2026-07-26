@@ -37,7 +37,9 @@ def test_admin_assigns_and_lists_a_teacher(client, db):
     assert res.status_code == 201, res.text
     assert res.json()["teacher_name"] == teacher.full_name
 
-    listed = client.get(f"/catalog/courses/{course.id}/teachers", headers=headers).json()
+    listed = client.get(
+        f"/catalog/courses/{course.id}/teachers", headers=headers
+    ).json()
     assert [t["teacher_id"] for t in listed] == [teacher.id]
 
 

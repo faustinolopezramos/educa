@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import decode_access_token
+from app.core.security import decode_token
 from app.models import (
     CourseTeacher,
     Enrollment,
@@ -28,8 +28,8 @@ _credentials_exc = HTTPException(
 def get_current_user(
     token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
-    payload = decode_access_token(token)
-    if payload is None:
+    payload = decode_token(token)
+    if payload is None or payload.get("type") != "access":
         raise _credentials_exc
     sub = payload.get("sub")
     if sub is None:

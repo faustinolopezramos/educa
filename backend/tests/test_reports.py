@@ -40,27 +40,42 @@ def marked_session(client, world):
     """One generated session of course_a with the student marked present."""
     admin = auth(client, "admin@test.com")
     sessions = client.post(
-        "/sessions/generate", headers=admin, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=admin,
+        json={"schedule_id": world["schedule_a"].id},
     ).json()
     session = sessions[0]
     teacher = auth(client, "teacher_a@test.com")
     client.post(
         "/attendance",
         headers=teacher,
-        json={"enrollment_id": world["enrollment"].id, "session_id": session["id"], "status": "present"},
+        json={
+            "enrollment_id": world["enrollment"].id,
+            "session_id": session["id"],
+            "status": "present",
+        },
     )
     client.post(
         "/grades",
         headers=teacher,
-        json={"enrollment_id": world["enrollment"].id, "evaluation_name": "Nota del día", "score": 9, "session_id": session["id"]},
+        json={
+            "enrollment_id": world["enrollment"].id,
+            "evaluation_name": "Nota del día",
+            "score": 9,
+            "session_id": session["id"],
+        },
     )
     return session
 
 
-def test_admin_month_report_counts_the_session_and_attendance(client, world, marked_session):
+def test_admin_month_report_counts_the_session_and_attendance(
+    client, world, marked_session
+):
     admin = auth(client, "admin@test.com")
     res = client.get(
-        "/reports", headers=admin, params={"period": "month", "anchor": marked_session["date"]}
+        "/reports",
+        headers=admin,
+        params={"period": "month", "anchor": marked_session["date"]},
     )
     assert res.status_code == 200, res.text
     body = res.json()
@@ -73,7 +88,9 @@ def test_admin_month_report_counts_the_session_and_attendance(client, world, mar
 def test_a_day_report_outside_the_session_is_empty(client, world, marked_session):
     admin = auth(client, "admin@test.com")
     # A date guaranteed to have no session (the day before the term starts).
-    empty_day = (date.fromisoformat(marked_session["date"]) - timedelta(days=1)).isoformat()
+    empty_day = (
+        date.fromisoformat(marked_session["date"]) - timedelta(days=1)
+    ).isoformat()
     body = client.get(
         "/reports", headers=admin, params={"period": "day", "anchor": empty_day}
     ).json()
@@ -85,7 +102,9 @@ def test_a_student_report_is_scoped_to_their_own_courses(client, world, marked_s
     """The outsider is enrolled in nothing, so their report is empty."""
     outsider = auth(client, "outsider@test.com")
     body = client.get(
-        "/reports", headers=outsider, params={"period": "month", "anchor": marked_session["date"]}
+        "/reports",
+        headers=outsider,
+        params={"period": "month", "anchor": marked_session["date"]},
     ).json()
     assert body["sessions_total"] == 0
 
@@ -93,7 +112,9 @@ def test_a_student_report_is_scoped_to_their_own_courses(client, world, marked_s
 def test_an_absent_student_shows_up_as_at_risk(client, world):
     admin = auth(client, "admin@test.com")
     sessions = client.post(
-        "/sessions/generate", headers=admin, json={"schedule_id": world["schedule_a"].id}
+        "/sessions/generate",
+        headers=admin,
+        json={"schedule_id": world["schedule_a"].id},
     ).json()
     teacher = auth(client, "teacher_a@test.com")
     # Mark absent across the first few sessions → attendance rate 0.
@@ -101,10 +122,16 @@ def test_an_absent_student_shows_up_as_at_risk(client, world):
         client.post(
             "/attendance",
             headers=teacher,
-            json={"enrollment_id": world["enrollment"].id, "session_id": s["id"], "status": "absent"},
+            json={
+                "enrollment_id": world["enrollment"].id,
+                "session_id": s["id"],
+                "status": "absent",
+            },
         )
     body = client.get(
-        "/reports", headers=admin, params={"period": "month", "anchor": sessions[0]["date"]}
+        "/reports",
+        headers=admin,
+        params={"period": "month", "anchor": sessions[0]["date"]},
     ).json()
     at_risk = body["at_risk"]
     assert len(at_risk) == 1
@@ -155,7 +182,9 @@ def test_a_teacher_report_only_covers_their_courses(client, world, marked_sessio
     """teacher_b teaches course_b (no activity), so their report is empty."""
     tb = auth(client, "teacher_b@test.com")
     body = client.get(
-        "/reports", headers=tb, params={"period": "month", "anchor": marked_session["date"]}
+        "/reports",
+        headers=tb,
+        params={"period": "month", "anchor": marked_session["date"]},
     ).json()
     assert body["sessions_total"] == 0
 
@@ -178,9 +207,7 @@ def test_an_overdue_student_is_blocked_from_the_report(client, world, db):
     assert "pago" in res.json()["detail"].lower()
 
     # The export is gated the same way, so it can't be used as a back door.
-    export = client.get(
-        "/reports/export", headers=student, params={"period": "month"}
-    )
+    export = client.get("/reports/export", headers=student, params={"period": "month"})
     assert export.status_code == 403
 
 

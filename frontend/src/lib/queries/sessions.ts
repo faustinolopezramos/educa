@@ -44,8 +44,8 @@ export function useUpdateSession() {
       topic?: string | null;
     }) => (await api.patch<ClassSession>(`/sessions/${id}`, patch)).data,
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["sessions"] });
       qc.invalidateQueries({ queryKey: ["session", data.id] });
+      qc.invalidateQueries({ queryKey: ["sessions", "mine"] });
     },
   });
 }
@@ -55,7 +55,10 @@ export function useCancelSession() {
   return useMutation({
     mutationFn: async ({ id, reason }: { id: number; reason?: string }) =>
       (await api.post<ClassSession>(`/sessions/${id}/cancel`, { reason })).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions", "mine"] });
+      qc.invalidateQueries({ queryKey: ["sessions", "all"] });
+    },
   });
 }
 
@@ -64,7 +67,10 @@ export function useRescheduleSession() {
   return useMutation({
     mutationFn: async ({ id, new_date }: { id: number; new_date: string }) =>
       (await api.post<ClassSession>(`/sessions/${id}/reschedule`, { new_date })).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions", "mine"] });
+      qc.invalidateQueries({ queryKey: ["sessions", "all"] });
+    },
   });
 }
 

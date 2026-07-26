@@ -4,11 +4,11 @@ Revision ID: e3f4a5b6c7d8
 Revises: d2e3f4a5b6c7
 Create Date: 2026-07-16 11:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = "e3f4a5b6c7d8"
@@ -47,15 +47,12 @@ def _backfill_attendance(conn) -> None:
                 {"c": course_id},
             ).fetchone()
         if sched is None:
-            conn.execute(
-                sa.text("DELETE FROM attendance WHERE id = :i"), {"i": att_id}
-            )
+            conn.execute(sa.text("DELETE FROM attendance WHERE id = :i"), {"i": att_id})
             continue
         schedule_id = sched[0]
         sess = conn.execute(
             sa.text(
-                "SELECT id FROM class_sessions "
-                "WHERE schedule_id = :s AND date = :d"
+                "SELECT id FROM class_sessions " "WHERE schedule_id = :s AND date = :d"
             ),
             {"s": schedule_id, "d": att_date},
         ).fetchone()
@@ -82,9 +79,7 @@ def upgrade() -> None:
     op.add_column("attendance", sa.Column("session_id", sa.Integer(), nullable=True))
     _backfill_attendance(conn)
     op.alter_column("attendance", "session_id", nullable=False)
-    op.drop_constraint(
-        "uq_attendance_enrollment_date", "attendance", type_="unique"
-    )
+    op.drop_constraint("uq_attendance_enrollment_date", "attendance", type_="unique")
     op.create_foreign_key(
         "fk_attendance_session_id",
         "attendance",
@@ -93,11 +88,11 @@ def upgrade() -> None:
         ["id"],
         ondelete="CASCADE",
     )
-    op.create_index(
-        op.f("ix_attendance_session_id"), "attendance", ["session_id"]
-    )
+    op.create_index(op.f("ix_attendance_session_id"), "attendance", ["session_id"])
     op.create_unique_constraint(
-        "uq_attendance_enrollment_session", "attendance", ["enrollment_id", "session_id"]
+        "uq_attendance_enrollment_session",
+        "attendance",
+        ["enrollment_id", "session_id"],
     )
     op.drop_column("attendance", "date")
 
@@ -148,9 +143,7 @@ def downgrade() -> None:
         "FROM class_sessions s WHERE a.session_id = s.id"
     )
     op.alter_column("attendance", "date", nullable=False)
-    op.drop_constraint(
-        "uq_attendance_enrollment_session", "attendance", type_="unique"
-    )
+    op.drop_constraint("uq_attendance_enrollment_session", "attendance", type_="unique")
     op.drop_index(op.f("ix_attendance_session_id"), table_name="attendance")
     op.drop_constraint("fk_attendance_session_id", "attendance", type_="foreignkey")
     op.drop_column("attendance", "session_id")

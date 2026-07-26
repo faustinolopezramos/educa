@@ -21,7 +21,9 @@ def list_holidays(
     _: User = Depends(get_current_user),
 ) -> list[AcademicHoliday]:
     """Readable by anyone: the closed-days calendar is not sensitive."""
-    return list(db.scalars(select(AcademicHoliday).order_by(AcademicHoliday.date)).all())
+    return list(
+        db.scalars(select(AcademicHoliday).order_by(AcademicHoliday.date)).all()
+    )
 
 
 @router.post("", response_model=HolidayRead, status_code=status.HTTP_201_CREATED)

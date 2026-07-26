@@ -27,7 +27,9 @@ def test_a_teacher_proposes_a_virtual_link_and_admin_approves(client, world, db)
     # The schedule is untouched while the proposal is pending.
     admin = auth(client, "admin@test.com")
     before = next(
-        s for s in client.get("/schedules", headers=admin).json() if s["id"] == schedule_id
+        s
+        for s in client.get("/schedules", headers=admin).json()
+        if s["id"] == schedule_id
     )
     assert before["join_url"] is None
 
@@ -38,7 +40,9 @@ def test_a_teacher_proposes_a_virtual_link_and_admin_approves(client, world, db)
     assert approved.json()["status"] == "approved"
 
     after = next(
-        s for s in client.get("/schedules", headers=admin).json() if s["id"] == schedule_id
+        s
+        for s in client.get("/schedules", headers=admin).json()
+        if s["id"] == schedule_id
     )
     assert after["modality"] == "virtual"
     assert after["join_url"] == "https://meet.example.com/abc"
@@ -84,7 +88,8 @@ def test_an_admin_proposal_self_approves(client, world):
     assert res.status_code == 201
     assert res.json()["status"] == "approved"
     after = next(
-        s for s in client.get("/schedules", headers=admin).json()
+        s
+        for s in client.get("/schedules", headers=admin).json()
         if s["id"] == world["schedule_a"].id
     )
     assert after["join_url"] == "https://zoom.example.com/1"
@@ -107,7 +112,8 @@ def test_reject_leaves_the_schedule_untouched(client, world):
     assert res.status_code == 200
     assert res.json()["status"] == "rejected"
     after = next(
-        s for s in client.get("/schedules", headers=admin).json()
+        s
+        for s in client.get("/schedules", headers=admin).json()
         if s["id"] == world["schedule_a"].id
     )
     assert after["join_url"] is None
@@ -134,9 +140,7 @@ def test_a_teacher_cannot_approve(client, world):
         headers=teacher,
         json=_virtual(),
     ).json()
-    res = client.post(
-        f"/location-proposals/{proposal['id']}/approve", headers=teacher
-    )
+    res = client.post(f"/location-proposals/{proposal['id']}/approve", headers=teacher)
     assert res.status_code == 403
 
 
@@ -172,9 +176,13 @@ def test_approving_a_presencial_proposal_checks_room_conflicts(client, world, db
     # A different teacher's schedule in the same room + slot (no teacher clash,
     # so the room is the only thing that can collide).
     other = Schedule(
-        course_id=world["course_b"].id, teacher_id=world["teacher_b"].id,
-        day_of_week=0, start_time=time(9, 0), end_time=time(10, 0),
-        term_start=world["course_b"].start_date, term_end=world["course_b"].end_date,
+        course_id=world["course_b"].id,
+        teacher_id=world["teacher_b"].id,
+        day_of_week=0,
+        start_time=time(9, 0),
+        end_time=time(10, 0),
+        term_start=world["course_b"].start_date,
+        term_end=world["course_b"].end_date,
     )
     db.add(other)
     db.flush()

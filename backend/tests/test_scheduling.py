@@ -91,8 +91,11 @@ def loaded_teacher(db):
     db.add(level)
     db.flush()
     course = Course(
-        level_id=level.id, name="Italiano primavera", max_students=10,
-        start_date=SPRING[0], end_date=SPRING[1],
+        level_id=level.id,
+        name="Italiano primavera",
+        max_students=10,
+        start_date=SPRING[0],
+        end_date=SPRING[1],
     )
     db.add(course)
     db.flush()
@@ -102,9 +105,13 @@ def loaded_teacher(db):
     for day in (0, 1):
         db.add(
             Schedule(
-                course_id=course.id, teacher_id=teacher.id, day_of_week=day,
-                start_time=t(9), end_time=t(11),
-                term_start=SPRING[0], term_end=SPRING[1],
+                course_id=course.id,
+                teacher_id=teacher.id,
+                day_of_week=day,
+                start_time=t(9),
+                end_time=t(11),
+                term_start=SPRING[0],
+                term_end=SPRING[1],
             )
         )
     db.flush()

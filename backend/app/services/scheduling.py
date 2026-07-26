@@ -33,7 +33,10 @@ from app.models import (
 def _minutes(start: time, end: time) -> int:
     """Whole minutes between two same-day times (end assumed after start)."""
     ref = date(2000, 1, 1)
-    return int((datetime.combine(ref, end) - datetime.combine(ref, start)).total_seconds() // 60)
+    return int(
+        (datetime.combine(ref, end) - datetime.combine(ref, start)).total_seconds()
+        // 60
+    )
 
 
 def course_language_id(db: Session, course_id: int) -> int | None:
@@ -121,10 +124,9 @@ def teacher_exceeds_load(
     teacher = db.get(User, teacher_id)
     if teacher is None or teacher.max_weekly_hours is None:
         return False
-    projected = (
-        teacher_weekly_minutes(db, teacher_id, term_start, term_end, exclude_schedule_id)
-        + _minutes(start_time, end_time)
-    )
+    projected = teacher_weekly_minutes(
+        db, teacher_id, term_start, term_end, exclude_schedule_id
+    ) + _minutes(start_time, end_time)
     return projected > teacher.max_weekly_hours * 60
 
 

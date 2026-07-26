@@ -45,9 +45,7 @@ def compute_final_grade(db: Session, enrollment: Enrollment) -> FinalGrade:
         ).all()
     }
 
-    grades = db.scalars(
-        select(Grade).where(Grade.enrollment_id == enrollment.id)
-    ).all()
+    grades = db.scalars(select(Grade).where(Grade.enrollment_id == enrollment.id)).all()
 
     # Average the grades that share an evaluation name into one component score.
     by_name: dict[str, list[float]] = {}

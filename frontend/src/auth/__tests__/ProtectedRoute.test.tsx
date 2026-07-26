@@ -20,11 +20,22 @@ describe("ProtectedRoute", () => {
 
   it("should render children when user is authenticated and loading is false", () => {
     vi.mocked(AuthContext.useAuth).mockReturnValue({
-      user: { id: 1, email: "user@educa.com", role: "student", full_name: "Test", timezone: "UTC" },
+      user: {
+        id: 1,
+        email: "user@educa.com",
+        role: "student",
+        full_name: "Test",
+        timezone: "UTC",
+        max_weekly_hours: null,
+        phone: null,
+        address: null,
+        nationality_id: null,
+      },
       loading: false,
       login: vi.fn(),
       logout: vi.fn(),
       hasRole: vi.fn(),
+      updateUser: vi.fn(),
     });
 
     render(
@@ -43,6 +54,7 @@ describe("ProtectedRoute", () => {
       login: vi.fn(),
       logout: vi.fn(),
       hasRole: vi.fn(),
+      updateUser: vi.fn(),
     });
 
     render(
@@ -61,6 +73,7 @@ describe("ProtectedRoute", () => {
       login: vi.fn(),
       logout: vi.fn(),
       hasRole: vi.fn(),
+      updateUser: vi.fn(),
     });
 
     render(

@@ -1,18 +1,56 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { Course, CourseTeacher, Language, Level, UserBrief } from "../types";
+import type {
+  Course,
+  CourseTeacher,
+  Language,
+  Level,
+  Nationality,
+  TrackKind,
+  UserBrief,
+} from "../types";
 import { useList } from "./common";
 
-// ---- Languages ----
+// ---- Nationalities ----
+export const useNationalities = () =>
+  useList<Nationality>(["nationalities"], "/catalog/nationalities");
+
+export function useCreateNationality() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (name: string) =>
+      (await api.post("/catalog/nationalities", { name })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["nationalities"] }),
+  });
+}
+
+export function useUpdateNationality() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: number; name: string }) =>
+      (await api.patch(`/catalog/nationalities/${id}`, { name })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["nationalities"] }),
+  });
+}
+
+export function useDeleteNationality() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => api.delete(`/catalog/nationalities/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["nationalities"] }),
+  });
+}
+
+// ---- Languages (a "track": Idiomas / Competencias Digitales / Negocios) ----
 export const useLanguages = () =>
   useList<Language>(["languages"], "/catalog/languages");
 
 export function useCreateLanguage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (name: string) =>
-      (await api.post("/catalog/languages", { name })).data,
+    mutationFn: async (payload: { name: string; kind?: TrackKind }) =>
+      (await api.post("/catalog/languages", payload)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["languages"] }),
   });
 }
@@ -20,8 +58,14 @@ export function useCreateLanguage() {
 export function useUpdateLanguage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, name }: { id: number; name: string }) =>
-      (await api.patch(`/catalog/languages/${id}`, { name })).data,
+    mutationFn: async ({
+      id,
+      ...patch
+    }: {
+      id: number;
+      name?: string;
+      kind?: TrackKind;
+    }) => (await api.patch(`/catalog/languages/${id}`, patch)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["languages"] }),
   });
 }

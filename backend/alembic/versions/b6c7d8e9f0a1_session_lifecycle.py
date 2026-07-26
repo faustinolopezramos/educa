@@ -4,11 +4,11 @@ Revision ID: b6c7d8e9f0a1
 Revises: a5b6c7d8e9f0
 Create Date: 2026-07-16 15:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = "b6c7d8e9f0a1"
@@ -26,12 +26,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("date", name="uq_holiday_date"),
     )
-    op.create_index(
-        op.f("ix_academic_holidays_date"), "academic_holidays", ["date"]
-    )
+    op.create_index(op.f("ix_academic_holidays_date"), "academic_holidays", ["date"])
 
     op.add_column(
-        "class_sessions", sa.Column("cancel_reason", sa.String(length=255), nullable=True)
+        "class_sessions",
+        sa.Column("cancel_reason", sa.String(length=255), nullable=True),
     )
     op.add_column(
         "class_sessions", sa.Column("origin_session_id", sa.Integer(), nullable=True)

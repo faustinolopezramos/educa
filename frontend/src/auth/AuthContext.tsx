@@ -7,7 +7,14 @@ import {
   type ReactNode,
 } from "react";
 
-import { api, getToken, setToken } from "../lib/api";
+import {
+  api,
+  getRefreshToken,
+  getToken,
+  LOGOUT_EVENT,
+  onForceLogout,
+  setToken,
+} from "../lib/api";
 import type { LoginResponse, Role, User } from "../lib/types";
 
 interface AuthContextValue {
@@ -16,6 +23,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   hasRole: (...roles: Role[]) => boolean;
+  /** Applies a fresh user object (e.g. after saving profile changes) without a full reload. */
+  updateUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -23,6 +32,16 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  function forceLogout() {
+    setToken(null, null);
+    setUser(null);
+  }
+
+  // Register the force-logout callback so the axios interceptor can call it.
+  useEffect(() => {
+    onForceLogout(forceLogout);
+  }, []);
 
   // Restore the session from a stored token on first load.
   useEffect(() => {
@@ -34,26 +53,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .get<User>("/auth/me")
       .then((res) => setUser(res.data))
-      .catch(() => setToken(null))
+      .catch(() => setToken(null, null))
       .finally(() => setLoading(false));
   }, []);
 
+  // Listen for forced logout (refresh failed).
+  useEffect(() => {
+    function handler() {
+      setUser(null);
+    }
+    window.addEventListener(LOGOUT_EVENT, handler);
+    return () => window.removeEventListener(LOGOUT_EVENT, handler);
+  }, []);
+
   async function login(email: string, password: string): Promise<User> {
-    // Backend expects OAuth2 form fields (username/password).
     const form = new URLSearchParams();
     form.set("username", email);
     form.set("password", password);
     const res = await api.post<LoginResponse>("/auth/login", form, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
-    setToken(res.data.access_token);
+    setToken(res.data.access_token, res.data.refresh_token);
     setUser(res.data.user);
     return res.data.user;
   }
 
   function logout() {
-    setToken(null);
+    // Read the refresh token before clearing it locally, and best-effort ask
+    // the server to revoke it — a "logged out" refresh token shouldn't still
+    // be able to mint new access tokens. Never blocks the local logout: it
+    // must succeed even if this request fails or the backend is unreachable.
+    const refreshToken = getRefreshToken();
+    setToken(null, null);
     setUser(null);
+    if (refreshToken) {
+      try {
+        api.post("/auth/logout", { refresh_token: refreshToken })?.catch?.(() => {});
+      } catch {
+        // Logging out locally must never be blocked by this.
+      }
+    }
   }
 
   function hasRole(...roles: Role[]): boolean {
@@ -61,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, hasRole }),
+    () => ({ user, loading, login, logout, hasRole, updateUser: setUser }),
     [user, loading],
   );
 

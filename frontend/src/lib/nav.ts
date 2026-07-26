@@ -49,6 +49,10 @@ export const NAV: Record<Role, NavGroup[]> = {
         { id: "audit", label: "Auditoría" },
       ],
     },
+    {
+      label: "Cuenta",
+      items: [{ id: "perfil", label: "Mi perfil" }],
+    },
   ],
   teacher: [
     {
@@ -57,6 +61,10 @@ export const NAV: Record<Role, NavGroup[]> = {
         { id: "clases", label: "Mis clases" },
         { id: "reportes", label: "Reporte" },
       ],
+    },
+    {
+      label: "Cuenta",
+      items: [{ id: "perfil", label: "Mi perfil" }],
     },
   ],
   student: [
@@ -67,6 +75,10 @@ export const NAV: Record<Role, NavGroup[]> = {
         { id: "calificaciones", label: "Calificaciones" },
         { id: "reportes", label: "Reporte" },
       ],
+    },
+    {
+      label: "Cuenta",
+      items: [{ id: "perfil", label: "Mi perfil" }],
     },
   ],
 };

@@ -298,17 +298,19 @@ def create_schedule(
             term_start=term_start,
             term_end=term_end,
         ),
-        room_conflicts(
-            db,
-            room_id=payload.room_id,
-            day_of_week=payload.day_of_week,
-            start_time=payload.start_time,
-            end_time=payload.end_time,
-            term_start=term_start,
-            term_end=term_end,
-        )
-        if payload.room_id is not None
-        else [],
+        (
+            room_conflicts(
+                db,
+                room_id=payload.room_id,
+                day_of_week=payload.day_of_week,
+                start_time=payload.start_time,
+                end_time=payload.end_time,
+                term_start=term_start,
+                term_end=term_end,
+            )
+            if payload.room_id is not None
+            else []
+        ),
     )
 
     if not force:
@@ -401,18 +403,20 @@ def update_schedule(
             term_end=term_end,
             exclude_schedule_id=schedule_id,
         ),
-        room_conflicts(
-            db,
-            room_id=new_room,
-            day_of_week=new_day,
-            start_time=new_start,
-            end_time=new_end,
-            term_start=term_start,
-            term_end=term_end,
-            exclude_schedule_id=schedule_id,
-        )
-        if new_room is not None
-        else [],
+        (
+            room_conflicts(
+                db,
+                room_id=new_room,
+                day_of_week=new_day,
+                start_time=new_start,
+                end_time=new_end,
+                term_start=term_start,
+                term_end=term_end,
+                exclude_schedule_id=schedule_id,
+            )
+            if new_room is not None
+            else []
+        ),
     )
 
     if not force:

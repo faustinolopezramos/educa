@@ -4,11 +4,11 @@ Revision ID: d8e9f0a1b2c3
 Revises: c7d8e9f0a1b2
 Create Date: 2026-07-16 17:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = "d8e9f0a1b2c3"
@@ -27,7 +27,9 @@ def upgrade() -> None:
         sa.Column("body", sa.Text(), nullable=False),
         sa.Column("read_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(),
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["recipient_id"], ["users.id"], ondelete="CASCADE"),

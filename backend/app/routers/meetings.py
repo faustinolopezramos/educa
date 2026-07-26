@@ -75,9 +75,7 @@ def _to_read(meeting: VirtualMeeting, user: User) -> VirtualMeetingRead:
 def _require_schedule_ownership(user: User, schedule: Schedule) -> None:
     """Teachers may only touch meetings on schedules they personally teach."""
     if user.role == UserRole.teacher and schedule.teacher_id != user.id:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "No impartes esta clase"
-        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No impartes esta clase")
 
 
 # ---------------- Providers (admin) ----------------
@@ -164,12 +162,20 @@ def create_meeting(
         )
 
     provider = get_provider(provider_row)
-    details = provider.create_meeting(
-        topic=schedule.course.name,
-        start_time=payload.start_time,
-        duration_minutes=duration,
-        join_url=payload.join_url,
-    )
+    try:
+        details = provider.create_meeting(
+            topic=schedule.course.name,
+            start_time=payload.start_time,
+            duration_minutes=duration,
+            join_url=payload.join_url,
+        )
+    except NotImplementedError:
+        # Zoom/Google are registered but still stubs (Phase 1) — a clear 501
+        # beats an opaque 500 while the real integration isn't built yet.
+        raise HTTPException(
+            status.HTTP_501_NOT_IMPLEMENTED,
+            f"La integración con {payload.provider.value} aún no está disponible",
+        )
 
     meeting = VirtualMeeting(
         schedule_id=schedule.id,

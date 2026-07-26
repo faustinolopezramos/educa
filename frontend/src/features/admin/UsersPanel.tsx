@@ -3,7 +3,9 @@ import { useState } from "react";
 import {
   Badge, Button, Card, ConfirmDialog, Field, Input, Modal, Select, Table, Td, Th,
 } from "../../components/ui";
-import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from "../../lib/queries";
+import {
+  useCreateUser, useDeleteUser, useNationalities, useUpdateUser, useUsers,
+} from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { User } from "../../lib/types";
 import { EMAIL_RE, PASSWORD_MIN_LENGTH, onMutationError } from "./shared";
@@ -14,10 +16,14 @@ const EMPTY_USER = {
   role: "student",
   password: "",
   timezone: "UTC",
+  phone: "",
+  address: "",
+  nationality_id: 0,
 };
 
 export function UsersPanel() {
   const { data: users = [] } = useUsers();
+  const { data: nationalities = [] } = useNationalities();
   const create = useCreateUser();
   const del = useDeleteUser();
   const [form, setForm] = useState(EMPTY_USER);
@@ -37,14 +43,22 @@ export function UsersPanel() {
 
   function submit() {
     if (!validate()) return;
-    create.mutate(form as never, {
-      onSuccess: () => {
-        setForm(EMPTY_USER);
-        setErrors({});
-        notify("Usuario creado", "success");
+    create.mutate(
+      {
+        ...form,
+        phone: form.phone.trim() || null,
+        address: form.address.trim() || null,
+        nationality_id: form.nationality_id || null,
+      } as never,
+      {
+        onSuccess: () => {
+          setForm(EMPTY_USER);
+          setErrors({});
+          notify("Usuario creado", "success");
+        },
+        onError: onMutationError("No se pudo crear el usuario"),
       },
-      onError: onMutationError("No se pudo crear el usuario"),
-    });
+    );
   }
 
   return (
@@ -81,6 +95,31 @@ export function UsersPanel() {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
+          </Field>
+          <Field label="Teléfono">
+            <Input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
+          </Field>
+          <Field label="Dirección">
+            <Input
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+            />
+          </Field>
+          <Field label="Nacionalidad">
+            <Select
+              value={form.nationality_id}
+              onChange={(e) => setForm({ ...form, nationality_id: Number(e.target.value) })}
+            >
+              <option value={0}>Sin especificar</option>
+              {nationalities.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Button className="w-full" disabled={create.isPending} onClick={submit}>
             Crear usuario
@@ -155,6 +194,7 @@ export function UsersPanel() {
 
 function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
   const update = useUpdateUser();
+  const { data: nationalities = [] } = useNationalities();
   const [form, setForm] = useState({
     full_name: user.full_name,
     email: user.email,
@@ -162,6 +202,9 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
     timezone: user.timezone,
     max_weekly_hours: user.max_weekly_hours ?? ("" as number | ""),
     password: "",
+    phone: user.phone ?? "",
+    address: user.address ?? "",
+    nationality_id: user.nationality_id ?? 0,
   });
 
   function save() {
@@ -180,6 +223,9 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
       role: form.role,
       timezone: form.timezone,
       max_weekly_hours: form.max_weekly_hours === "" ? null : Number(form.max_weekly_hours),
+      phone: form.phone.trim() || null,
+      address: form.address.trim() || null,
+      nationality_id: form.nationality_id || null,
     };
     if (form.password) patch.password = form.password;
     update.mutate(patch as never, {
@@ -238,6 +284,31 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
+        </Field>
+        <Field label="Teléfono">
+          <Input
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+          />
+        </Field>
+        <Field label="Dirección">
+          <Input
+            value={form.address}
+            onChange={(e) => setForm({ ...form, address: e.target.value })}
+          />
+        </Field>
+        <Field label="Nacionalidad">
+          <Select
+            value={form.nationality_id}
+            onChange={(e) => setForm({ ...form, nationality_id: Number(e.target.value) })}
+          >
+            <option value={0}>Sin especificar</option>
+            {nationalities.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name}
+              </option>
+            ))}
+          </Select>
         </Field>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>

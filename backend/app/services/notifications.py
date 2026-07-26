@@ -34,9 +34,7 @@ def notify(
     outlives the change that raised it.
     """
     for rid in recipient_ids:
-        db.add(
-            Notification(recipient_id=rid, kind=kind, title=title, body=body)
-        )
+        db.add(Notification(recipient_id=rid, kind=kind, title=title, body=body))
     return len(recipient_ids)
 
 
@@ -94,5 +92,3 @@ def notify_teacher_of_at_risk(
             db, teacher_ids, "at_risk", "Alumnos en riesgo en tu curso", body
         )
     return created
-
-

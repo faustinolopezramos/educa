@@ -6,6 +6,10 @@ export const createUser = (overrides?: Partial<User>): User => ({
   full_name: "Test User",
   role: "student",
   timezone: "UTC",
+  max_weekly_hours: null,
+  phone: null,
+  address: null,
+  nationality_id: null,
   ...overrides,
 });
 
@@ -13,6 +17,8 @@ export const createLoginResponse = (
   overrides?: Partial<LoginResponse>,
 ): LoginResponse => ({
   access_token: "test_token_123",
+  refresh_token: "test_refresh_456",
+  token_type: "bearer",
   user: createUser(),
   ...overrides,
 });
@@ -21,9 +27,11 @@ export const createEnrollment = (overrides?: Partial<Enrollment>): Enrollment =>
   id: 1,
   student_id: 1,
   course_id: 1,
+  enrollment_code: "2026-00001",
   status: "active",
   payment_status: "paid",
-  enrolled_at: "2026-01-01T00:00:00Z",
+  attendance_blocked: false,
+  amount: 0,
   ...overrides,
 });
 

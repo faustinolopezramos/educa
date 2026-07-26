@@ -131,9 +131,7 @@ def _pending_or_404(db: Session, proposal_id: int) -> LocationProposal:
     if proposal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Proposal not found")
     if proposal.status is not ProposalStatus.pending:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "La propuesta ya fue revisada"
-        )
+        raise HTTPException(status.HTTP_409_CONFLICT, "La propuesta ya fue revisada")
     return proposal
 
 
@@ -156,7 +154,15 @@ def approve_proposal(
     proposal.status = ProposalStatus.approved
     proposal.reviewed_by = current_user.id
     _apply_to_schedule(schedule, proposal)
-    record(db, current_user, "update", "location_proposal", proposal.id, before, snapshot(proposal))
+    record(
+        db,
+        current_user,
+        "update",
+        "location_proposal",
+        proposal.id,
+        before,
+        snapshot(proposal),
+    )
     db.commit()
     db.refresh(proposal)
     return proposal
@@ -177,7 +183,15 @@ def reject_proposal(
     proposal.status = ProposalStatus.rejected
     proposal.reviewed_by = current_user.id
     proposal.review_note = payload.note
-    record(db, current_user, "update", "location_proposal", proposal.id, before, snapshot(proposal))
+    record(
+        db,
+        current_user,
+        "update",
+        "location_proposal",
+        proposal.id,
+        before,
+        snapshot(proposal),
+    )
     db.commit()
     db.refresh(proposal)
     return proposal

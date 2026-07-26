@@ -12,6 +12,7 @@ from app.models import (
     EnrollmentStatus,
     Language,
     Level,
+    Nationality,
     Schedule,
     User,
     UserRole,
@@ -26,6 +27,9 @@ from app.schemas.catalog import (
     LevelCreate,
     LevelRead,
     LevelUpdate,
+    NationalityCreate,
+    NationalityRead,
+    NationalityUpdate,
 )
 from app.schemas.teacher import CourseTeacherAssign, CourseTeacherRead
 from app.schemas.user import UserBrief
@@ -35,6 +39,63 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 admin_only = require_role(UserRole.admin)
 staff_only = require_role(UserRole.admin, UserRole.teacher)
+
+
+# ---------------- Nationalities ----------------
+@router.get("/nationalities", response_model=list[NationalityRead])
+def list_nationalities(
+    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+) -> list[Nationality]:
+    return list(db.scalars(select(Nationality)).all())
+
+
+@router.post(
+    "/nationalities",
+    response_model=NationalityRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_nationality(
+    payload: NationalityCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(admin_only),
+) -> Nationality:
+    nationality = Nationality(name=payload.name)
+    db.add(nationality)
+    db.commit()
+    db.refresh(nationality)
+    return nationality
+
+
+@router.patch("/nationalities/{nationality_id}", response_model=NationalityRead)
+def update_nationality(
+    nationality_id: int,
+    payload: NationalityUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(admin_only),
+) -> Nationality:
+    nationality = db.get(Nationality, nationality_id)
+    if nationality is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nationality not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(nationality, field, value)
+    db.commit()
+    db.refresh(nationality)
+    return nationality
+
+
+@router.delete(
+    "/nationalities/{nationality_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_nationality(
+    nationality_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(admin_only),
+) -> None:
+    nationality = db.get(Nationality, nationality_id)
+    if nationality is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nationality not found")
+    db.delete(nationality)
+    db.commit()
 
 
 # ---------------- Languages ----------------
@@ -53,7 +114,7 @@ def create_language(
     db: Session = Depends(get_db),
     _: User = Depends(admin_only),
 ) -> Language:
-    lang = Language(name=payload.name)
+    lang = Language(name=payload.name, kind=payload.kind)
     db.add(lang)
     db.commit()
     db.refresh(lang)

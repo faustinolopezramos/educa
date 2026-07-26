@@ -52,7 +52,7 @@ export default function Login() {
           </div>
         </div>
         <Card>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Correo

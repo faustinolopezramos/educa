@@ -4,11 +4,11 @@ Revision ID: c7d8e9f0a1b2
 Revises: b6c7d8e9f0a1
 Create Date: 2026-07-16 16:00:00.000000
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = "c7d8e9f0a1b2"
@@ -20,9 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         "courses",
-        sa.Column(
-            "passing_score", sa.Float(), nullable=False, server_default="6.0"
-        ),
+        sa.Column("passing_score", sa.Float(), nullable=False, server_default="6.0"),
     )
 
     op.create_table(
@@ -47,11 +45,15 @@ def upgrade() -> None:
         sa.Column("final_score", sa.Float(), nullable=False),
         sa.Column("code", sa.String(length=32), nullable=False),
         sa.Column(
-            "issued_at", sa.DateTime(timezone=True), server_default=sa.func.now(),
+            "issued_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column("issued_by", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["enrollment_id"], ["enrollments.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["enrollment_id"], ["enrollments.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["level_id"], ["levels.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["issued_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),

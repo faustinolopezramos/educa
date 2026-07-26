@@ -111,9 +111,7 @@ def create_attendance(
         )
         .returning(Attendance)
     )
-    record = db.scalars(
-        stmt, execution_options={"populate_existing": True}
-    ).one()
+    record = db.scalars(stmt, execution_options={"populate_existing": True}).one()
     record_audit(
         db,
         current_user,
@@ -124,9 +122,7 @@ def create_attendance(
         after=snapshot(record),
     )
     db.commit()
-    response.status_code = (
-        status.HTTP_200_OK if before else status.HTTP_201_CREATED
-    )
+    response.status_code = status.HTTP_200_OK if before else status.HTTP_201_CREATED
     return record
 
 
@@ -146,7 +142,9 @@ def update_attendance(
     # uniqueness collision is possible here.
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(record, field, value)
-    record_audit(db, current_user, "update", "attendance", record.id, before, snapshot(record))
+    record_audit(
+        db, current_user, "update", "attendance", record.id, before, snapshot(record)
+    )
     db.commit()
     db.refresh(record)
     return record
@@ -162,6 +160,8 @@ def delete_attendance(
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance record not found")
     _ensure_teacher_owns_enrollment(db, current_user, record.enrollment)
-    record_audit(db, current_user, "delete", "attendance", record.id, before=snapshot(record))
+    record_audit(
+        db, current_user, "delete", "attendance", record.id, before=snapshot(record)
+    )
     db.delete(record)
     db.commit()

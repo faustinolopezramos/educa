@@ -84,15 +84,21 @@ def export_report(
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["Reporte", report.period, str(report.date_from), str(report.date_to)])
+    writer.writerow(
+        ["Reporte", report.period, str(report.date_from), str(report.date_to)]
+    )
     writer.writerow([])
     writer.writerow(["Sesiones (total / realizadas / canceladas)"])
-    writer.writerow([report.sessions_total, report.sessions_held, report.sessions_cancelled])
+    writer.writerow(
+        [report.sessions_total, report.sessions_held, report.sessions_cancelled]
+    )
     writer.writerow([])
     writer.writerow(["Asistencia por curso"])
     writer.writerow(["Curso", "Presentes", "Total", "Tasa"])
     for c in report.attendance_by_course:
-        writer.writerow([c.course_name, c.present, c.total, c.rate if c.rate is not None else ""])
+        writer.writerow(
+            [c.course_name, c.present, c.total, c.rate if c.rate is not None else ""]
+        )
     writer.writerow([])
     writer.writerow(["Alumnos en riesgo"])
     writer.writerow(["Alumno", "Curso", "Asistencia", "Promedio", "Motivos"])

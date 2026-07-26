@@ -20,15 +20,46 @@ from app.models import (
     Level,
     MeetingProvider,
     Modality,
+    Nationality,
     ProviderName,
     Room,
     Schedule,
     TeacherAvailability,
     TeacherLanguage,
+    TrackKind,
     User,
     UserRole,
     VirtualMeeting,
 )
+from app.services.sequences import next_enrollment_code
+
+# As provided by the stakeholders' original requirement doc. The "Centroamérica"
+# region label on that list does not actually match any of these countries
+# (none are Central American) — flagged back to the business; seeded as a flat
+# list regardless, since Nationality has no region column to get wrong.
+_NATIONALITIES = [
+    "Colombia",
+    "Venezuela",
+    "Cuba",
+    "Brasil",
+    "Argentina",
+    "Uruguay",
+    "Chile",
+    "Egipto",
+    "Siria",
+    "Líbano",
+    "China",
+    "Taiwán",
+]
+
+# Non-language tracks reusing the Language→Level→Course tree: a Level here is
+# a "módulo" (1..4) instead of a CEFR stage.
+_SKILL_TRACKS: dict[str, TrackKind] = {
+    "Computación básica para adultos": TrackKind.digital_skill,
+    "Marketing Digital": TrackKind.digital_skill,
+    "Inteligencia Emocional": TrackKind.business_skill,
+    "Emprendimiento": TrackKind.business_skill,
+}
 
 
 def _get_or_create_user(
@@ -74,17 +105,45 @@ def seed() -> None:
             )
             if existing is None:
                 db.add(
-                    MeetingProvider(
-                        name=name, is_active=(name == ProviderName.manual)
-                    )
+                    MeetingProvider(name=name, is_active=(name == ProviderName.manual))
                 )
+
+        # --- Nationalities ---
+        for name in _NATIONALITIES:
+            if db.scalar(select(Nationality).where(Nationality.name == name)) is None:
+                db.add(Nationality(name=name))
+        db.flush()
 
         # --- Catalog: language / level / course ---
         english = db.scalar(select(Language).where(Language.name == "Inglés"))
         if english is None:
-            english = Language(name="Inglés")
+            english = Language(name="Inglés", kind=TrackKind.language)
             db.add(english)
             db.flush()
+
+        spanish = db.scalar(select(Language).where(Language.name == "Español"))
+        if spanish is None:
+            db.add(Language(name="Español", kind=TrackKind.language))
+
+        # --- Competencias Digitales / Negocios: same tree, non-language tracks ---
+        for track_name, kind in _SKILL_TRACKS.items():
+            track = db.scalar(select(Language).where(Language.name == track_name))
+            if track is None:
+                track = Language(name=track_name, kind=kind)
+                db.add(track)
+                db.flush()
+            for n in range(1, 5):
+                code = f"M{n}"
+                if (
+                    db.scalar(
+                        select(Level).where(
+                            Level.language_id == track.id, Level.code == code
+                        )
+                    )
+                    is None
+                ):
+                    db.add(Level(language_id=track.id, code=code, name=f"Módulo {n}"))
+        db.flush()
 
         level_a1 = db.scalar(
             select(Level).where(Level.language_id == english.id, Level.code == "A1")
@@ -94,9 +153,7 @@ def seed() -> None:
             db.add(level_a1)
             db.flush()
 
-        course = db.scalar(
-            select(Course).where(Course.name == "Inglés A1 - Mañanas")
-        )
+        course = db.scalar(select(Course).where(Course.name == "Inglés A1 - Mañanas"))
         if course is None:
             course = Course(
                 level_id=level_a1.id,
@@ -154,9 +211,7 @@ def seed() -> None:
             is None
         ):
             db.add(
-                CourseTeacher(
-                    course_id=course.id, teacher_id=teacher.id, is_lead=True
-                )
+                CourseTeacher(course_id=course.id, teacher_id=teacher.id, is_lead=True)
             )
             db.flush()
 
@@ -197,7 +252,13 @@ def seed() -> None:
             )
         )
         if enrollment is None:
-            db.add(Enrollment(student_id=student.id, course_id=course.id))
+            db.add(
+                Enrollment(
+                    student_id=student.id,
+                    course_id=course.id,
+                    enrollment_code=next_enrollment_code(db, year=date.today().year),
+                )
+            )
 
         # --- A demo virtual meeting on the next schedule session (manual provider) ---
         manual = db.scalar(
@@ -238,7 +299,9 @@ def seed() -> None:
 
         db.commit()
         print("Seed completed.")
-        print(f"  Admin:   {settings.seed_admin_email} / {settings.seed_admin_password}")
+        print(
+            f"  Admin:   {settings.seed_admin_email} / {settings.seed_admin_password}"
+        )
         print("  Teacher: teacher@educa.com / teacher123")
         print("  Student: student@educa.com / student123")
     finally:

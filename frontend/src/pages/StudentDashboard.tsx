@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button, Card, EmptyState, PageTitle, SectionHeading } from "../components/ui";
 import { StudentGrades } from "../features/grades/StudentGrades";
+import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
 import {
   DAYS,
@@ -25,11 +26,9 @@ import {
   useSchedules,
   useVisibleAttendance,
 } from "../lib/queries";
+import { LOBBY_WINDOW_MIN, GRACE_MS } from "../lib/constants";
 import { notify } from "../lib/toast";
 import type { Enrollment } from "../lib/types";
-
-const LOBBY_WINDOW_MIN = 15;
-const GRACE_MS = 2 * 60 * 60_000;
 
 function sessionStartMs(date: string, time: string): number {
   return new Date(`${date}T${time}`).getTime();
@@ -71,6 +70,14 @@ export default function StudentDashboard() {
       <div>
         <PageTitle subtitle="Mi progreso">Mi reporte</PageTitle>
         <StudentReport />
+      </div>
+    );
+  }
+  if (section === "perfil") {
+    return (
+      <div>
+        <PageTitle subtitle="Cuenta">Mi perfil</PageTitle>
+        <ProfilePanel />
       </div>
     );
   }
