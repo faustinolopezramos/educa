@@ -5,26 +5,27 @@ import { PageTitle } from "../components/ui";
 import { AuditPanel } from "../features/audit/AuditPanel";
 import { ReportView } from "../features/reports/ReportView";
 import { CatalogPanel } from "../features/admin/CatalogPanel";
-import { CoursesPanel } from "../features/admin/CoursesPanel";
+import { CoursesAndTeachersHub } from "../features/admin/CoursesAndTeachersHub";
 import { EnrollmentsPanel } from "../features/admin/EnrollmentsPanel";
 import { HolidaysPanel } from "../features/admin/HolidaysPanel";
 import { InicioPanel } from "../features/admin/InicioPanel";
 import { LocationProposalsPanel } from "../features/admin/LocationProposalsPanel";
 import { RoomsPanel } from "../features/admin/RoomsPanel";
-import { SchedulesPanel } from "../features/admin/SchedulesPanel";
-import { TeachersPanel } from "../features/admin/TeachersPanel";
+import { TenantsPanel } from "../features/admin/TenantsPanel";
 import { UsersPanel } from "../features/admin/UsersPanel";
+import { VideoProvidersPanel } from "../features/admin/VideoProvidersPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 
 const SECTION_TITLES: Record<string, string> = {
+  tenants: "Academias / Tenants",
   pendientes: "Pendientes",
-  courses: "Cursos",
-  catalog: "Catálogo",
-  schedules: "Horarios",
+  courses: "Gestión de Cursos",
+  catalog: "Estructura y Parámetros de la Academia",
+  schedules: "Planificador de Horarios Académicos",
   enrollments: "Matrículas",
-  users: "Usuarios",
-  teachers: "Profesores",
+  users: "Gestión de Usuarios",
   rooms: "Aulas",
+  video_providers: "Videoconferencias",
   holidays: "Festivos",
   reports: "Reportes",
   audit: "Auditoría",
@@ -37,15 +38,18 @@ export default function AdminDashboard() {
 
   if (section === "inicio") return <InicioPanel />;
 
+  const hub = <CoursesAndTeachersHub />;
+
   const panels: Record<string, ReactNode> = {
+    tenants: <TenantsPanel />,
     pendientes: <LocationProposalsPanel />,
-    courses: <CoursesPanel />,
+    courses: hub,
+    schedules: hub,
     catalog: <CatalogPanel />,
-    schedules: <SchedulesPanel />,
     enrollments: <EnrollmentsPanel />,
     users: <UsersPanel />,
-    teachers: <TeachersPanel />,
     rooms: <RoomsPanel />,
+    video_providers: <VideoProvidersPanel />,
     holidays: <HolidaysPanel />,
     reports: <ReportView />,
     audit: <AuditPanel />,

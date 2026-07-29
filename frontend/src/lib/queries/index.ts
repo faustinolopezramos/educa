@@ -32,6 +32,7 @@ export {
   useEnrollments,
   useCreateEnrollment,
   useUpdateEnrollment,
+  useDeleteEnrollment,
 } from "./enrollments";
 export {
   useGrades,
@@ -59,6 +60,7 @@ export {
 export {
   useMeetings,
   useMeeting,
+  useLobbyJoinInfo,
 } from "./meetings";
 export {
   useNotifications,
@@ -87,6 +89,7 @@ export {
   useSchedules,
   useCreateSchedule,
   useUpdateSchedule,
+  useDeleteSchedule,
   useCheckScheduleConflict,
   usePublicTeachers,
   useAvailableTeachers,
@@ -101,6 +104,12 @@ export {
   useRescheduleSession,
   useEnsureSession,
 } from "./sessions";
+export {
+  useTenants,
+  useCreateTenant,
+  useUpdateTenant,
+} from "./tenants";
+export type { TenantPayload } from "./tenants";
 export {
   useTeacherLanguages,
   useSetTeacherLanguages,

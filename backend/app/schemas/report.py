@@ -21,6 +21,21 @@ class AtRiskStudentRead(BaseModel):
     reasons: list[str]
 
 
+class ConsolidatedStudentReport(BaseModel):
+    student_id: int
+    student_name: str
+    course_id: int
+    course_name: str
+    # `None` = no data recorded for that component in the period. Distinct from
+    # 0.0, and the UI must render it as "—" rather than as a zero.
+    assignments_avg: float | None
+    assignments_completion_rate: float | None
+    exams_avg: float | None
+    attendance_rate: float | None
+    consolidated_score: float | None
+    performance_status: str  # optimal, warning, critical, no_data
+
+
 class ReportRead(BaseModel):
     period: str
     date_from: date
@@ -33,3 +48,4 @@ class ReportRead(BaseModel):
     grades_recorded: int
     grade_average: float | None
     at_risk: list[AtRiskStudentRead]
+    consolidated_students: list[ConsolidatedStudentReport] = []

@@ -15,50 +15,56 @@ export interface NavGroup {
 // Role-aware navigation. The active section travels in the URL as `?m=<id>`,
 // so the sidebar (Layout) and the page content (dashboards) stay in sync and
 // sections are bookmarkable.
+// Every section an admin has. A superadmin gets these too, plus tenant
+// management — the roles are a superset, not two parallel menus, which is why
+// this list is shared instead of duplicated.
+const ADMIN_GROUPS: NavGroup[] = [
+  {
+    label: "Inicio",
+    items: [
+      { id: "inicio", label: "Resumen" },
+    ],
+  },
+  {
+    label: "Gestión Operativa",
+    items: [
+      { id: "courses", label: "Cursos" },
+      { id: "enrollments", label: "Matrículas" },
+      { id: "users", label: "Usuarios" },
+      { id: "reports", label: "Reportes" },
+    ],
+  },
+  {
+    label: "Configuración del sistema",
+    items: [
+      { id: "catalog", label: "Estructura e Idiomas" },
+      { id: "rooms", label: "Aulas" },
+      { id: "video_providers", label: "Videoconferencias" },
+      { id: "holidays", label: "Festivos" },
+      { id: "audit", label: "Auditoría" },
+    ],
+  },
+  {
+    label: "Cuenta",
+    items: [{ id: "perfil", label: "Mi perfil" }],
+  },
+];
+
 export const NAV: Record<Role, NavGroup[]> = {
-  admin: [
+  superadmin: [
     {
-      label: "Inicio",
-      items: [
-        { id: "inicio", label: "Resumen" },
-        { id: "pendientes", label: "Pendientes", badge: "pending-locations" },
-      ],
+      label: "Gestión SaaS",
+      items: [{ id: "tenants", label: "Academias / Tenants" }],
     },
-    {
-      label: "Académico",
-      items: [
-        { id: "courses", label: "Cursos" },
-        { id: "catalog", label: "Catálogo" },
-        { id: "schedules", label: "Horarios" },
-        { id: "enrollments", label: "Matrículas" },
-      ],
-    },
-    {
-      label: "Personas",
-      items: [
-        { id: "users", label: "Usuarios" },
-        { id: "teachers", label: "Profesores" },
-      ],
-    },
-    {
-      label: "Operación",
-      items: [
-        { id: "rooms", label: "Aulas" },
-        { id: "holidays", label: "Festivos" },
-        { id: "reports", label: "Reportes" },
-        { id: "audit", label: "Auditoría" },
-      ],
-    },
-    {
-      label: "Cuenta",
-      items: [{ id: "perfil", label: "Mi perfil" }],
-    },
+    ...ADMIN_GROUPS,
   ],
+  admin: ADMIN_GROUPS,
   teacher: [
     {
       label: "Docencia",
       items: [
         { id: "clases", label: "Mis clases" },
+        { id: "tareas", label: "Tareas" },
         { id: "reportes", label: "Reporte" },
       ],
     },
@@ -72,6 +78,7 @@ export const NAV: Record<Role, NavGroup[]> = {
       label: "Mi progreso",
       items: [
         { id: "inicio", label: "Mi semana" },
+        { id: "tareas", label: "Tareas" },
         { id: "calificaciones", label: "Calificaciones" },
         { id: "reportes", label: "Reporte" },
       ],

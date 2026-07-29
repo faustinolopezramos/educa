@@ -41,6 +41,7 @@ class ClassSession(Base):
     origin_session_id: Mapped[int | None] = mapped_column(
         ForeignKey("class_sessions.id", ondelete="SET NULL"), nullable=True
     )
+    recording_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     schedule: Mapped["Schedule"] = relationship(back_populates="sessions")
     attendance_records: Mapped[list["Attendance"]] = relationship(

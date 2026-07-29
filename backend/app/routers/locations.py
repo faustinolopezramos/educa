@@ -11,8 +11,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role, teacher_teaches_course
+from app.core.deps import (
+    get_current_user,
+    in_tenant,
+    is_admin,
+    require_role,
+    teacher_teaches_course,
+)
 from app.models import (
+    Course,
     LocationProposal,
     Modality,
     ProposalStatus,
@@ -80,6 +87,10 @@ def propose_location(
     the admin is the approver.
     """
     schedule = db.get(Schedule, schedule_id)
+    if schedule is not None and not in_tenant(
+        current_user, db.get(Course, schedule.course_id)
+    ):
+        schedule = None
     if schedule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
     # A teacher may only propose for a course they teach.
@@ -90,7 +101,7 @@ def propose_location(
     if payload.room_id is not None and db.get(Room, payload.room_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
 
-    is_admin = current_user.role == UserRole.admin
+    self_approves = is_admin(current_user)
     proposal = LocationProposal(
         schedule_id=schedule_id,
         proposed_by=current_user.id,
@@ -98,9 +109,9 @@ def propose_location(
         room_id=payload.room_id,
         provider=payload.provider,
         join_url=payload.join_url,
-        status=ProposalStatus.approved if is_admin else ProposalStatus.pending,
+        status=ProposalStatus.approved if self_approves else ProposalStatus.pending,
     )
-    if is_admin:
+    if self_approves:
         if payload.modality == Modality.presencial and payload.room_id is not None:
             _reject_room_clash(db, schedule, payload.room_id)
         proposal.reviewed_by = current_user.id

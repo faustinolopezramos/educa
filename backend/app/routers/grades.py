@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -57,8 +57,15 @@ def list_grades(
         stmt = stmt.where(Grade.enrollment_id == enrollment_id)
     # Students only see their own grades.
     if current_user.role == UserRole.student:
+        # 403 rather than an empty list: the same financial-solvency policy the
+        # final grade and the report enforce, and with the same answer. An empty
+        # list reads as "you have no grades yet", which sends the student to ask
+        # their teacher about a problem only the finance desk can fix.
         if not student_is_solvent(db, current_user.id):
-            return []
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Acceso restringido: Tienes pagos pendientes. Por favor regulariza tu saldo para consultar notas y certificados.",
+            )
         stmt = stmt.join(Enrollment).where(Enrollment.student_id == current_user.id)
     # Teachers only see grades for their own courses.
     elif current_user.role == UserRole.teacher:
@@ -99,11 +106,11 @@ def create_grade(
     if payload.session_id is not None:
         dupe_filter.append(Grade.session_id == payload.session_id)
         index_elements = ["enrollment_id", "session_id", "evaluation_name"]
-        index_where = Grade.session_id.isnot(None)
+        index_where = text("session_id IS NOT NULL")
     else:
         dupe_filter.append(Grade.session_id.is_(None))
         index_elements = ["enrollment_id", "evaluation_name"]
-        index_where = Grade.session_id.is_(None)
+        index_where = text("session_id IS NULL")
 
     existing = db.scalar(select(Grade).where(*dupe_filter))
     before = snapshot(existing) if existing else None

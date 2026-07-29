@@ -16,6 +16,7 @@ class ClassSessionRead(BaseModel):
     topic: str | None
     cancel_reason: str | None
     origin_session_id: int | None
+    recording_url: str | None = None
 
 
 class SessionGenerate(BaseModel):
@@ -39,3 +40,4 @@ class SessionUpdate(PatchModel):
     NON_NULLABLE: ClassVar[tuple[str, ...]] = ("status",)
     status: SessionStatus | None = None
     topic: str | None = None
+    recording_url: str | None = None

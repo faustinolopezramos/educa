@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button, Card, EmptyState, PageTitle, SectionHeading } from "../components/ui";
 import { StudentGrades } from "../features/grades/StudentGrades";
+import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
 import {
@@ -42,6 +43,15 @@ export default function StudentDashboard() {
     () => enrollments.some((e) => e.status === "active" && e.payment_status === "overdue"),
     [enrollments],
   );
+
+  if (section === "tareas") {
+    return (
+      <div>
+        <PageTitle subtitle="Mi progreso">Mis Tareas</PageTitle>
+        <AssignmentsPanel />
+      </div>
+    );
+  }
 
   if (section === "calificaciones") {
     if (isOverdue) {
@@ -305,38 +315,46 @@ function NextClassHero({
 
   const countLabel =
     toStart <= 0
-      ? "En curso"
+      ? "En curso en vivo"
       : mins < 60
         ? `Empieza en ${mins} min`
         : `Empieza ${formatDateTime(startIso, tz)}`;
 
   return (
-    <div className="relative h-full overflow-hidden rounded-2xl bg-slate-900 p-7 text-slate-50">
+    <div className="relative h-full overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-7 text-slate-50 shadow-xl border border-slate-800">
       <div
-        className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full opacity-50"
+        className="pointer-events-none absolute -right-10 -top-10 h-56 w-56 rounded-full opacity-40 blur-2xl"
         style={{ background: "radial-gradient(circle,#0F6E62,transparent 70%)" }}
       />
-      <div className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wide">
-        <span className="h-1.5 w-1.5 rounded-full bg-brand-100" />
+      <div className="inline-flex items-center gap-2 rounded-full bg-brand-600/90 backdrop-blur-md px-3.5 py-1 text-xs font-semibold text-white shadow-sm">
+        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
         {countLabel}
       </div>
-      <h3 className="mt-4 font-serif text-3xl font-medium">{courseName}</h3>
-      <div className="mt-1 text-sm text-slate-400">
-        {formatDateTime(startIso, tz)}
-        {tz && ` (${timeZoneLabel(startIso, tz)})`} · con {teacher} ·{" "}
-        {modality === "virtual" ? "Virtual" : room ? room : "Presencial"}
+      <h3 className="mt-4 font-serif text-3xl font-bold tracking-tight text-white">{courseName}</h3>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300">
+        <span>
+          {formatDateTime(startIso, tz)}
+          {tz && ` (${timeZoneLabel(startIso, tz)})`}
+        </span>
+        <span>•</span>
+        <span>Prof. {teacher}</span>
+        <span>•</span>
+        <span className="font-medium text-emerald-400">
+          {modality === "virtual" ? "Aula Virtual" : room ? `Aula ${room}` : "Presencial"}
+        </span>
       </div>
-      <div className="mt-6">
+      <div className="mt-7 flex items-center gap-3">
         {lobbyOpen ? (
           <Link
             to={`/lobby/${sessionId}`}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700"
+            className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/40 transition hover:bg-brand-500 hover:scale-[1.02] active:scale-[0.98]"
           >
-            Entrar al Lobby →
+            <span>🚀 Entrar a la Clase Ahora</span>
+            <span>→</span>
           </Link>
         ) : (
-          <span className="inline-flex items-center rounded-xl border border-slate-700 px-5 py-3 text-sm font-medium text-slate-400">
-            El Lobby abre 15 min antes
+          <span className="inline-flex items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-800/60 px-5 py-3 text-sm font-medium text-slate-300 backdrop-blur-xs">
+            <span>⏰ El Lobby abre 15 min antes</span>
           </span>
         )}
       </div>

@@ -29,7 +29,10 @@ function SuspenseWrapper({ children }: { children: React.ReactNode }) {
 function RoleHome() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role === "admin") return <AdminDashboard />;
+  // A superadmin is an admin with tenant management on top, so they get the
+  // admin dashboard (which carries the extra "tenants" section). Without this
+  // they fell through to the student dashboard.
+  if (user.role === "admin" || user.role === "superadmin") return <AdminDashboard />;
   if (user.role === "teacher") return <TeacherDashboard />;
   return <StudentDashboard />;
 }

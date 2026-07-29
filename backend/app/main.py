@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.routers import (
+    assignments,
     attendance,
     audit,
     auth,
@@ -25,38 +26,67 @@ from app.routers import (
     schedules,
     sessions,
     teachers,
+    tenants,
     users,
 )
 from app.webhooks import router as webhooks
 
 # ---- In-memory rate limiter for login ----
+#
+# NOTE: this counter lives in the process, so N uvicorn workers enforce N times
+# the limit and a restart forgets everything. It raises the cost of online
+# password guessing; it is not a substitute for a shared (Redis) limiter once
+# the API runs on more than one worker.
 _login_attempts: dict[str, list[datetime]] = defaultdict(list)
-LOGIN_RATE_LIMIT = 5  # max attempts
+LOGIN_RATE_LIMIT = 5  # max *failed* attempts
 LOGIN_RATE_WINDOW = 60  # seconds
 
 
-async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path == "/auth/login" and request.method == "POST":
-        client_ip = request.client.host if request.client else "unknown"
-        now = datetime.now(timezone.utc)
-        window_start = now - timedelta(seconds=LOGIN_RATE_WINDOW)
-        recent = [t for t in _login_attempts[client_ip] if t > window_start]
-        if recent:
-            _login_attempts[client_ip] = recent
-        else:
-            # Nothing left in the window: drop the key instead of leaving an
-            # empty list behind — otherwise every IP that has ever hit
-            # /auth/login stays in memory for the life of the process.
-            _login_attempts.pop(client_ip, None)
-        if len(recent) >= LOGIN_RATE_LIMIT:
-            from fastapi.responses import JSONResponse
+def _client_key(request: Request) -> str:
+    """Who to count this attempt against.
 
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Demasiados intentos. Espera un minuto."},
-            )
+    `X-Forwarded-For` is only honoured when the deployment says it sits behind
+    a proxy it trusts. Reading it unconditionally would let any client forge a
+    fresh identity per request and opt out of the limit entirely.
+    """
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def rate_limit_middleware(request: Request, call_next):
+    if not (request.url.path == "/auth/login" and request.method == "POST"):
+        return await call_next(request)
+
+    client_ip = _client_key(request)
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(seconds=LOGIN_RATE_WINDOW)
+    recent = [t for t in _login_attempts[client_ip] if t > window_start]
+    if recent:
+        _login_attempts[client_ip] = recent
+    else:
+        # Nothing left in the window: drop the key instead of leaving an
+        # empty list behind — otherwise every IP that has ever hit
+        # /auth/login stays in memory for the life of the process.
+        _login_attempts.pop(client_ip, None)
+
+    if len(recent) >= LOGIN_RATE_LIMIT:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Demasiados intentos. Espera un minuto."},
+        )
+
+    response = await call_next(request)
+    # Only *failed* logins count. Charging successful ones locked out shared
+    # networks — a classroom behind one NAT address ran out of budget after
+    # five students signed in normally.
+    if response.status_code == 401:
         _login_attempts[client_ip].append(now)
-    return await call_next(request)
+    return response
 
 
 # ---- Cache-Control for GET catalog endpoints ----
@@ -96,6 +126,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(auth.router)
+app.include_router(tenants.router)
 app.include_router(users.router)
 app.include_router(catalog.router)
 app.include_router(rooms.router)
@@ -105,6 +136,7 @@ app.include_router(sessions.router)
 app.include_router(holidays.router)
 app.include_router(locations.router)
 app.include_router(enrollments.router)
+app.include_router(assignments.router)
 app.include_router(attendance.router)
 app.include_router(grades.router)
 app.include_router(grading.router)

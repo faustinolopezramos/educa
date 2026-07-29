@@ -36,9 +36,14 @@ from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.payment import Payment
 from app.models.invoice import Invoice
+from app.models.tenant import Tenant
+from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.refresh_session import RefreshSession
 
 __all__ = [
+    "Assignment",
+    "AssignmentSubmission",
+    "Tenant",
     "AttendanceStatus",
     "EnrollmentStatus",
     "MeetingStatus",

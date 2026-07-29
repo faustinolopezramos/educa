@@ -8,18 +8,28 @@ the caller may see". No new state, no writes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
-from app.core.deps import student_course_ids, teacher_course_ids
+from app.core.config import settings
+from app.core.deps import (
+    is_admin,
+    student_course_ids,
+    teacher_course_ids,
+    tenant_course_ids,
+)
 from app.models import (
+    Assignment,
+    AssignmentSubmission,
     Attendance,
     AttendanceStatus,
     ClassSession,
     Course,
     Enrollment,
+    EnrollmentStatus,
     Grade,
     Schedule,
     SessionStatus,
@@ -61,8 +71,10 @@ def scoped_course_ids(
 
     Filters can only ever narrow the caller's own scope — never widen it.
     """
-    if user.role == UserRole.admin:
-        allowed = list(db.scalars(select(Course.id)).all())
+    if is_admin(user):
+        # Every course *of their own academy* — an admin reports on the whole
+        # school, not on the whole installation.
+        allowed = tenant_course_ids(db, user)
     elif user.role == UserRole.teacher:
         allowed = teacher_course_ids(db, user.id)
     else:
@@ -96,6 +108,22 @@ class AtRiskStudent:
 
 
 @dataclass
+class ConsolidatedStudent:
+    student_id: int
+    student_name: str
+    course_id: int
+    course_name: str
+    # `None` means "no data for this component", which is not the same as a
+    # zero and must never be rendered as one.
+    assignments_avg: float | None
+    assignments_completion_rate: float | None
+    exams_avg: float | None
+    attendance_rate: float | None
+    consolidated_score: float | None
+    performance_status: str
+
+
+@dataclass
 class Report:
     period: str
     date_from: date
@@ -108,6 +136,7 @@ class Report:
     grades_recorded: int = 0
     grade_average: float | None = None
     at_risk: list[AtRiskStudent] = field(default_factory=list)
+    consolidated_students: list[ConsolidatedStudent] = field(default_factory=list)
 
 
 def build_report(
@@ -214,10 +243,46 @@ def build_report(
             sum(g.score for g, _, _ in grade_rows) / len(grade_rows), 2
         )
 
-    # student average per course over the range (session grades)
+    # student average per course over the range (session grades + evaluation/exam grades)
     avg_acc: dict[tuple[int, int], list[float]] = {}
     for g, cid, sid in grade_rows:
         avg_acc.setdefault((sid, cid), []).append(g.score)
+
+    # Bounds as instants in the academy's own timezone: `created_at` is stored
+    # in UTC, and comparing its UTC *date* against a locally-computed one put
+    # every grade entered after the local evening into the following day.
+    tz = ZoneInfo(settings.academy_timezone)
+    _period_start = datetime.combine(date_from, time.min, tzinfo=tz)
+    _period_end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=tz)
+
+    # Course-level grades (exams, finals) belong to no session, so they are dated
+    # by when they were entered. Without this bound a weekly report averaged in
+    # every exam ever sat, and "en riesgo" stopped describing the period at all.
+    eval_grade_rows = db.execute(
+        select(Grade, Enrollment.course_id, Enrollment.student_id)
+        .join(Enrollment, Grade.enrollment_id == Enrollment.id)
+        .where(
+            Enrollment.course_id.in_(course_ids),
+            Grade.session_id.is_(None),
+            Grade.created_at >= _period_start,
+            Grade.created_at < _period_end,
+            *([Enrollment.student_id == own_student_id] if own_student_id else []),
+        )
+    ).all()
+    for g, cid, sid in eval_grade_rows:
+        avg_acc.setdefault((sid, cid), []).append(g.score)
+
+    # The headline average counts the same grades the at-risk rule does. While it
+    # covered only session grades, a student could sit a failing exam and still
+    # not move the number the report leads with — the metric and the warning
+    # beside it were measuring different things.
+    all_scores = [g.score for g, _, _ in grade_rows] + [
+        g.score for g, _, _ in eval_grade_rows
+    ]
+    report.grades_recorded = len(all_scores)
+    report.grade_average = (
+        round(sum(all_scores) / len(all_scores), 2) if all_scores else None
+    )
 
     # --- At-risk pass ---
     student_name = {
@@ -250,4 +315,133 @@ def build_report(
                 )
             )
     report.at_risk.sort(key=lambda r: (r.attendance_rate or 0, r.average or 0))
+
+    # --- Consolidated 360° Academic Performance Pass ---
+    active_enrollments = list(
+        db.scalars(
+            select(Enrollment).where(
+                Enrollment.course_id.in_(course_ids or [-1]),
+                Enrollment.status.in_(
+                    [EnrollmentStatus.active, EnrollmentStatus.enrolled]
+                ),
+                *([Enrollment.student_id == own_student_id] if own_student_id else []),
+            )
+        ).all()
+    )
+
+    all_assignments = list(
+        db.scalars(
+            select(Assignment).where(Assignment.course_id.in_(course_ids or [-1]))
+        ).all()
+    )
+    assignments_by_course: dict[int, list[Assignment]] = {}
+    for a in all_assignments:
+        assignments_by_course.setdefault(a.course_id, []).append(a)
+
+    all_submissions = list(
+        db.scalars(
+            select(AssignmentSubmission).where(
+                AssignmentSubmission.assignment_id.in_(
+                    [a.id for a in all_assignments] or [-1]
+                )
+            )
+        ).all()
+    )
+    subs_by_student_assignment: dict[tuple[int, int], AssignmentSubmission] = {
+        (s.student_id, s.assignment_id): s for s in all_submissions
+    }
+
+    user_ids_to_fetch = set(e.student_id for e in active_enrollments)
+    if user_ids_to_fetch:
+        users = db.scalars(select(User).where(User.id.in_(user_ids_to_fetch))).all()
+        for u in users:
+            student_name[u.id] = u.full_name
+
+    for enr in active_enrollments:
+        sid = enr.student_id
+        cid = enr.course_id
+
+        # 1. Assignments — an assignment the student never handed in scores 0,
+        #    which is what makes the completion rate actually bite. One that was
+        #    submitted but not yet graded is left out of the average entirely:
+        #    that is the teacher's backlog, not the student's failure.
+        course_assigns = assignments_by_course.get(cid, [])
+        if course_assigns:
+            submissions = {
+                a.id: subs_by_student_assignment.get((sid, a.id))
+                for a in course_assigns
+            }
+            submitted = [s for s in submissions.values() if s is not None]
+            assign_completion = round(len(submitted) / len(course_assigns), 3)
+
+            graded = [s.score for s in submitted if s.score is not None]
+            missing = len(course_assigns) - len(submitted)
+            counted = len(graded) + missing
+            assign_avg = round(sum(graded) / counted, 2) if counted else None
+        else:
+            # No assignments in the course: the component does not exist here,
+            # rather than existing and being perfect.
+            assign_completion = None
+            assign_avg = None
+
+        # 2. Exams / session grades in the period.
+        scores = avg_acc.get((sid, cid))
+        exams_avg = round(sum(scores) / len(scores), 2) if scores else None
+
+        # 3. Attendance in the period.
+        att_p, att_t = per_student.get((sid, cid), (0, 0))
+        att_rate = round(att_p / att_t, 3) if att_t > 0 else None
+
+        # 4. Consolidated score: 40% assignments + 50% exams + 10% attendance,
+        #    renormalized over the components that actually have data. A missing
+        #    component must not be scored as a perfect 10 — that used to rank a
+        #    student with no submissions, no grades and no attendance as the
+        #    academy's top performer.
+        parts: list[tuple[float, float]] = []  # (value on a 0–10 scale, weight)
+        if assign_avg is not None:
+            parts.append((assign_avg, 0.40))
+        if exams_avg is not None:
+            parts.append((exams_avg, 0.50))
+        if att_rate is not None:
+            parts.append((att_rate * 10.0, 0.10))
+
+        total_weight = sum(w for _, w in parts)
+        consolidated = (
+            round(sum(v * w for v, w in parts) / total_weight, 2)
+            if total_weight
+            else None
+        )
+
+        # 5. Status. "No data" is its own answer: an enrolment nobody has
+        #    recorded anything against cannot be called optimal or critical.
+        if consolidated is None:
+            perf_status = "no_data"
+        elif consolidated >= 8.5:
+            perf_status = "optimal"
+        elif consolidated < 6.0:
+            perf_status = "critical"
+        else:
+            perf_status = "warning"
+
+        report.consolidated_students.append(
+            ConsolidatedStudent(
+                student_id=sid,
+                student_name=student_name.get(sid, f"#{sid}"),
+                course_id=cid,
+                course_name=course_name.get(cid, f"#{cid}"),
+                assignments_avg=assign_avg,
+                assignments_completion_rate=assign_completion,
+                exams_avg=exams_avg,
+                attendance_rate=att_rate,
+                consolidated_score=consolidated,
+                performance_status=perf_status,
+            )
+        )
+
+    # Worst first, so the people who need attention are at the top. Enrolments
+    # with nothing recorded sort last: they are a data gap to chase, not a
+    # performance problem to triage.
+    report.consolidated_students.sort(
+        key=lambda cs: (cs.consolidated_score is None, cs.consolidated_score or 0.0)
+    )
     return report

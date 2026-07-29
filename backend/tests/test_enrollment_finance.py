@@ -99,6 +99,42 @@ def test_an_invoice_can_be_issued_once_something_has_been_paid(client, world):
     assert pdf.headers["content-type"] == "application/pdf"
 
 
+def test_money_movements_leave_an_audit_trail(client, world):
+    """Registering a payment or issuing a receipt must be attributable.
+
+    Finance was the one module that mutated records without recording who did
+    it — the trail could not answer "who took this money in?" months later.
+    """
+    admin = auth(client, "admin@test.com")
+    enrollment = _enroll(
+        client,
+        admin,
+        student_id=world["outsider"].id,
+        course_id=world["course_b"].id,
+        amount=300.0,
+    ).json()
+
+    client.post(
+        "/payments",
+        headers=admin,
+        json={"enrollment_id": enrollment["id"], "kind": "payment", "amount": 300.0},
+    )
+    invoice = client.post(
+        f"/enrollments/{enrollment['id']}/invoice", headers=admin
+    ).json()
+
+    payments = client.get("/audit?entity=payment", headers=admin).json()["items"]
+    assert payments, "a payment must be auditable"
+    assert payments[0]["actor_id"] == world["admin"].id
+    assert payments[0]["after"]["amount"] == 300.0
+
+    invoices = client.get(
+        f"/audit?entity=invoice&entity_id={invoice['id']}", headers=admin
+    ).json()["items"]
+    assert len(invoices) == 1
+    assert invoices[0]["actor_id"] == world["admin"].id
+
+
 def test_payments_and_invoices_are_admin_only(client, world):
     teacher = auth(client, "teacher_a@test.com")
     res = client.post(

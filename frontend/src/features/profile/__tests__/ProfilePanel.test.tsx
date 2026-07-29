@@ -85,6 +85,7 @@ describe("ProfilePanel", () => {
         timezone: "UTC",
         phone: null,
         address: null,
+        cui_passport: null,
         nationality_id: null,
       },
       expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),

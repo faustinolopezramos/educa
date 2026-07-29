@@ -43,6 +43,7 @@ function DetailsForm({ user }: { user: User }) {
   const [timezone, setTimezone] = useState(user.timezone);
   const [phone, setPhone] = useState(user.phone ?? "");
   const [address, setAddress] = useState(user.address ?? "");
+  const [cuiPassport, setCuiPassport] = useState(user.cui_passport ?? "");
   const [nationalityId, setNationalityId] = useState(user.nationality_id ?? 0);
 
   const dirty =
@@ -50,6 +51,7 @@ function DetailsForm({ user }: { user: User }) {
     timezone !== user.timezone ||
     phone !== (user.phone ?? "") ||
     address !== (user.address ?? "") ||
+    cuiPassport !== (user.cui_passport ?? "") ||
     nationalityId !== (user.nationality_id ?? 0);
 
   function save() {
@@ -63,6 +65,7 @@ function DetailsForm({ user }: { user: User }) {
         timezone: timezone.trim() || "UTC",
         phone: phone.trim() || null,
         address: address.trim() || null,
+        cui_passport: cuiPassport.trim() || null,
         nationality_id: nationalityId || null,
       },
       {
@@ -91,6 +94,9 @@ function DetailsForm({ user }: { user: User }) {
         </Field>
         <Field label="Nombre completo">
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </Field>
+        <Field label="CUI / Pasaporte">
+          <Input value={cuiPassport} onChange={(e) => setCuiPassport(e.target.value)} placeholder="Ej. 2540 12345 0101" />
         </Field>
         <Field label="Teléfono">
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} />

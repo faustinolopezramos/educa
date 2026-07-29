@@ -73,6 +73,6 @@ describe("apiErrorMessage", () => {
 
   it("should handle error without response", () => {
     const error = new Error("Network error");
-    expect(apiErrorMessage(error)).toBe("Ocurrió un error");
+    expect(apiErrorMessage(error)).toBe("Network error");
   });
 });

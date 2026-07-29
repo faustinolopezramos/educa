@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Escalado tipográfico fluido y adaptativo según el dispositivo */
+html {
+  font-size: 14px;
+}
+
+@media (min-width: 640px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 1024px) {
+  html {
+    font-size: 16px;
+  }
+}
+
 html,
 body,
 #root {
@@ -9,12 +31,15 @@ body,
 }
 
 body {
-  @apply bg-slate-50 font-sans text-slate-900 antialiased;
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  @apply bg-slate-900/5 text-slate-900 antialiased;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Enlaces por defecto en la paleta pino (evita el azul del navegador). */
+/* Enlaces por defecto en la paleta pino. */
 a {
-  @apply text-brand-600;
+  @apply text-brand-600 transition-colors;
   text-decoration: none;
 }
 a:hover {
@@ -31,21 +56,62 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
-@keyframes bar-grow {
+/* Animations & Glassmorphism Utilities */
+@keyframes fadeIn {
   from {
-    transform: scaleX(0);
+    opacity: 0;
+    transform: translateY(6px);
   }
   to {
-    transform: scaleX(1);
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-@keyframes pulse-soft {
-  0%,
-  100% {
-    opacity: 1;
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(15, 110, 98, 0.4);
   }
   50% {
-    opacity: 0.55;
+    box-shadow: 0 0 0 8px rgba(15, 110, 98, 0);
   }
 }
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s infinite;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.card-hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+

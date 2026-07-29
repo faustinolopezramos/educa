@@ -15,24 +15,37 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AcademicHoliday, ClassSession, SessionStatus, Schedule
+from app.models import AcademicHoliday, ClassSession, Course, SessionStatus, Schedule
 
 
-def is_holiday(db: Session, on: date) -> bool:
-    return (
-        db.scalar(select(AcademicHoliday.id).where(AcademicHoliday.date == on))
-        is not None
+def _tenant_of(db: Session, schedule: Schedule | None) -> int | None:
+    """Which academy a schedule belongs to, read through its course."""
+    if schedule is None:
+        return None
+    return db.scalar(select(Course.tenant_id).where(Course.id == schedule.course_id))
+
+
+def is_holiday(db: Session, on: date, tenant_id: int | None = None) -> bool:
+    """Whether the academy is closed that day.
+
+    Calendars are per-academy: one may close for a local feast the other works
+    through, so a holiday only ever suppresses classes of its own tenant.
+    """
+    stmt = select(AcademicHoliday.id).where(AcademicHoliday.date == on)
+    if tenant_id is not None:
+        stmt = stmt.where(AcademicHoliday.tenant_id == tenant_id)
+    return db.scalar(stmt) is not None
+
+
+def _holidays_in(
+    db: Session, start: date, end: date, tenant_id: int | None = None
+) -> set[date]:
+    stmt = select(AcademicHoliday.date).where(
+        AcademicHoliday.date >= start, AcademicHoliday.date <= end
     )
-
-
-def _holidays_in(db: Session, start: date, end: date) -> set[date]:
-    return set(
-        db.scalars(
-            select(AcademicHoliday.date).where(
-                AcademicHoliday.date >= start, AcademicHoliday.date <= end
-            )
-        ).all()
-    )
+    if tenant_id is not None:
+        stmt = stmt.where(AcademicHoliday.tenant_id == tenant_id)
+    return set(db.scalars(stmt).all())
 
 
 def term_dates(schedule: Schedule) -> list[date]:
@@ -66,7 +79,7 @@ def generate_sessions(db: Session, schedule: Schedule) -> list[ClassSession]:
             select(ClassSession.date).where(ClassSession.schedule_id == schedule.id)
         ).all()
     )
-    holidays = _holidays_in(db, dates[0], dates[-1])
+    holidays = _holidays_in(db, dates[0], dates[-1], _tenant_of(db, schedule))
     created: list[ClassSession] = []
     for d in dates:
         if d not in existing and d not in holidays:
@@ -87,7 +100,7 @@ def ensure_session(db: Session, schedule: Schedule, on: date) -> ClassSession:
     """
     if on.weekday() != schedule.day_of_week:
         raise ValueError("La fecha no coincide con el día de la clase")
-    if is_holiday(db, on):
+    if is_holiday(db, on, _tenant_of(db, schedule)):
         raise ValueError("Ese día es festivo; no hay clase")
     session = db.scalar(
         select(ClassSession).where(
@@ -121,7 +134,10 @@ def reschedule_session(
     A make-up may fall on any weekday (it is a special class), but not on a
     holiday nor on a date the schedule already has a session.
     """
-    if is_holiday(db, new_date):
+    if new_date < date.today():
+        raise ValueError("No se puede reprogramar a una fecha pasada")
+    schedule = db.get(Schedule, session.schedule_id)
+    if is_holiday(db, new_date, _tenant_of(db, schedule)):
         raise ValueError("La nueva fecha es festivo")
     clash = db.scalar(
         select(ClassSession).where(
@@ -131,6 +147,67 @@ def reschedule_session(
     )
     if clash is not None:
         raise ValueError("Ya existe una sesión de este horario en esa fecha")
+
+    if schedule:
+        if schedule.teacher_id:
+            teacher_conflict = db.scalar(
+                select(Schedule.id).where(
+                    Schedule.teacher_id == schedule.teacher_id,
+                    Schedule.id != schedule.id,
+                    Schedule.day_of_week == new_date.weekday(),
+                    Schedule.start_time < schedule.end_time,
+                    Schedule.end_time > schedule.start_time,
+                    (Schedule.term_start.is_(None) | (Schedule.term_start <= new_date)),
+                    (Schedule.term_end.is_(None) | (Schedule.term_end >= new_date)),
+                )
+            )
+            if teacher_conflict:
+                raise ValueError(
+                    "El profesor ya tiene otra clase en ese horario en esa fecha"
+                )
+
+        if schedule.room_id:
+            room_conflict = db.scalar(
+                select(Schedule.id).where(
+                    Schedule.room_id == schedule.room_id,
+                    Schedule.id != schedule.id,
+                    Schedule.day_of_week == new_date.weekday(),
+                    Schedule.start_time < schedule.end_time,
+                    Schedule.end_time > schedule.start_time,
+                    (Schedule.term_start.is_(None) | (Schedule.term_start <= new_date)),
+                    (Schedule.term_end.is_(None) | (Schedule.term_end >= new_date)),
+                )
+            )
+            if room_conflict:
+                raise ValueError("El aula ya está ocupada en ese horario en esa fecha")
+
+        # The checks above only compare against *weekly patterns* landing on that
+        # weekday. A make-up is by definition off-pattern — it can sit on any day
+        # — so two make-ups could be dropped onto the same teacher or room at the
+        # same hour without either one noticing the other. This compares against
+        # the concrete sessions already standing on that date.
+        same_day = db.scalars(
+            select(ClassSession)
+            .join(Schedule, ClassSession.schedule_id == Schedule.id)
+            .where(
+                ClassSession.date == new_date,
+                ClassSession.schedule_id != schedule.id,
+                ClassSession.status != SessionStatus.cancelled,
+                Schedule.start_time < schedule.end_time,
+                Schedule.end_time > schedule.start_time,
+            )
+        ).all()
+        for other in same_day:
+            other_schedule = db.get(Schedule, other.schedule_id)
+            if other_schedule is None:
+                continue
+            if schedule.teacher_id and other_schedule.teacher_id == schedule.teacher_id:
+                raise ValueError(
+                    "El profesor ya tiene otra clase en ese horario en esa fecha"
+                )
+            if schedule.room_id and other_schedule.room_id == schedule.room_id:
+                raise ValueError("El aula ya está ocupada en ese horario en esa fecha")
+
     session.status = SessionStatus.cancelled
     session.cancel_reason = f"Reprogramada al {new_date.isoformat()}"
     makeup = ClassSession(

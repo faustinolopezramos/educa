@@ -8,11 +8,20 @@ from app.core.database import Base
 from app.models.enums import UserRole
 
 
+from sqlalchemy import UniqueConstraint
+
+
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    tenant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(
         SqlEnum(UserRole, name="user_role"), default=UserRole.student
@@ -28,6 +37,9 @@ class User(Base):
     # exactly one place rather than a per-role table.
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cui_passport: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     nationality_id: Mapped[int | None] = mapped_column(
         ForeignKey("nationalities.id", ondelete="SET NULL"), nullable=True, index=True
     )

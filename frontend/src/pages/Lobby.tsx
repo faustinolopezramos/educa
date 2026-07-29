@@ -5,7 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Badge, Button, Card, Input, PageTitle } from "../components/ui";
 import { apiErrorMessage } from "../lib/api";
 import { formatDateTime } from "../lib/format";
-import { useEnrollments, useSchedules, useSession, useUpdateSession } from "../lib/queries";
+import { useEnrollments, useLobbyJoinInfo, useSchedules, useSession, useUpdateSession } from "../lib/queries";
 import { notify } from "../lib/toast";
 import type { ClassSession, Schedule } from "../lib/types";
 
@@ -20,6 +20,7 @@ export default function Lobby() {
   const id = Number(sessionId);
   const { user } = useAuth();
   const { data: session, isLoading, isError } = useSession(id);
+  const { data: lobbyInfo } = useLobbyJoinInfo(id);
   const { data: schedules = [] } = useSchedules();
   const { data: enrollments = [] } = useEnrollments();
   const schedule = schedules.find((s) => s.id === session?.schedule_id);
@@ -84,16 +85,17 @@ export default function Lobby() {
 
   // The teacher who owns this schedule is the host: they open the room, not wait.
   const isHost = !!user && !!schedule && schedule.teacher_id === user.id;
-  const avReady = av === "ok";
+  const isSavedAvOk = typeof window !== "undefined" && sessionStorage.getItem("educa_av_ok") === "true";
+  const avReady = av === "ok" || isSavedAvOk;
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <PageTitle subtitle={isHost ? "Eres el anfitrión" : "Aula virtual"}>
-          {isHost ? "Sala de clase" : "Lobby"}
+          {isHost ? "Sala de clase" : "Lobby de Entrada"}
         </PageTitle>
-        <Link to="/" className="text-sm text-brand-600 hover:underline">
-          ← Volver
+        <Link to="/" className="text-sm font-semibold text-brand-600 hover:text-brand-700 hover:underline flex items-center gap-1">
+          ← Volver a mis clases
         </Link>
       </div>
 
@@ -106,14 +108,17 @@ export default function Lobby() {
             schedule={schedule}
             remaining={remaining}
             avReady={avReady}
+            lobbyInfo={lobbyInfo}
           />
         ) : (
-          <StudentPanel session={session} schedule={schedule} remaining={remaining} avReady={avReady} />
+          <StudentPanel session={session} schedule={schedule} remaining={remaining} avReady={avReady} lobbyInfo={lobbyInfo} />
         )}
       </div>
     </div>
   );
 }
+
+import type { LobbyJoinInfo } from "../lib/types";
 
 // The host (teacher) opens the room and starts the class — enabled early so they
 // can prep, and it records the session as held plus the day's topic.
@@ -122,11 +127,13 @@ function HostPanel({
   schedule,
   remaining,
   avReady,
+  lobbyInfo,
 }: {
   session: ClassSession;
   schedule: Schedule | undefined;
   remaining: number;
   avReady: boolean;
+  lobbyInfo?: LobbyJoinInfo;
 }) {
   const update = useUpdateSession();
   const [topic, setTopic] = useState(session.topic ?? "");
@@ -136,7 +143,7 @@ function HostPanel({
     ? new Date(sessionStart(session.date, schedule.start_time)).toISOString()
     : session.date;
   const isVirtual = schedule?.modality === "virtual";
-  const joinUrl = isVirtual ? (schedule?.join_url ?? null) : null;
+  const joinUrl = lobbyInfo?.host_url ?? lobbyInfo?.join_url ?? (isVirtual ? (schedule?.join_url ?? null) : null);
   const missingLink = isVirtual && !joinUrl;
   const overdue = remaining <= 0;
 
@@ -281,17 +288,24 @@ function StudentPanel({
   schedule,
   remaining,
   avReady,
+  lobbyInfo,
 }: {
   session: ClassSession;
   schedule: Schedule | undefined;
   remaining: number;
   avReady: boolean;
+  lobbyInfo?: LobbyJoinInfo;
 }) {
   const startIso = schedule
     ? new Date(sessionStart(session.date, schedule.start_time)).toISOString()
     : session.date;
-  const joinUrl = schedule?.modality === "virtual" ? schedule.join_url : null;
-  const canJoin = remaining <= 0;
+  // The lobby endpoint is the only source of the link for a student: it is what
+  // enforces the class window server-side. Falling back to `schedule.join_url`
+  // used to hand the link over regardless of the hour — and the backend no
+  // longer sends that field to students anyway. No lobby answer yet means "not
+  // allowed in", never "let them in".
+  const joinUrl = lobbyInfo?.join_url ?? null;
+  const canJoin = lobbyInfo?.can_join ?? false;
 
   return (
     <Card>
@@ -321,6 +335,21 @@ function StudentPanel({
           pending
         />
       </ul>
+
+      {session.recording_url && (
+        <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+          <p className="font-bold text-indigo-900 text-sm">📹 Grabación de la Clase Disponible</p>
+          <p className="mt-1 text-xs text-indigo-700">Esta clase cuenta con video grabado para repaso.</p>
+          <a
+            href={session.recording_url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 transition"
+          >
+            ▶ Ver Grabación de la Clase
+          </a>
+        </div>
+      )}
 
       {joinUrl ? (
         <a
@@ -404,16 +433,23 @@ function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
   const runIdRef = useRef(0);
-  const [status, setStatus] = useState<AvStatus>("idle");
+  const [status, setStatus] = useState<AvStatus>(() => {
+    return typeof window !== "undefined" && sessionStorage.getItem("educa_av_ok") === "true"
+      ? "ok"
+      : "idle";
+  });
   const [errorMsg, setErrorMsg] = useState("");
   const [micLevel, setMicLevel] = useState(0);
   const [devices, setDevices] = useState<{ cam: string; mic: string }>({
-    cam: "",
-    mic: "",
+    cam: "Cámara verificada previamente",
+    mic: "Micrófono verificado previamente",
   });
 
   useEffect(() => {
     onStatus?.(status);
+    if (status === "ok" && typeof window !== "undefined") {
+      sessionStorage.setItem("educa_av_ok", "true");
+    }
   }, [status, onStatus]);
 
   const stopTest = useCallback(() => {
@@ -447,9 +483,10 @@ function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setStatus("ok");
+      if (typeof window !== "undefined") sessionStorage.setItem("educa_av_ok", "true");
       setDevices({
-        cam: stream.getVideoTracks()[0]?.label || "Cámara",
-        mic: stream.getAudioTracks()[0]?.label || "Micrófono",
+        cam: stream.getVideoTracks()[0]?.label || "Cámara activa",
+        mic: stream.getAudioTracks()[0]?.label || "Micrófono activo",
       });
 
       const audioCtx = new AudioContext();
@@ -479,10 +516,18 @@ function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
 
   return (
     <Card>
-      <h3 className="mb-3 text-[15px] font-semibold text-slate-800">
-        Prueba de cámara y micrófono
-      </h3>
-      <div className="aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[15px] font-semibold text-slate-800">
+          Prueba de cámara y micrófono
+        </h3>
+        {status === "ok" && (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+            ✓ Verificado
+          </span>
+        )}
+      </div>
+
+      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-900 flex items-center justify-center">
         <video
           ref={videoRef}
           autoPlay
@@ -490,24 +535,33 @@ function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
           muted
           className="h-full w-full object-cover"
         />
+        {status === "ok" && !streamRef.current && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 text-white p-4 text-center">
+            <span className="text-3xl mb-2">🎥</span>
+            <p className="text-sm font-semibold">Cámara y Micrófono Verificados</p>
+            <p className="text-xs text-slate-400 mt-1">Listo para entrar a clase directamente</p>
+          </div>
+        )}
       </div>
 
       {status === "ok" && (
         <>
-          <div className="mt-3">
-            <div className="mb-1 text-xs text-slate-500">Nivel de micrófono</div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-              <div
-                className="h-full bg-green-600 transition-all"
-                style={{ width: `${micLevel}%` }}
-              />
+          {streamRef.current && (
+            <div className="mt-3">
+              <div className="mb-1 text-xs text-slate-500 font-medium">Nivel de micrófono</div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full bg-emerald-500 transition-all"
+                  style={{ width: `${micLevel}%` }}
+                />
+              </div>
             </div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
-            <div className="truncate rounded-lg bg-slate-50 px-3 py-2">
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+            <div className="truncate rounded-lg bg-slate-100/70 px-3 py-2 border border-slate-200/60 font-medium">
               📷 {devices.cam}
             </div>
-            <div className="truncate rounded-lg bg-slate-50 px-3 py-2">
+            <div className="truncate rounded-lg bg-slate-100/70 px-3 py-2 border border-slate-200/60 font-medium">
               🎙 {devices.mic}
             </div>
           </div>
@@ -520,8 +574,8 @@ function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
         </p>
       )}
 
-      <Button className="mt-4 w-full" onClick={startTest}>
-        {status === "ok" ? "Reintentar prueba" : "Probar cámara y micrófono"}
+      <Button className="mt-4 w-full" variant={status === "ok" ? "secondary" : "primary"} onClick={startTest}>
+        {status === "ok" ? "Volver a probar cámara y micrófono" : "Probar cámara y micrófono"}
       </Button>
     </Card>
   );

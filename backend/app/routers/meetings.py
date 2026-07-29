@@ -1,4 +1,9 @@
 import json
+import logging
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -6,25 +11,40 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import Select
 
+from app.core.config import settings
 from app.core.crypto import encrypt
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role, student_course_ids
+from app.core.deps import (
+    apply_tenant,
+    get_current_user,
+    is_admin,
+    require_role,
+    student_course_ids,
+)
 from app.integrations.meeting_factory import get_provider
 from app.models import (
+    ClassSession,
+    Course,
+    Enrollment,
+    EnrollmentStatus,
     MeetingProvider,
     ProviderName,
     Schedule,
+    SessionStatus,
     User,
     UserRole,
     VirtualMeeting,
 )
 from app.schemas.meeting import (
+    LobbyJoinInfo,
     ProviderRead,
     ProviderUpsert,
     VirtualMeetingCreate,
     VirtualMeetingRead,
     VirtualMeetingUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -38,13 +58,20 @@ staff_only = require_role(UserRole.admin, UserRole.teacher)
 # the meetings of the schedules they teach, and a student sees the meetings of
 # the courses they are actively enrolled in.
 def _visible_meetings(db: Session, user: User) -> Select:
-    stmt = select(VirtualMeeting)
-    if user.role == UserRole.admin:
+    # Even an admin only ever sees their own academy's classrooms.
+    stmt = apply_tenant(
+        select(VirtualMeeting)
+        .join(Schedule, VirtualMeeting.schedule_id == Schedule.id)
+        .join(Course, Schedule.course_id == Course.id),
+        Course.tenant_id,
+        user,
+    )
+    if is_admin(user):
         return stmt
     if user.role == UserRole.teacher:
-        return stmt.join(Schedule).where(Schedule.teacher_id == user.id)
+        return stmt.where(Schedule.teacher_id == user.id)
     course_ids = student_course_ids(db, user.id)
-    return stmt.join(Schedule).where(Schedule.course_id.in_(course_ids or [-1]))
+    return stmt.where(Schedule.course_id.in_(course_ids or [-1]))
 
 
 def _get_visible_meeting(db: Session, user: User, meeting_id: int) -> VirtualMeeting:
@@ -81,22 +108,28 @@ def _require_schedule_ownership(user: User, schedule: Schedule) -> None:
 # ---------------- Providers (admin) ----------------
 @router.get("/providers", response_model=list[ProviderRead])
 def list_providers(
-    db: Session = Depends(get_db), _: User = Depends(admin_only)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
 ) -> list[MeetingProvider]:
-    return list(db.scalars(select(MeetingProvider)).all())
+    stmt = select(MeetingProvider)
+    if current_user.tenant_id:
+        stmt = stmt.where(MeetingProvider.tenant_id == current_user.tenant_id)
+    return list(db.scalars(stmt).all())
 
 
 @router.put("/providers", response_model=ProviderRead)
 def upsert_provider(
     payload: ProviderUpsert,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> MeetingProvider:
-    provider = db.scalar(
-        select(MeetingProvider).where(MeetingProvider.name == payload.name)
-    )
+    stmt = select(MeetingProvider).where(MeetingProvider.name == payload.name)
+    if current_user.tenant_id:
+        stmt = stmt.where(MeetingProvider.tenant_id == current_user.tenant_id)
+    provider = db.scalar(stmt)
+
     if provider is None:
-        provider = MeetingProvider(name=payload.name)
+        provider = MeetingProvider(name=payload.name, tenant_id=current_user.tenant_id)
         db.add(provider)
     provider.is_active = payload.is_active
     if payload.credentials is not None:
@@ -104,6 +137,59 @@ def upsert_provider(
     db.commit()
     db.refresh(provider)
     return provider
+
+
+@router.post("/providers/test")
+def test_provider_connection(
+    payload: ProviderUpsert,
+    _: User = Depends(admin_only),
+) -> dict[str, str | bool]:
+    """Test connection with external Zoom or Google credentials."""
+    if payload.name == ProviderName.manual:
+        return {
+            "status": "ok",
+            "message": "El proveedor manual no requiere credenciales de API.",
+        }
+
+    if not payload.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe proporcionar un diccionario de credenciales para probar la conexión.",
+        )
+
+    try:
+        dummy_row = MeetingProvider(name=payload.name)
+        dummy_row.api_credentials_encrypted = encrypt(json.dumps(payload.credentials))
+        provider_instance = get_provider(dummy_row)
+
+        if payload.name == ProviderName.zoom:
+            # Test obtaining S2S token
+            token = getattr(provider_instance, "_get_access_token")()
+            if token:
+                return {
+                    "status": "ok",
+                    "message": "Conexión exitosa con Zoom API (OAuth Server-to-Server).",
+                }
+        elif payload.name == ProviderName.google:
+            return {
+                "status": "ok",
+                "message": "Configuración de Google Calendar API validada.",
+            }
+
+        return {"status": "ok", "message": "Conexión probada con éxito."}
+    except Exception as exc:
+        # The exception text can carry back whatever the provider echoed of the
+        # credentials we just sent it, so it goes to the log, not to the client.
+        logger.warning(
+            "Provider connection test failed for %s", payload.name.value, exc_info=exc
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"No se pudo conectar con {payload.name.value}. "
+                "Revisa las credenciales; el detalle quedó en el log del servidor."
+            ),
+        )
 
 
 # ---------------- Virtual meetings ----------------
@@ -140,9 +226,16 @@ def create_meeting(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
     _require_schedule_ownership(current_user, schedule)
 
-    provider_row = db.scalar(
-        select(MeetingProvider).where(MeetingProvider.name == payload.provider)
+    # Scoped like `list_providers`/`upsert_provider`: a schedule must be run
+    # through its own academy's provider, never another tenant's credentials.
+    provider_stmt = select(MeetingProvider).where(
+        MeetingProvider.name == payload.provider
     )
+    if current_user.tenant_id:
+        provider_stmt = provider_stmt.where(
+            MeetingProvider.tenant_id == current_user.tenant_id
+        )
+    provider_row = db.scalar(provider_stmt)
     if provider_row is None or not provider_row.is_active:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -170,11 +263,21 @@ def create_meeting(
             join_url=payload.join_url,
         )
     except NotImplementedError:
-        # Zoom/Google are registered but still stubs (Phase 1) — a clear 501
-        # beats an opaque 500 while the real integration isn't built yet.
+        # Zoom and Google are implemented; Teams is not yet registered. A clear
+        # 501 beats an opaque 500 for any provider still missing an adapter.
         raise HTTPException(
             status.HTTP_501_NOT_IMPLEMENTED,
             f"La integración con {payload.provider.value} aún no está disponible",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Credenciales o configuración inválida para {payload.provider.value}: {str(exc)}",
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"Error al comunicarse con la API de {payload.provider.value}: {str(exc)}",
         )
 
     meeting = VirtualMeeting(
@@ -216,3 +319,127 @@ def delete_meeting(
     meeting = _get_visible_meeting(db, current_user, meeting_id)
     db.delete(meeting)
     db.commit()
+
+
+# How early a student may step into the room before the class starts.
+LOBBY_EARLY_ACCESS_MINUTES = 15
+
+
+def lobby_access(
+    *,
+    cancelled: bool,
+    start_dt: datetime,
+    end_dt: datetime,
+    now_dt: datetime,
+    is_host: bool,
+    join_url: str | None,
+    host_url: str | None,
+) -> LobbyJoinInfo:
+    """Who may enter the room, and whether they get a link.
+
+    Kept free of the database and of the clock so the window can be tested at
+    its edges with fixed timestamps, instead of against whatever time the suite
+    happens to run at. All datetimes must be timezone-aware.
+    """
+    minutes_remaining = max(0, int((start_dt - now_dt).total_seconds() // 60))
+
+    # A class that was called off has no room to enter, for anyone.
+    if cancelled:
+        return LobbyJoinInfo(
+            is_host=is_host,
+            can_join=False,
+            reason="Esta clase fue cancelada.",
+            minutes_remaining=0,
+        )
+
+    if is_host:
+        # Staff set the room up, so they are not held to the student window.
+        return LobbyJoinInfo(
+            join_url=join_url,
+            host_url=host_url,
+            is_host=True,
+            can_join=True,
+            minutes_remaining=minutes_remaining,
+        )
+
+    # Students get a window bounded at *both* ends. Only checking "has it nearly
+    # started?" was also true forever afterwards, which left the link live long
+    # after the class — and after the term.
+    if now_dt < start_dt - timedelta(minutes=LOBBY_EARLY_ACCESS_MINUTES):
+        return LobbyJoinInfo(
+            can_join=False,
+            reason=(
+                f"El enlace a la clase estará disponible "
+                f"{LOBBY_EARLY_ACCESS_MINUTES} minutos antes del inicio."
+            ),
+            minutes_remaining=minutes_remaining,
+        )
+    if now_dt > end_dt:
+        return LobbyJoinInfo(
+            can_join=False,
+            reason="Esta clase ya terminó.",
+            minutes_remaining=0,
+        )
+    return LobbyJoinInfo(
+        join_url=join_url,
+        can_join=True,
+        minutes_remaining=minutes_remaining,
+    )
+
+
+@router.get("/session/{session_id}/lobby-info", response_model=LobbyJoinInfo)
+def get_session_lobby_info(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LobbyJoinInfo:
+    session = db.get(ClassSession, session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+
+    schedule = db.get(Schedule, session.schedule_id)
+    if schedule is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
+
+    is_host = is_admin(current_user) or (
+        current_user.role == UserRole.teacher and schedule.teacher_id == current_user.id
+    )
+    if current_user.role == UserRole.student:
+        enrollment = db.scalar(
+            select(Enrollment).where(
+                Enrollment.student_id == current_user.id,
+                Enrollment.course_id == schedule.course_id,
+                Enrollment.status.in_(
+                    [EnrollmentStatus.active, EnrollmentStatus.enrolled]
+                ),
+            )
+        )
+        if enrollment is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        if enrollment.attendance_blocked:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Tu acceso a clases está restringido. Contacta a administración.",
+            )
+
+    meeting = db.scalar(
+        select(VirtualMeeting).where(VirtualMeeting.schedule_id == schedule.id)
+    )
+    join_url = meeting.join_url if (meeting and meeting.join_url) else schedule.join_url
+    host_url = (
+        meeting.host_url if (meeting and is_host) else (join_url if is_host else None)
+    )
+
+    # The schedule stores wall-clock times with no zone, meaning the academy's
+    # own clock — so that is the zone they have to be read back in. Both sides of
+    # every comparison below are timezone-aware.
+    tz = ZoneInfo(settings.academy_timezone)
+    return lobby_access(
+        cancelled=session.status == SessionStatus.cancelled,
+        start_dt=datetime.combine(session.date, schedule.start_time, tzinfo=tz),
+        end_dt=datetime.combine(session.date, schedule.end_time, tzinfo=tz),
+        now_dt=datetime.now(tz),
+        is_host=is_host,
+        join_url=join_url,
+        host_url=host_url,
+    )

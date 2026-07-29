@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "^/(auth|users|catalog|certificates|holidays|location-proposals|enrollments|schedules|sessions|grades|rooms|attendance|meetings|reports|notifications|audit|teachers)(/|$|\\?)":
+      "^/(auth|users|catalog|certificates|holidays|location-proposals|enrollments|schedules|sessions|grades|rooms|attendance|meetings|reports|notifications|audit|teachers|tenants|assignments)(/|$|\\?)":
         {
           target: "http://localhost:8000",
           changeOrigin: true,

@@ -52,6 +52,22 @@ def compute_final_grade(db: Session, enrollment: Enrollment) -> FinalGrade:
     for g in grades:
         by_name.setdefault(g.evaluation_name, []).append(g.score)
 
+    # An evaluation the course explicitly configured but the student has no
+    # grade for is work that was not delivered, so it scores 0 rather than
+    # vanishing from the average. Without this, a student holding a single 10
+    # in "Participación" and no exam finishes the course with a 10.
+    #
+    # Only *configured* evaluations count this way: a course that configures
+    # nothing still gets a plain average of whatever was actually graded, which
+    # is the behaviour every ad-hoc evaluation name relies on.
+    #
+    # And only once the student has at least one grade. A student with nothing
+    # recorded has not failed the missing evaluations, they simply have not been
+    # graded yet — that case still reports no final grade at all.
+    if by_name:
+        for name in weights:
+            by_name.setdefault(name, [0.0])
+
     components = [
         Component(
             name=name,

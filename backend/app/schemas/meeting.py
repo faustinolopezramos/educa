@@ -55,3 +55,12 @@ class VirtualMeetingRead(BaseModel):
     end_time: datetime | None
     status: MeetingStatus
     recording_url: str | None
+
+
+class LobbyJoinInfo(BaseModel):
+    join_url: str | None = None
+    host_url: str | None = None
+    is_host: bool = False
+    can_join: bool = False
+    reason: str | None = None
+    minutes_remaining: int = 0

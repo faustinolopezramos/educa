@@ -8,6 +8,9 @@ from app.core.database import Base
 from app.models.enums import EnrollmentStatus, PaymentStatus
 
 
+from sqlalchemy import Index, text
+
+
 class Enrollment(Base):
     """A matrícula/inscripción — the "Código/Carné" the business asks for is
     `enrollment_code`, generated once at creation (see
@@ -15,8 +18,12 @@ class Enrollment(Base):
 
     __tablename__ = "enrollments"
     __table_args__ = (
-        UniqueConstraint(
-            "student_id", "course_id", name="uq_enrollment_student_course"
+        Index(
+            "uq_enrollment_student_course_active",
+            "student_id",
+            "course_id",
+            unique=True,
+            postgresql_where=text("status != 'withdrawn'"),
         ),
     )
 

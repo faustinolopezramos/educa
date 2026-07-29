@@ -6,13 +6,17 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
+    apply_tenant,
     get_current_user,
+    in_tenant,
+    is_admin,
     require_role,
     student_course_ids,
     teacher_course_ids,
 )
 from app.models import (
     ClassSession,
+    Course,
     Enrollment,
     EnrollmentStatus,
     Schedule,
@@ -45,8 +49,16 @@ staff_only = require_role(UserRole.admin, UserRole.teacher)
 # academic-relationship rule as meetings: staff see the sessions of the courses
 # they run, a student sees the sessions of the courses they are enrolled in.
 def _visible_sessions(db: Session, user: User) -> Select:
-    stmt = select(ClassSession).join(Schedule)
-    if user.role == UserRole.admin:
+    # A session reaches its academy through schedule → course, which also caps
+    # what an admin can see: the whole school, never the whole installation.
+    stmt = apply_tenant(
+        select(ClassSession)
+        .join(Schedule)
+        .join(Course, Schedule.course_id == Course.id),
+        Course.tenant_id,
+        user,
+    )
+    if is_admin(user):
         return stmt
     if user.role == UserRole.teacher:
         return stmt.where(
@@ -59,6 +71,8 @@ def _owned_schedule_or_404(db: Session, user: User, schedule_id: int) -> Schedul
     """A schedule the caller is staff for, or 404 (never confirm it exists)."""
     schedule = db.get(Schedule, schedule_id)
     if schedule is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
+    if not in_tenant(user, db.get(Course, schedule.course_id)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
     if user.role == UserRole.teacher and schedule.teacher_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
@@ -102,7 +116,7 @@ def get_session(
                 Enrollment.student_id == current_user.id,
                 Enrollment.course_id == sched.course_id,
                 Enrollment.status == EnrollmentStatus.active,
-                Enrollment.attendance_blocked == True,
+                Enrollment.attendance_blocked.is_(True),
             )
         )
         if blocked:
@@ -147,6 +161,9 @@ def ensure(
     return session
 
 
+from app.services.audit import record, snapshot
+
+
 @router.post("/{session_id}/cancel", response_model=ClassSessionRead)
 def cancel(
     session_id: int,
@@ -159,7 +176,17 @@ def cancel(
     if session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     _owned_schedule_or_404(db, current_user, session.schedule_id)
+    before = snapshot(session)
     cancel_session(db, session, payload.reason)
+    record(
+        db,
+        current_user,
+        "cancel",
+        "class_session",
+        session.id,
+        before=before,
+        after=snapshot(session),
+    )
     notify_session_cancelled(db, session)
     db.commit()
     db.refresh(session)
@@ -178,10 +205,20 @@ def reschedule(
     if session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     _owned_schedule_or_404(db, current_user, session.schedule_id)
+    before = snapshot(session)
     try:
         makeup = reschedule_session(db, session, payload.new_date)
     except ValueError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
+    record(
+        db,
+        current_user,
+        "reschedule",
+        "class_session",
+        session.id,
+        before=before,
+        after=snapshot(makeup),
+    )
     notify_session_cancelled(db, session, rescheduled_to=payload.new_date.isoformat())
     db.commit()
     db.refresh(makeup)
@@ -199,8 +236,21 @@ def update_session(
     if session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     _owned_schedule_or_404(db, current_user, session.schedule_id)
+    # This patch can set the very fields `cancel`/`reschedule` audit — status and
+    # cancel_reason among them — so leaving it untraced was a way to change a
+    # class's fate without appearing in the trail.
+    before = snapshot(session)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(session, field, value)
+    record(
+        db,
+        current_user,
+        "update",
+        "class_session",
+        session.id,
+        before=before,
+        after=snapshot(session),
+    )
     db.commit()
     db.refresh(session)
     return session

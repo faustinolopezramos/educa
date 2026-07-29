@@ -10,7 +10,6 @@ import {
 import { Card } from "../../components/ui";
 import { useCourses, useEnrollments, useGrades } from "../../lib/queries";
 
-// Serie principal en el verde pino de la marca.
 const SERIES = "#0F6E62";
 const FAIL = "#A8412C";
 const MAX_SCORE = 10;
@@ -20,10 +19,11 @@ export function StudentGrades() {
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
 
+  const hasOverdue = enrollments.some((e) => e.payment_status === "overdue");
+
   const courseName = (id: number) =>
     courses.find((c) => c.id === id)?.name ?? `#${id}`;
 
-  // Group the student's grades by course (via enrollment).
   const byCourse = enrollments.map((e) => {
     const rows = grades.filter((g) => g.enrollment_id === e.id);
     const avg =
@@ -38,6 +38,22 @@ export function StudentGrades() {
     .map((c) => ({ course: courseName(c.courseId), avg: Number(c.avg.toFixed(2)) }));
 
   const hasGrades = grades.length > 0;
+
+  if (hasOverdue) {
+    return (
+      <Card className="border-amber-300 bg-amber-50/70 py-12 text-center shadow-sm">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-2xl text-amber-800 mb-3">
+          🔒
+        </div>
+        <h3 className="text-lg font-semibold text-amber-900">Acceso a Calificaciones Restringido</h3>
+        <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-amber-800">
+          Tienes saldo o mensualidades pendientes de pago en tus matrículas activas.
+          Por política de la institución, la consulta de calificaciones y la emisión de certificados
+          requieren estar al día con la administración.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">

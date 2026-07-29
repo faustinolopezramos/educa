@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -20,6 +21,8 @@ from app.models import RefreshSession, User
 from app.schemas.auth import RefreshRequest, Token
 from app.schemas.user import UserRead, UserSelfUpdate
 from app.services.audit import record, snapshot
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -78,11 +81,25 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ) -> Token:
-    user = db.scalar(select(User).where(User.email == form_data.username))
-    # Always run verify_password, even for an unknown email: comparing against
-    # a dummy hash keeps this branch's timing indistinguishable from a wrong
-    # password on a real account, so response time can't be used to enumerate
-    # registered emails.
+    # Emails are unique per tenant, not globally (`uq_users_tenant_email`), so
+    # an address can legitimately exist in two academies. There is no tenant in
+    # a login request to disambiguate with — and taking one from the client
+    # would let the caller choose whose account to authenticate against — so an
+    # ambiguous address is refused rather than resolved arbitrarily.
+    candidates = list(
+        db.scalars(select(User).where(User.email == form_data.username)).all()
+    )
+    user = candidates[0] if len(candidates) == 1 else None
+    if len(candidates) > 1:
+        logger.warning(
+            "Refused login for %s: the address exists in %d tenants",
+            form_data.username,
+            len(candidates),
+        )
+    # Always run verify_password, even for an unknown or ambiguous email:
+    # comparing against a dummy hash keeps this branch's timing
+    # indistinguishable from a wrong password on a real account, so response
+    # time can't be used to enumerate registered emails.
     password_hash = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
     password_ok = verify_password(form_data.password, password_hash)
     if user is None or not password_ok:

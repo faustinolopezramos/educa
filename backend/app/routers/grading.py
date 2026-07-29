@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import (
     get_current_user,
+    in_tenant,
     require_role,
+    student_is_solvent,
     teacher_teaches_course,
 )
 from app.models import (
@@ -20,6 +22,7 @@ from app.models import (
     CourseEvaluation,
     Enrollment,
     Level,
+    PaymentStatus,
     User,
     UserRole,
 )
@@ -101,10 +104,21 @@ def delete_evaluation(
 # ---------------- Final grade ----------------
 def _visible_enrollment(db: Session, user: User, enrollment_id: int) -> Enrollment:
     enrollment = db.get(Enrollment, enrollment_id)
+    # Reached through its course, which is what carries the academy.
+    if enrollment is not None and not in_tenant(
+        user, db.get(Course, enrollment.course_id)
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
     if enrollment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
-    if user.role == UserRole.student and enrollment.student_id != user.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    if user.role == UserRole.student:
+        if enrollment.student_id != user.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+        if not student_is_solvent(db, user.id):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Acceso restringido: Tienes pagos pendientes. Por favor regulariza tu saldo para consultar notas y certificados.",
+            )
     if user.role == UserRole.teacher and not teacher_teaches_course(
         db, user.id, enrollment.course_id
     ):
@@ -136,7 +150,13 @@ def get_final_grade(
 # ---------------- Certificates ----------------
 def _course_level(db: Session, course_id: int) -> Level:
     course = db.get(Course, course_id)
-    return db.get(Level, course.level_id)
+    level = db.get(Level, course.level_id) if course else None
+    if level is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "El curso no tiene un nivel válido; no se puede emitir el certificado",
+        )
+    return level
 
 
 @router.post(
@@ -155,6 +175,18 @@ def issue_certificate(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
     if db.scalar(select(Certificate).where(Certificate.enrollment_id == enrollment_id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "El certificado ya fue emitido")
+
+    # Enforce Financial Solvency Policy (no overdue/delinquent payments allowed)
+    if enrollment.payment_status == PaymentStatus.overdue or not student_is_solvent(
+        db, enrollment.student_id
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "message": "No se puede emitir el certificado: El alumno tiene pagos en mora pendientes",
+                "reason": "unpaid_balance",
+            },
+        )
 
     result = compute_final_grade(db, enrollment)
     if not result.passed:

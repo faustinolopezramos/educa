@@ -264,7 +264,9 @@ def student_schedule_conflicts(
         ).all()
     )
 
-    clashing: list[Schedule] = []
+    # One existing block can clash with several blocks of the target course;
+    # it is still a single conflict to report, so it appears once.
+    clashing: dict[int, Schedule] = {}
     for t in target:
         for e in existing:
             if intervals_overlap(
@@ -277,5 +279,5 @@ def student_schedule_conflicts(
                 (t.term_start, t.term_end),
                 (e.term_start, e.term_end),
             ):
-                clashing.append(e)
-    return clashing
+                clashing[e.id] = e
+    return list(clashing.values())

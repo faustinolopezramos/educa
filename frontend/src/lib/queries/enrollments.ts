@@ -20,6 +20,8 @@ export function useCreateEnrollment() {
       student_id: number;
       course_id: number;
       amount?: number;
+      /** When the cuota falls due; drives the "en mora" status. */
+      due_date?: string;
       force?: boolean;
     }) =>
       (
@@ -40,6 +42,14 @@ export function useUpdateEnrollment() {
       ...payload
     }: Partial<Enrollment> & { id: number }) =>
       (await api.patch<Enrollment>(`/enrollments/${id}`, payload)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["enrollments"] }),
+  });
+}
+
+export function useDeleteEnrollment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => (await api.delete(`/enrollments/${id}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["enrollments"] }),
   });
 }

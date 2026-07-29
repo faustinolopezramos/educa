@@ -4,13 +4,24 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Archivo", "system-ui", "sans-serif"],
-        serif: ["Newsreader", "Georgia", "serif"],
+        // Una sola fuente tipográfica unificada para toda la plataforma
+        sans: ["'Plus Jakarta Sans'", "system-ui", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+        serif: ["'Plus Jakarta Sans'", "system-ui", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
         mono: ["'Space Mono'", "ui-monospace", "monospace"],
       },
+      fontSize: {
+        // Ajuste fluido de tamaños según la pantalla/escenario
+        "2xs": ["0.6875rem", { lineHeight: "0.875rem" }],
+        xs: ["0.75rem", { lineHeight: "1rem" }],
+        sm: ["0.875rem", { lineHeight: "1.25rem" }],
+        base: ["1rem", { lineHeight: "1.5rem" }],
+        lg: ["1.125rem", { lineHeight: "1.75rem" }],
+        xl: ["1.25rem", { lineHeight: "1.75rem" }],
+        "2xl": ["1.5rem", { lineHeight: "2rem" }],
+        "3xl": ["1.875rem", { lineHeight: "2.25rem" }],
+        "4xl": ["2.25rem", { lineHeight: "2.5rem" }],
+      },
       colors: {
-        // Primario "pino" — reemplaza el índigo. Mantiene el nombre `brand`
-        // para que todas las clases existentes (brand-600, etc.) se reestilen.
         brand: {
           50: "#E0EFEC",
           100: "#C4E1DB",
@@ -18,7 +29,6 @@ export default {
           600: "#0F6E62",
           700: "#0B564C",
         },
-        // Neutros cálidos "papel/tinta" — sobrescriben la escala slate fría.
         slate: {
           50: "#F5F2EA",
           100: "#EFEADD",
@@ -31,7 +41,6 @@ export default {
           800: "#2A2416",
           900: "#191510",
         },
-        // Verde "aprobado / bien" — más apagado que el green por defecto.
         green: {
           50: "#E7F0E8",
           100: "#D2E5D5",
@@ -40,7 +49,6 @@ export default {
           700: "#2F6146",
           800: "#264E39",
         },
-        // Ámbar "pendiente / atención".
         amber: {
           50: "#F7EDD9",
           100: "#F1E2C4",
@@ -48,7 +56,6 @@ export default {
           600: "#B77A2B",
           700: "#8A5A1C",
         },
-        // Ladrillo "riesgo / destructivo" — reemplaza el rojo.
         red: {
           50: "#F6E7E1",
           100: "#F1D9CF",
@@ -56,7 +63,6 @@ export default {
           600: "#A8412C",
           700: "#8A3524",
         },
-        // Índigo remapeado a pino para reutilizar usos antiguos.
         indigo: {
           50: "#E0EFEC",
           100: "#C4E1DB",

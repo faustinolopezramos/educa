@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime
+from sqlalchemy import Date, DateTime
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy import Float, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -27,6 +27,10 @@ class Payment(Base):
     kind: Mapped[PaymentKind] = mapped_column(SqlEnum(PaymentKind, name="payment_kind"))
     amount: Mapped[float] = mapped_column(Float)
     method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # When a `charge` falls due. NULL means open-ended — an amount owed with no
+    # agreed date, which can never become delinquent on its own. Ignored on
+    # `payment` rows, which record money already received.
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     paid_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

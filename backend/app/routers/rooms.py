@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role
+from app.core.deps import apply_tenant, get_current_user, in_tenant, require_role
 from app.models import Room, User, UserRole
 from app.schemas.room import RoomCreate, RoomRead, RoomUpdate
 
@@ -14,18 +14,19 @@ admin_only = require_role(UserRole.admin)
 
 @router.get("", response_model=list[RoomRead])
 def list_rooms(
-    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[Room]:
-    return list(db.scalars(select(Room)).all())
+    stmt = apply_tenant(select(Room), Room.tenant_id, current_user)
+    return list(db.scalars(stmt).all())
 
 
 @router.post("", response_model=RoomRead, status_code=status.HTTP_201_CREATED)
 def create_room(
     payload: RoomCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> Room:
-    room = Room(**payload.model_dump())
+    room = Room(**payload.model_dump(), tenant_id=current_user.tenant_id)
     db.add(room)
     db.commit()
     db.refresh(room)
@@ -37,10 +38,10 @@ def update_room(
     room_id: int,
     payload: RoomUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> Room:
     room = db.get(Room, room_id)
-    if room is None:
+    if not in_tenant(current_user, room):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(room, field, value)
@@ -53,10 +54,10 @@ def update_room(
 def delete_room(
     room_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> None:
     room = db.get(Room, room_id)
-    if room is None:
+    if not in_tenant(current_user, room):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
     db.delete(room)
     db.commit()

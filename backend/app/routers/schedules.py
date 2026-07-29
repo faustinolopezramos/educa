@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
+    apply_tenant,
     get_current_user,
+    in_tenant,
     require_role,
     student_course_ids,
     teacher_teaches_course,
@@ -22,6 +24,7 @@ from app.schemas.schedule import (
     ScheduleUpdate,
 )
 from app.schemas.teacher import AvailableTeacher
+from app.services.audit import record, snapshot
 from app.services.scheduling import (
     room_conflicts,
     teacher_available,
@@ -33,6 +36,22 @@ from app.services.scheduling import (
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
 admin_only = require_role(UserRole.admin)
+
+
+def _to_read(schedule: Schedule, user: User) -> ScheduleRead:
+    """Serialize a schedule, hiding the class link from students.
+
+    `join_url` is the door into the live classroom. The lobby
+    (`GET /meetings/session/{id}/lobby-info`) only hands it over inside the
+    class window, and that gate is worth nothing if the same URL can be read
+    straight off the timetable at any hour — which is exactly what listing
+    schedules used to do. Staff keep it: a teacher needs the link to set up
+    the class, and an admin to verify it.
+    """
+    model = ScheduleRead.model_validate(schedule)
+    if user.role == UserRole.student:
+        model.join_url = None
+    return model
 
 
 def _to_conflict_info(db: Session, conflicts: list[Schedule]) -> list[ConflictInfo]:
@@ -146,7 +165,7 @@ def list_schedules(
     mine: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[Schedule]:
+) -> list[ScheduleRead]:
     """The timetable, scoped to what the caller has a reason to see.
 
     Staff read the academy's timetable: an admin plans against all of it, and a
@@ -155,7 +174,11 @@ def list_schedules(
     of the courses they are actively enrolled in and nothing else — the rest
     would be a directory of who teaches what, and when.
     """
-    stmt = select(Schedule)
+    stmt = apply_tenant(
+        select(Schedule).join(Course, Schedule.course_id == Course.id),
+        Course.tenant_id,
+        current_user,
+    )
     if current_user.role == UserRole.student:
         enrolled = student_course_ids(db, current_user.id)
         stmt = stmt.where(Schedule.course_id.in_(enrolled or [-1]))
@@ -166,7 +189,7 @@ def list_schedules(
     # A teacher viewing "mine" only sees their own schedules.
     if mine and current_user.role == UserRole.teacher:
         stmt = stmt.where(Schedule.teacher_id == current_user.id)
-    return list(db.scalars(stmt).all())
+    return [_to_read(s, current_user) for s in db.scalars(stmt).all()]
 
 
 @router.post("/check-conflict", response_model=ConflictResponse)
@@ -232,18 +255,24 @@ def available_teachers(
     start_time: time,
     end_time: time,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> list[AvailableTeacher]:
     """Teachers who are qualified, available, under their cap and free for a slot."""
     course = db.get(Course, course_id)
-    if course is None:
+    if not in_tenant(current_user, course):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
     if start_time >= end_time or not 0 <= day_of_week <= 6:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid slot")
     term_start, term_end = _course_term(course)
 
     result: list[AvailableTeacher] = []
-    teachers = db.scalars(select(User).where(User.role == UserRole.teacher)).all()
+    teachers = db.scalars(
+        apply_tenant(
+            select(User).where(User.role == UserRole.teacher),
+            User.tenant_id,
+            current_user,
+        )
+    ).all()
     for t in teachers:
         if not teacher_qualified_for_course(db, t.id, course_id):
             continue
@@ -264,13 +293,13 @@ def create_schedule(
     payload: ScheduleCreate,
     force: bool = False,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
-) -> Schedule:
+    current_user: User = Depends(admin_only),
+) -> ScheduleRead:
     course = db.get(Course, payload.course_id)
-    if course is None:
+    if not in_tenant(current_user, course):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
     teacher = db.get(User, payload.teacher_id)
-    if teacher is None or teacher.role != UserRole.teacher:
+    if not in_tenant(current_user, teacher) or teacher.role != UserRole.teacher:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "teacher_id must be a teacher")
     # Scheduling is downstream of assignment: the teacher must already teach the
     # course before they can be given a slot in it.
@@ -282,7 +311,9 @@ def create_schedule(
                 "reason": "not_assigned",
             },
         )
-    if payload.room_id is not None and db.get(Room, payload.room_id) is None:
+    if payload.room_id is not None and not in_tenant(
+        current_user, db.get(Room, payload.room_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
 
     term_start, term_end = _course_term(course)
@@ -338,7 +369,7 @@ def create_schedule(
     db.add(schedule)
     _commit_or_conflict(db)
     db.refresh(schedule)
-    return schedule
+    return _to_read(schedule, current_user)
 
 
 @router.patch("/{schedule_id}", response_model=ScheduleRead)
@@ -347,10 +378,12 @@ def update_schedule(
     payload: ScheduleUpdate,
     force: bool = False,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
-) -> Schedule:
+    current_user: User = Depends(admin_only),
+) -> ScheduleRead:
     schedule = db.get(Schedule, schedule_id)
-    if schedule is None:
+    if schedule is None or not in_tenant(
+        current_user, db.get(Course, schedule.course_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
 
     data = payload.model_dump(exclude_unset=True)
@@ -368,13 +401,13 @@ def update_schedule(
         )
     if "teacher_id" in data:
         t = db.get(User, new_teacher)
-        if t is None or t.role != UserRole.teacher:
+        if not in_tenant(current_user, t) or t.role != UserRole.teacher:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "teacher_id must be a teacher"
             )
     # If the course changes, validate it and re-derive the denormalized term.
     course = db.get(Course, new_course_id)
-    if course is None:
+    if not in_tenant(current_user, course):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
     # After any teacher/course change, the resulting pair must still be assigned.
     if ("teacher_id" in data or "course_id" in data) and not teacher_teaches_course(
@@ -387,7 +420,7 @@ def update_schedule(
                 "reason": "not_assigned",
             },
         )
-    if new_room is not None and db.get(Room, new_room) is None:
+    if new_room is not None and not in_tenant(current_user, db.get(Room, new_room)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
     term_start, term_end = _course_term(course)
 
@@ -445,17 +478,24 @@ def update_schedule(
     schedule.term_end = term_end
     _commit_or_conflict(db)
     db.refresh(schedule)
-    return schedule
+    return _to_read(schedule, current_user)
 
 
 @router.delete("/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_schedule(
     schedule_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> None:
     schedule = db.get(Schedule, schedule_id)
-    if schedule is None:
+    if schedule is None or not in_tenant(
+        current_user, db.get(Course, schedule.course_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
+    # Deleting a schedule takes its sessions — and their attendance and grades —
+    # with it, so it belongs in the trail like every other destructive change.
+    record(
+        db, current_user, "delete", "schedule", schedule.id, before=snapshot(schedule)
+    )
     db.delete(schedule)
     db.commit()

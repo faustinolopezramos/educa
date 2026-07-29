@@ -30,12 +30,20 @@ def list_teachers(
     _: User = Depends(get_current_user),
 ) -> list[AvailableTeacher]:
     """Public (any authenticated user): teacher id + name, e.g. to label a class."""
-    teachers = db.scalars(select(User).where(User.role == UserRole.teacher)).all()
+    teachers = db.scalars(
+        apply_tenant(
+            select(User).where(User.role == UserRole.teacher),
+            User.tenant_id,
+            current_user,
+        )
+    ).all()
     return [AvailableTeacher(id=t.id, full_name=t.full_name) for t in teachers]
 
 
-def _require_teacher(db: Session, teacher_id: int) -> User:
+def _require_teacher(db: Session, teacher_id: int, actor: User | None = None) -> User:
     teacher = db.get(User, teacher_id)
+    if actor is not None and not in_tenant(actor, teacher):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Teacher not found")
     if teacher is None or teacher.role != UserRole.teacher:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a teacher")
     return teacher
@@ -81,6 +89,7 @@ def set_teacher_languages(
     ).all()
     for row in existing:
         db.delete(row)
+    db.flush()
     for lang_id in valid_ids:
         db.add(TeacherLanguage(teacher_id=teacher_id, language_id=lang_id))
     db.commit()

@@ -21,6 +21,13 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Which academy's trail this belongs to. Denormalized from the actor on
+    # purpose: `actor_id` is nulled when a user is deleted, so joining through it
+    # would silently drop those rows out of the tenant's own trail — exactly the
+    # entries most worth keeping.
+    tenant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     # Null only for actions with no logged-in actor (e.g. a system job).
     actor_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Float, ForeignKey, String
+from datetime import datetime
+
+from sqlalchemy import DateTime, Float, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -27,6 +29,13 @@ class Grade(Base):
     )
     evaluation_name: Mapped[str] = mapped_column(String(150))
     score: Mapped[float] = mapped_column(Float)
+    # When the score was entered. A session grade can be dated through its
+    # session, but a course-level one (exam, final) hangs off no date at all —
+    # which left period reports unable to tell this month's exam from last
+    # year's, and so mixing every exam ever sat into a weekly report.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
 
     enrollment: Mapped["Enrollment"] = relationship(back_populates="grades")
     session: Mapped["ClassSession | None"] = relationship(back_populates="grades")

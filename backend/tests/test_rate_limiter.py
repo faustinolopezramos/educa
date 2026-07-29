@@ -21,7 +21,9 @@ class _FakeRequest:
 
 
 class _FakeResponse:
-    status_code = 200
+    # Only failed logins are counted, so the bookkeeping under test is only
+    # exercised by a 401. A successful login leaves no trace on purpose.
+    status_code = 401
 
 
 async def _call_next(_request):

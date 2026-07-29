@@ -52,6 +52,9 @@ def record(
     """Append one audit row. Does not commit — the caller's commit carries it."""
     db.add(
         AuditLog(
+            # Captured now, from the actor: the row must still say which academy
+            # it belongs to after that user is gone and `actor_id` is null.
+            tenant_id=actor.tenant_id if actor else None,
             actor_id=actor.id if actor else None,
             action=action,
             entity=entity,

@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_role
+from app.core.deps import apply_tenant, require_role
 from app.models import AuditLog, User, UserRole
 from app.schemas.audit import AuditLogRead
 from app.schemas.base import PaginatedResponse
@@ -21,10 +21,10 @@ def list_audit(
     offset: int = 0,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> PaginatedResponse[AuditLogRead]:
     """The change trail, newest first. Admin-only — it exposes before/after data
-    across the academy."""
+    across the academy, and only ever the caller's own academy."""
     filters = []
     if entity is not None:
         filters.append(AuditLog.entity == entity)
@@ -32,13 +32,17 @@ def list_audit(
         filters.append(AuditLog.entity_id == entity_id)
     if actor_id is not None:
         filters.append(AuditLog.actor_id == actor_id)
-    total = db.scalar(select(func.count(AuditLog.id)).where(*filters)) or 0
+    count_stmt = apply_tenant(
+        select(func.count(AuditLog.id)).where(*filters),
+        AuditLog.tenant_id,
+        current_user,
+    )
+    list_stmt = apply_tenant(
+        select(AuditLog).where(*filters), AuditLog.tenant_id, current_user
+    )
+    total = db.scalar(count_stmt) or 0
     rows = db.scalars(
-        select(AuditLog)
-        .where(*filters)
-        .order_by(AuditLog.id.desc())
-        .offset(offset)
-        .limit(limit)
+        list_stmt.order_by(AuditLog.id.desc()).offset(offset).limit(limit)
     ).all()
     return PaginatedResponse(
         items=[AuditLogRead.model_validate(r) for r in rows],

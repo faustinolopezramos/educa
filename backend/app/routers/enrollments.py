@@ -5,7 +5,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role, teacher_course_ids
+from app.core.deps import (
+    apply_tenant,
+    get_current_user,
+    in_tenant,
+    require_role,
+    teacher_course_ids,
+)
 from app.models import (
     Course,
     Enrollment,
@@ -17,12 +23,23 @@ from app.models import (
 )
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentRead, EnrollmentUpdate
 from app.services.audit import record, snapshot
+from app.services.finance import refresh_payment_status
 from app.services.scheduling import student_schedule_conflicts
 from app.services.sequences import next_enrollment_code
 
 router = APIRouter(prefix="/enrollments", tags=["enrollments"])
 
 admin_only = require_role(UserRole.admin)
+
+
+def _in_scope_or_404(db: Session, actor: User, enrollment_id: int) -> Enrollment:
+    """An enrollment of the caller's academy, or 404 (reached via its course)."""
+    enrollment = db.get(Enrollment, enrollment_id)
+    if enrollment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    if not in_tenant(actor, db.get(Course, enrollment.course_id)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    return enrollment
 
 
 @router.get("", response_model=list[EnrollmentRead])
@@ -32,7 +49,13 @@ def list_enrollments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Enrollment]:
-    stmt = select(Enrollment)
+    # An enrollment has no tenant of its own; it belongs to whichever academy
+    # owns the course, so the scope comes from that join.
+    stmt = apply_tenant(
+        select(Enrollment).join(Course, Enrollment.course_id == Course.id),
+        Course.tenant_id,
+        current_user,
+    )
     # Students may only see their own enrollments.
     if current_user.role == UserRole.student:
         stmt = stmt.where(Enrollment.student_id == current_user.id)
@@ -53,23 +76,24 @@ def create_enrollment(
     payload: EnrollmentCreate,
     force: bool = False,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> Enrollment:
     student = db.get(User, payload.student_id)
-    if student is None or student.role != UserRole.student:
+    if not in_tenant(current_user, student) or student.role != UserRole.student:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "student_id must be a student")
 
     # Lock the course row so concurrent enrollments cannot exceed max_students.
     course = db.scalar(
         select(Course).where(Course.id == payload.course_id).with_for_update()
     )
-    if course is None:
+    if not in_tenant(current_user, course):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
 
     if db.scalar(
         select(Enrollment).where(
             Enrollment.student_id == payload.student_id,
             Enrollment.course_id == payload.course_id,
+            Enrollment.status != EnrollmentStatus.withdrawn,
         )
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "Student already enrolled")
@@ -119,8 +143,10 @@ def create_enrollment(
                 },
             )
 
+    data = payload.model_dump()
+    due_date = data.pop("due_date", None)
     enrollment = Enrollment(
-        **payload.model_dump(),
+        **data,
         enrollment_code=next_enrollment_code(db, year=datetime.now(timezone.utc).year),
     )
     db.add(enrollment)
@@ -133,9 +159,15 @@ def create_enrollment(
                 enrollment_id=enrollment.id,
                 kind=PaymentKind.charge,
                 amount=enrollment.amount,
+                due_date=due_date,
                 notes="Cuota inicial de matrícula",
             )
         )
+        db.flush()
+    # Derive the status from the ledger we just opened rather than trusting the
+    # one the caller sent: a cuota already past its due date is delinquent from
+    # the moment it exists.
+    refresh_payment_status(db, enrollment)
     db.commit()
     db.refresh(enrollment)
     return enrollment
@@ -145,12 +177,59 @@ def create_enrollment(
 def update_enrollment(
     enrollment_id: int,
     payload: EnrollmentUpdate,
+    force: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only),
 ) -> Enrollment:
-    enrollment = db.get(Enrollment, enrollment_id)
-    if enrollment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    enrollment = _in_scope_or_404(db, current_user, enrollment_id)
+
+    # Reactivating re-runs the checks that guarded the original enrollment:
+    # capacity, and the student's own timetable.
+    if (
+        payload.status == EnrollmentStatus.active
+        and enrollment.status != EnrollmentStatus.active
+    ):
+        course = db.scalar(
+            select(Course).where(Course.id == enrollment.course_id).with_for_update()
+        )
+        # A missing course used to skip the capacity check silently, letting a
+        # reactivation through with no limit applied at all. It cannot happen
+        # through the API, but "cannot happen" is not a reason to fall open.
+        if course is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+        active_count = (
+            db.scalar(
+                select(func.count())
+                .select_from(Enrollment)
+                .where(
+                    Enrollment.course_id == enrollment.course_id,
+                    Enrollment.status == EnrollmentStatus.active,
+                    Enrollment.id != enrollment_id,
+                )
+            )
+            or 0
+        )
+        if active_count >= course.max_students:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": f"Cupo lleno ({active_count}/{course.max_students})",
+                    "reason": "capacity",
+                },
+            )
+        if not force:
+            clashes = student_schedule_conflicts(
+                db, student_id=enrollment.student_id, course_id=enrollment.course_id
+            )
+            if clashes:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": "El horario del alumno choca con otra clase suya",
+                        "reason": "student_schedule",
+                    },
+                )
+
     before = snapshot(enrollment)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(enrollment, field, value)
@@ -174,9 +253,7 @@ def delete_enrollment(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only),
 ) -> None:
-    enrollment = db.get(Enrollment, enrollment_id)
-    if enrollment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    enrollment = _in_scope_or_404(db, current_user, enrollment_id)
     record(
         db,
         current_user,

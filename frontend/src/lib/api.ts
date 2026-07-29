@@ -3,7 +3,7 @@ import axios from "axios";
 const TOKEN_KEY = "educa_token";
 const REFRESH_KEY = "educa_refresh_token";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -26,9 +26,6 @@ export function setToken(token: string | null, refreshToken?: string | null): vo
   }
 }
 
-// No-op kept for backwards compat; logout is now handled via the LOGOUT_EVENT.
-export function onForceLogout(_fn: () => void) {}
-
 async function tryRefresh(): Promise<string | null> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return null;
@@ -45,6 +42,10 @@ async function tryRefresh(): Promise<string | null> {
 }
 
 // Attach the bearer token to every request.
+//
+// Deliberately no tenant header: which academy a caller belongs to is read
+// server-side from their own user row. Letting the client name its tenant would
+// make the answer to "whose data is this?" something the caller gets to pick.
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) {
@@ -119,8 +120,18 @@ export function apiErrorMessage(error: unknown, fallback = "Ocurrió un error"):
   const detail = (error as { response?: { data?: { detail?: unknown } } })?.response
     ?.data?.detail;
   if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (typeof first === "string") return first;
+    if (first && typeof first === "object" && "msg" in first) {
+      return String((first as { msg: unknown }).msg);
+    }
+  }
   if (detail && typeof detail === "object" && "message" in detail) {
     return String((detail as { message: unknown }).message);
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
   }
   return fallback;
 }

@@ -4,7 +4,9 @@
 
 > **Nota de esta revisión**: este documento fue verificado línea por línea contra el código del backend y frontend (no solo contra la intención de diseño). Donde el comportamiento real difiere de lo esperado, se marca explícitamente. La sección 17 resume los hallazgos que conviene que negocio revise antes de presentar el sistema como terminado.
 >
-> **Actualización más reciente**: se incorporaron los requerimientos de stakeholders (datos de contacto y nacionalidad de alumnos/profesores, catálogo académico generalizado a Competencias Digitales/Negocios, matrícula con código correlativo y cuota, un módulo de Finanzas con cargos/pagos/facturas, jornadas predefinidas de horario, y la modalidad "Semi presencial"). También se cerró la brecha de revocación de sesión al cambiar contraseña, señalada como hallazgo de alto impacto en la revisión anterior. Los puntos nuevos que todavía dependen de una decisión de negocio están marcados igual que el resto, con ⚠️.
+> **Actualización de esta revisión (julio 2026)**: se auditó módulo por módulo contra el código y se corrigieron los hallazgos encontrados. Lo más relevante: **no existía aislamiento entre academias** (un admin podía leer y borrar datos de otra), **la ventana horaria del aula virtual era evitable** leyendo el enlace desde el horario, **el módulo de Finanzas no dejaba ninguna traza de auditoría**, y la hora de clase se calculaba con el reloj del servidor en vez del de la academia. Al reconstruir la base desde cero aparecieron además dos defectos de esquema que sólo afectaban a instalaciones nuevas (ver sección 17). Todo ello está corregido y cubierto con pruebas.
+>
+> **Actualización anterior**: se incorporaron los requerimientos de stakeholders (datos de contacto y nacionalidad de alumnos/profesores, catálogo académico generalizado a Competencias Digitales/Negocios, matrícula con código correlativo y cuota, un módulo de Finanzas con cargos/pagos/facturas, jornadas predefinidas de horario, y la modalidad "Semi presencial"). También se cerró la brecha de revocación de sesión al cambiar contraseña, señalada como hallazgo de alto impacto en la revisión anterior. Los puntos nuevos que todavía dependen de una decisión de negocio están marcados igual que el resto, con ⚠️.
 
 ---
 
@@ -60,7 +62,7 @@ La oferta académica ya no es solo idiomas. Cada "idioma" del catálogo lleva ah
 
 El Catálogo Académico (pantalla de administración) agrupa la lista de idiomas/tracks por esta etiqueta de área para mostrar las tres secciones que pide el negocio, pero por debajo sigue siendo el mismo catálogo genérico de siempre.
 
-**⚠️ Sin auditoría**: a diferencia de matrículas y calificaciones, los cambios al catálogo (crear/editar/borrar idioma, nivel, curso, asignación de profesor, nacionalidad) **no quedan registrados en la auditoría**.
+**Con auditoría**: crear/editar/borrar idioma, nivel, curso, nacionalidad y asignación de profesor **sí quedan registrados** en la auditoría, igual que matrículas y calificaciones.
 
 **⚠️ Borrado en cascada**: eliminar un idioma o un nivel borra en cascada sus cursos, y con ellos matrículas, notas y certificados asociados, sin ningún aviso o confirmación adicional a nivel de negocio.
 
@@ -272,14 +274,15 @@ El profesor marca asistencia para cada matrícula en cada sesión:
 
 ### El sistema realmente en uso
 El flujo que efectivamente usan profesores y alumnos hoy es el enlace guardado en el **horario** (`Schedule.join_url`, texto plano) mediante el flujo de propuesta/aprobación de la sección 10:
-- El **Lobby** del alumno muestra una cuenta regresiva y habilita la **vista previa** (prueba de cámara/micrófono) 15 minutos antes de la clase — esto es una regla de **interfaz**, no de backend
-- El botón para **entrar** a la clase solo se habilita a la hora exacta de inicio (no a los 15 minutos)
-- El profesor no tiene esa ventana de 15 minutos: puede entrar en cualquier momento del día de la clase
-- **El mismo enlace se usa para profesor y alumno.** No hay distinción de "enlace de anfitrión" vs. "enlace de invitado" en este flujo
-- **El backend no impone ninguna restricción horaria sobre el enlace**: un alumno matriculado puede leer el `join_url` del horario y acceder a él en cualquier momento, no solo durante la ventana de la clase. La cuenta regresiva y el "solo a la hora exacta" son controles visuales, no de seguridad
+- El **Lobby** del alumno muestra una cuenta regresiva y habilita la **vista previa** (prueba de cámara/micrófono) 15 minutos antes de la clase
+- **La ventana la impone el backend, no la interfaz.** `GET /meetings/session/{id}/lobby-info` sólo entrega el enlace dentro de la ventana: desde 15 minutos antes del inicio hasta la hora de finalización de la clase. Fuera de ese rango responde sin enlace y con el motivo
+- El enlace **ya no puede leerse desde el horario**: `GET /schedules` omite `join_url` para los alumnos, así que la ventana no es evitable por otra vía
+- Una sesión **cancelada** no admite a nadie, ni siquiera al profesor
+- El profesor/admin no está sujeto a la ventana de 15 minutos: puede entrar en cualquier momento del día de la clase, y es el único que recibe `host_url`
+- **La hora de la clase se interpreta en la zona horaria de la academia** (`ACADEMY_TIMEZONE`, por defecto `America/Guatemala`), no en la del servidor. Antes se comparaba contra el reloj local del servidor, lo que descuadraba la ventana tantas horas como diferencia hubiera (6 horas en un servidor UTC)
 
 ### El sistema construido pero no conectado
-Existe además un módulo completo y probado — proveedores de reunión (Manual/Zoom/Google/Teams), credenciales cifradas con Fernet, `host_url` distinto y oculto para alumnos — pero **el frontend no lo consume en ninguna pantalla**. Es código funcional y con tests, pero no forma parte del flujo real que usan los usuarios. Vale la pena que el equipo decida si se termina de integrar o se retira, para no presentarlo como una capacidad ya operativa.
+El módulo de proveedores de reunión (Manual/Zoom/Google/Teams, credenciales cifradas con Fernet, `host_url` oculto para alumnos) **sí está parcialmente conectado**: existe la pantalla de administración `VideoProvidersPanel` y el Lobby consume el endpoint `lobby-info`. Lo que no está conectado es la *creación automática* de reuniones por proveedor en el alta de un horario; el flujo habitual sigue siendo el enlace manual. Conviene decidir si se completa esa última pieza o se retira.
 
 ---
 
@@ -301,7 +304,7 @@ Existe además un módulo completo y probado — proveedores de reunión (Manual
 ### ⚠️ Precisiones importantes sobre las métricas
 - **"Sesiones realizadas" no distingue si ya ocurrieron**: se calcula como total menos canceladas. Una sesión futura dentro del período del reporte (por ejemplo, un reporte semanal generado a mitad de semana) ya cuenta como "realizada" aunque todavía no se haya dictado
 - **Reprogramar una clase cuenta como cancelarla** a efectos de este reporte, porque técnicamente la sesión original queda marcada como cancelada. El reporte no distingue "se canceló la clase" de "se movió de fecha"
-- **El promedio de notas y el criterio de "alumno en riesgo" solo consideran notas de sesión (nota del día), no las evaluaciones de curso ni la nota final.** Esto puede subestimar o distorsionar el riesgo real: un alumno con buenas notas de participación diaria pero mal examen final no aparecería como "en riesgo" en este reporte
+- **El promedio de notas y el criterio de "alumno en riesgo" consideran ahora tanto las notas de sesión como las evaluaciones de curso**, y ambos miden lo mismo. Las evaluaciones se filtran por la fecha en que se registraron, así que un reporte semanal ya no arrastra exámenes de meses anteriores
 
 ### Alcance por rol
 - **Admin**: reportes globales de toda la academia
@@ -326,7 +329,9 @@ Existe además un módulo completo y probado — proveedores de reunión (Manual
 - Solo accesible para **admin**
 
 ### ⚠️ Cobertura incompleta
-"Todos los cambios importantes" es más acotado de lo que suena. La auditoría cubre: asistencia, calificaciones, usuarios, matrículas, certificados (sin valor anterior/nuevo) y propuestas de ubicación. **No cubre**: cambios al catálogo (idiomas, niveles, cursos, asignación de profesores) ni la cancelación/reprogramación de sesiones. Cancelar una clase, por ejemplo, no deja ninguna traza de quién lo hizo — solo genera la notificación al alumno.
+La auditoría cubre hoy: asistencia, calificaciones, usuarios, matrículas, certificados (sin valor anterior/nuevo), propuestas de ubicación, **el catálogo completo**, **cancelar/reprogramar/editar sesiones**, **el borrado de horarios** y **el módulo de Finanzas** (cobros, pagos y emisión de facturas).
+
+**⚠️ Lo que sigue sin auditarse**: aulas, festivos, proveedores de video, tareas y notificaciones.
 
 ---
 
@@ -350,6 +355,16 @@ Existe además un módulo completo y probado — proveedores de reunión (Manual
 | Auditoría | ✅ | ❌ | ❌ |
 | Certificados | ✅ (emite) | ✅ (ver) | ✅ (descargar propio; verificar código requiere sesión iniciada) |
 
+### Aislamiento entre academias (multi-tenant)
+
+El sistema soporta **varias academias sobre una misma instalación**. Cada usuario pertenece a una academia (`tenant`) y **sólo ve y opera sobre los datos de la suya**: usuarios, catálogo, cursos, horarios, sesiones, matrículas, aulas, festivos, finanzas, reportes y auditoría están acotados por academia.
+
+- El tenant se lee **siempre del usuario autenticado**, nunca de nada que envíe el cliente: elegir "de quién son estos datos" no puede quedar en manos de quien pregunta.
+- Un recurso de otra academia responde **404**, no 403: confirmar que existe ya sería filtrar información entre academias.
+- El **superadministrador** es deliberadamente *sin academia* (`tenant_id` nulo) y sí ve todas — es la cuenta que administra el conjunto.
+- El **catálogo es propio de cada academia**: dos academias pueden tener su propio "Inglés" y su propio calendario de festivos.
+- Las **nacionalidades** son la única lista deliberadamente **global** (es un listado de países, no un dato de academia).
+
 ### Principios clave
 - **404 en vez de 403 (parcialmente aplicado)**: en algunos endpoints (por ejemplo, reuniones y horarios individuales fuera del alcance del usuario) el sistema responde "no encontrado" para no confirmar la existencia del recurso. **No es un principio universal**: en el roster de un curso y en el directorio de usuarios, el sistema sí responde 403 (revela que el recurso existe pero el acceso está prohibido). Conviene no presentarlo como una garantía consistente en toda la API.
 - **Rol nunca basta**: cada endpoint verifica además la **relación académica** (el profesor solo ve lo que enseña, el alumno solo lo suyo)
@@ -360,7 +375,12 @@ Existe además un módulo completo y probado — proveedores de reunión (Manual
 ### Revocación de sesión al cambiar contraseña
 Cambiar la contraseña (propia, o que un admin se la cambie a otro usuario) ahora **invalida de inmediato** todos los refresh tokens emitidos antes de ese cambio: cualquier sesión abierta en otro dispositivo deja de poder renovar su access token y tiene que iniciar sesión de nuevo. Esto cierra la ventana de hasta 30 días que existía antes si una contraseña quedaba comprometida.
 
-**⚠️ Alcance de lo resuelto**: solo el cambio de contraseña dispara la revocación. Dar de baja/eliminar un usuario, o "cerrar sesión" desde el frontend, siguen sin revocar tokens ya emitidos en el servidor — "cerrar sesión" solo borra el token guardado en ese dispositivo. No existe tampoco un endpoint para que un usuario cierre manualmente sus otras sesiones activas.
+**Alcance real (verificado en código)**: la revocación en servidor la disparan **tres** acciones, no solo una:
+- **Cambiar la contraseña** invalida todos los refresh tokens anteriores (`token_version`).
+- **Cerrar sesión** revoca ese refresh token en servidor (`POST /auth/logout`), no solo lo borra del dispositivo.
+- **Eliminar un usuario** revoca sus sesiones activas antes de borrarlo.
+
+Sigue sin existir un endpoint para que un usuario cierre a voluntad *sus otras* sesiones activas sin cambiar la contraseña.
 
 ---
 
@@ -372,45 +392,57 @@ Cambiar la contraseña (propia, o que un admin se la cambie a otro usuario) ahor
 | Frontend | React + Vite + TypeScript + TailwindCSS |
 | Estado/Cache | TanStack Query (React Query) |
 | Formularios | React Hook Form + Zod |
-| Autenticación | JWT (access 30 min + refresh 30 días); el refresh se revoca al cambiar contraseña, pero no al dar de baja un usuario ni al cerrar sesión manualmente |
+| Autenticación | JWT (access 30 min + refresh **7 días**, rotado en cada uso con detección de reutilización); el refresh se revoca al cambiar contraseña, al cerrar sesión y al dar de baja al usuario |
 | Video | Enlace manual en el horario (flujo real); patrón Strategy con Zoom/Google/Teams cifrado (construido, no conectado al frontend) |
 | Contenedores | Docker para PostgreSQL |
 
 ---
 
-## 17. Hallazgos de la Revisión — Prioridades para Negocio
+## 17. Hallazgos de la Revisión — Prioridades y Estado de Alineación
 
-Resultado de contrastar este documento contra el código real. Ordenado por impacto potencial en la operación de la academia.
+Resultado de contrastar este documento contra el código real del backend y frontend. Los hallazgos de alto impacto han sido **alineados y resueltos** en el código fuente.
 
-### Alto impacto — funcionalidad probablemente no intencional
-1. **Un alumno no puede volver a matricularse en un curso del que desistió antes.** La unicidad (alumno, curso) no distingue por estado de matrícula → bloqueo permanente por ese curso.
-2. **Reactivar una matrícula no revalida cupo ni choques de horario** → riesgo de sobre-cupo silencioso.
-3. **Reprogramar una clase no valida que el profesor o el aula no tengan ya otra clase real ese día/hora** (solo revisa festivos y duplicados del mismo horario) → riesgo de doble reserva.
-4. **El enlace de la clase virtual no tiene control de horario en el backend y es el mismo para profesor y alumno.** La cuenta regresiva de "15 minutos antes" y el botón que solo habilita a la hora exacta son controles de interfaz, no de seguridad: cualquier alumno matriculado puede acceder al enlace en cualquier momento.
-5. **El módulo de proveedores de video con cifrado y enlaces separados de anfitrión/invitado no está conectado a ninguna pantalla real** — no protege el flujo que efectivamente usan los usuarios.
-6. **"Promedio de notas" y "alumnos en riesgo" en los reportes ignoran exámenes y nota final**, considerando solo la nota de participación diaria — puede dar una imagen incompleta del riesgo real de un alumno.
-7. **Cancelar o reprogramar una clase no queda en la auditoría** — no hay forma de saber quién lo hizo ni cuándo, más allá de la notificación que recibe el alumno.
+### Alto impacto — Resueltos y Alineados en Código ✅
+1. ~~**Un alumno no puede volver a matricularse en un curso del que desistió antes.**~~ — **RESUELTO**: La unicidad (alumno, curso) aplica ahora con índice parcial sobre matrículas no desistidas (`status != 'withdrawn'`). Un estudiante que desistió puede volver a matricularse.
+2. ~~**Reactivar una matrícula no revalida cupo ni choques de horario**~~ — **RESUELTO**: Al cambiar el estado de una matrícula a `active` (`update_enrollment`), el backend revalida automáticamente la capacidad del curso (`max_students`) y los choques de horario del alumno.
+3. ~~**Reprogramar una clase no valida choques reales**~~ — **RESUELTO (completado)**: además de los patrones semanales del profesor y del aula, `reschedule_session` compara contra las **sesiones concretas** ya existentes en esa fecha —lo que antes permitía que dos recuperaciones se pisaran— y rechaza fechas pasadas.
+4. ~~**El enlace de la clase virtual no tiene control de horario en el backend y es el mismo para profesor y alumno.**~~ — **RESUELTO (completado)**: el alumno ya no recibe `host_url`, **y** la ventana horaria se impone en el backend. La corrección anterior estaba incompleta: el mismo enlace seguía siendo legible sin restricción desde `GET /schedules`, lo que dejaba la ventana sin efecto. Ver sección 11.
+5. ~~**"Promedio de notas" y "alumnos en riesgo" ignoran exámenes**~~ — **RESUELTO (completado)**: ambas métricas cuentan ahora las mismas notas (sesión + evaluaciones), acotadas al período del reporte.
+6. ~~**Cancelar o reprogramar una clase no queda en la auditoría**~~ — **RESUELTO**: Operaciones de cancelación y reprogramación de sesiones registran ahora eventos detallados en `audit_log`.
+7. ~~**Revocación de sesiones al cambiar contraseña**~~ — **RESUELTO**: Cambiar la contraseña invalida inmediatamente todos los tokens de refresco emitidos previamente.
+8. ~~**No existía aislamiento entre academias.**~~ — **RESUELTO**: era el hallazgo más grave y no figuraba en este documento. Un admin de una academia podía **listar, leer, modificar y eliminar** usuarios de otra, y leer su catálogo, horarios, matrículas, finanzas y auditoría. Ahora todo el acceso está acotado por academia y hay una batería de pruebas de aislamiento. Ver sección 15.
+9. ~~**La ventana del aula virtual usaba el reloj del servidor.**~~ — **RESUELTO**: la hora de clase se interpreta en `ACADEMY_TIMEZONE`; en un servidor UTC la ventana se abría 6 horas antes de lo debido.
 
-### Medio impacto — conviene confirmar que es el comportamiento deseado
-8. Los cambios al catálogo (cursos, niveles, idiomas/tracks, nacionalidades, asignación de profesores) no quedan auditados.
-9. Un profesor recién creado, sin cualificaciones ni disponibilidad configuradas, puede ser asignado a cualquier curso y horario sin ninguna advertencia (postura "optimista" por diseño).
-10. Las alertas de "alumnos en riesgo" son manuales y notifican a los profesores, no a los alumnos ni a un responsable de seguimiento.
-11. Borrar un idioma o nivel elimina en cascada sus cursos, matrículas, notas y certificados, sin aviso adicional.
-12. ~~No hay revocación de sesiones~~ — **resuelto parcialmente**: cambiar contraseña ahora sí revoca los refresh tokens ya emitidos; dar de baja/eliminar un usuario todavía no lo hace (ver sección 15).
-13. El principio "404 en vez de 403" no se aplica de forma uniforme en toda la API.
+### Defectos de esquema encontrados al reconstruir la base desde cero
+Ninguno se manifestaba en bases de datos migradas de forma incremental, sólo en **instalaciones nuevas** — es decir, en producción recién desplegada y en CI:
+- **`grades` quedaba sin ningún índice único**: una migración autogenerada borró los índices parciales `uq_grade_session`/`uq_grade_course` y ninguna posterior los recreó. El *upsert* del cuaderno de notas fallaba, de modo que **recalificar estaba roto en toda instalación nueva**.
+- **El rol `superadmin` no existía en el enum de la base**: `UserRole.superadmin` estaba en el código y todo el módulo de academias depende de él, pero ninguna migración añadió la etiqueta. En una instalación nueva **era imposible crear la cuenta que administra las academias**.
+
+### Medio impacto — resueltos en esta revisión ✅
+10. ~~Los cambios al catálogo no quedan auditados.~~ — **RESUELTO**: el catálogo completo audita create/update/delete.
+11. ~~Reprogramar podía crear una doble reserva silenciosa.~~ — **RESUELTO**: la reprogramación compara ahora contra las **sesiones concretas** ya existentes en esa fecha (no sólo contra los patrones semanales), y rechaza fechas pasadas.
+12. ~~Editar una sesión con `PATCH` no dejaba traza.~~ — **RESUELTO**: `update_session` audita igual que cancelar/reprogramar.
+13. ~~El módulo de Finanzas no dejaba ninguna traza.~~ — **RESUELTO**: cobros, pagos y emisión de facturas quedan auditados con su autor.
+14. ~~Los reportes mezclaban exámenes de todo el histórico.~~ — **RESUELTO**: las evaluaciones se filtran por el período del reporte (`Grade.created_at`).
+
+### Medio impacto — pendientes de confirmar con negocio
+15. Un profesor recién creado, sin cualificaciones ni disponibilidad configuradas, puede ser asignado a cualquier curso y horario sin advertencia (postura "optimista" por diseño).
+16. Las alertas de "alumnos en riesgo" son manuales y notifican a los profesores, no a los alumnos ni a un responsable de seguimiento.
+17. Borrar un idioma o nivel exige vaciarlo antes (cursos/niveles), pero borrar un **curso** sigue arrastrando en cascada matrículas, notas y certificados.
+18. El principio "404 en vez de 403" no se aplica de forma uniforme en toda la API (sí lo hace, de forma consistente, para el aislamiento entre academias).
+19. Aulas, festivos, proveedores de video, tareas y notificaciones siguen sin auditarse.
 
 ### Bajo impacto — matices para no generar expectativas equivocadas
-14. Las notificaciones son solo internas (in-app); no hay correo ni SMS.
-15. Verificar un certificado por código requiere tener sesión iniciada en el sistema, no es un enlace público para terceros externos.
-16. La asistencia y las calificaciones pueden registrarse sobre matrículas o sesiones ya canceladas ("Desistió"), sin bloqueo.
+20. Las notificaciones son solo internas (in-app); no hay correo ni SMS.
+21. Verificar un certificado por código requiere sesión iniciada, no es un enlace público.
+22. La asistencia y las calificaciones pueden registrarse sobre matrículas o sesiones ya canceladas, sin bloqueo.
 
 ### Nuevo — pendiente de definición de negocio (requerimientos recién incorporados)
-17. **Lista de nacionalidades**: la semilla actual reproduce el requerimiento original tal cual, que agrupaba países bajo "Centroamérica" sin que ninguno lo sea. Falta la lista real a ofrecer.
-18. **Horarios de las jornadas Sabatino/Dominical (Matutina/Vespertina) y de la jornada Nocturna**: son valores por defecto razonables, no confirmados por negocio.
-19. **Facturación es un comprobante interno**, no una factura con validez fiscal/electrónica. Si la operación real lo requiere, es trabajo adicional no cubierto todavía.
-20. **Métodos de pago** (efectivo/tarjeta/transferencia/otro) y el **formato del correlativo** de matrícula y factura son convenciones del equipo, pendientes de confirmar con negocio.
-21. **Dar de baja a un usuario no revoca sus tokens ya emitidos** (a diferencia de cambiar contraseña, que sí lo hace desde esta versión) — sigue teniendo acceso hasta que expire su refresh token, hasta 30 días.
+23. **Lista de nacionalidades**: la semilla actual reproduce el requerimiento original tal cual, que agrupaba países bajo "Centroamérica" sin que ninguno lo sea. Falta la lista real a ofrecer.
+24. **Horarios de las jornadas Sabatino/Dominical (Matutina/Vespertina) y de la jornada Nocturna**: son valores por defecto razonables, no confirmados por negocio.
+25. **Facturación es un comprobante interno**, no una factura con validez fiscal/electrónica. Si la operación real lo requiere, es trabajo adicional no cubierto todavía.
+26. **Métodos de pago** (efectivo/tarjeta/transferencia/otro) y el **formato del correlativo** de matrícula y factura son convenciones del equipo, pendientes de confirmar con negocio.
 
 ---
 
-*Documento generado para stakeholders — Educa v0.1.0 (Fase 1) — revisado y verificado contra el código fuente.*
+*Documento actualizado — Educa v0.1.0 — Alineado y verificado contra el código fuente.*

@@ -7,14 +7,8 @@ import {
   type ReactNode,
 } from "react";
 
-import {
-  api,
-  getRefreshToken,
-  getToken,
-  LOGOUT_EVENT,
-  onForceLogout,
-  setToken,
-} from "../lib/api";
+import { api, getRefreshToken, getToken, LOGOUT_EVENT, setToken } from "../lib/api";
+import { queryClient } from "../lib/queryClient";
 import type { LoginResponse, Role, User } from "../lib/types";
 
 interface AuthContextValue {
@@ -32,16 +26,6 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-
-  function forceLogout() {
-    setToken(null, null);
-    setUser(null);
-  }
-
-  // Register the force-logout callback so the axios interceptor can call it.
-  useEffect(() => {
-    onForceLogout(forceLogout);
-  }, []);
 
   // Restore the session from a stored token on first load.
   useEffect(() => {
@@ -61,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     function handler() {
       setUser(null);
+      queryClient.clear();
     }
     window.addEventListener(LOGOUT_EVENT, handler);
     return () => window.removeEventListener(LOGOUT_EVENT, handler);
@@ -86,6 +71,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshToken = getRefreshToken();
     setToken(null, null);
     setUser(null);
+    // Every cached query was fetched as the user who just left. On a shared
+    // machine the next person to sign in would see their predecessor's roster,
+    // grades and ledger rendered from cache before the refetch lands.
+    queryClient.clear();
     if (refreshToken) {
       try {
         api.post("/auth/logout", { refresh_token: refreshToken })?.catch?.(() => {});

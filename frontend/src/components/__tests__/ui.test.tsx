@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "../../test/utils";
-import { Button, Input, Card } from "../ui";
+import { Button, Input, Card, Modal, ModalActions } from "../ui";
 
 describe("Button", () => {
   it("should render button with text", () => {
@@ -103,5 +103,103 @@ describe("Card", () => {
     expect(card.className).toContain("rounded-xl");
     expect(card.className).toContain("border");
     expect(card.className).toContain("bg-white");
+  });
+});
+
+describe("Modal", () => {
+  it("closes on Escape", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal title="Editar curso" onClose={onClose}>
+        <p>contenido</p>
+      </Modal>,
+    );
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("submits from the keyboard when given onSubmit", () => {
+    const onSubmit = vi.fn();
+    render(
+      <Modal
+        title="Editar curso"
+        onClose={() => {}}
+        onSubmit={onSubmit}
+        footer={
+          <ModalActions>
+            <Button type="submit">Guardar</Button>
+          </ModalActions>
+        }
+      >
+        <Input placeholder="Nombre" />
+      </Modal>,
+    );
+
+    fireEvent.submit(screen.getByRole("dialog"));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not submit when a non-submit button in the footer is clicked", () => {
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <Modal
+        title="Editar curso"
+        onClose={onClose}
+        onSubmit={onSubmit}
+        footer={
+          <ModalActions>
+            <Button variant="secondary" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit">Guardar</Button>
+          </ModalActions>
+        }
+      >
+        <Input placeholder="Nombre" />
+      </Modal>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("focuses the first field rather than the close button", () => {
+    render(
+      <Modal title="Editar curso" onClose={() => {}}>
+        <Input placeholder="Nombre" />
+      </Modal>,
+    );
+
+    expect(document.activeElement).toBe(screen.getByPlaceholderText("Nombre"));
+  });
+
+  it("renders on <body>, escaping any transformed ancestor", () => {
+    // The app's <main> keeps a transform (animate-fade-in, fill-mode forwards),
+    // which would make `position: fixed` resolve against <main>'s box instead
+    // of the window and strand the dialog half off-screen on a long page.
+    const { container } = render(
+      <div style={{ transform: "translateY(0)" }}>
+        <Modal title="Editar curso" onClose={() => {}}>
+          <p>contenido</p>
+        </Modal>
+      </div>,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(container).not.toContainElement(dialog);
+    expect(document.body).toContainElement(dialog);
+  });
+
+  it("shows the description under the title", () => {
+    render(
+      <Modal title="Editar curso" description="Cambia el cupo y las fechas." onClose={() => {}}>
+        <p>contenido</p>
+      </Modal>,
+    );
+
+    expect(screen.getByText("Cambia el cupo y las fechas.")).toBeInTheDocument();
   });
 });

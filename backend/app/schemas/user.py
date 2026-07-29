@@ -26,6 +26,7 @@ Password = Annotated[str, AfterValidator(_validate_password)]
 
 
 class UserBase(BaseModel):
+    tenant_id: int | None = None
     email: EmailStr
     full_name: str
     role: UserRole = UserRole.student
@@ -33,6 +34,7 @@ class UserBase(BaseModel):
     max_weekly_hours: int | None = None
     phone: str | None = None
     address: str | None = None
+    cui_passport: str | None = None
     nationality_id: int | None = None
 
 
@@ -57,6 +59,7 @@ class UserUpdate(PatchModel):
     max_weekly_hours: int | None = None
     phone: str | None = None
     address: str | None = None
+    cui_passport: str | None = None
     nationality_id: int | None = None
 
 
@@ -76,6 +79,7 @@ class UserSelfUpdate(PatchModel):
     current_password: str | None = None
     phone: str | None = None
     address: str | None = None
+    cui_passport: str | None = None
     nationality_id: int | None = None
 
     @model_validator(mode="after")

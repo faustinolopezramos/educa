@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { AvailableTeacher, ConflictResponse, Schedule } from "../types";
+import type { AvailableTeacher, ConflictResponse, Modality, Schedule } from "../types";
 import { useList } from "./common";
 
 export const useSchedules = (mine = false) =>
@@ -17,6 +17,8 @@ export interface SchedulePayload {
   day_of_week: number;
   start_time: string;
   end_time: string;
+  modality?: Modality;
+  join_url?: string | null;
 }
 
 export function useCreateSchedule() {
@@ -50,6 +52,14 @@ export function useUpdateSchedule() {
           patch,
         )
       ).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
+  });
+}
+
+export function useDeleteSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => (await api.delete(`/schedules/${id}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["schedules"] }),
   });
 }

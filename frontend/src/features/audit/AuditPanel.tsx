@@ -95,25 +95,34 @@ export function AuditPanel() {
           <Table>
             <thead>
               <tr>
-                <Th>Cuándo</Th>
+                <Th>Fecha y Hora</Th>
                 <Th>Acción</Th>
                 <Th>Entidad</Th>
-                <Th>Cambio</Th>
-                <Th>Actor</Th>
+                <Th>Detalle del Cambio</Th>
+                <Th>Usuario / Actor</Th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 text-xs">
               {rows.map((r) => (
-                <tr key={r.id}>
-                  <Td>{formatDateTime(r.at)}</Td>
+                <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                  <Td>
+                    <span className="font-mono text-slate-600 text-[11px]">{formatDateTime(r.at)}</span>
+                  </Td>
                   <Td>
                     <Badge color={ACTION_COLOR[r.action]}>{r.action}</Badge>
                   </Td>
                   <Td>
-                    {r.entity} #{r.entity_id}
+                    <span className="font-semibold text-slate-800">{r.entity}</span>{" "}
+                    <span className="font-mono text-slate-400 text-[11px]">#{r.entity_id}</span>
                   </Td>
-                  <Td>{diff(r)}</Td>
-                  <Td>{r.actor_id ? `#${r.actor_id}` : "sistema"}</Td>
+                  <Td>
+                    <span className="font-mono text-[11px] text-slate-700">{diff(r)}</span>
+                  </Td>
+                  <Td>
+                    <span className="font-mono text-[11px] text-slate-600">
+                      {r.actor_id ? `#${r.actor_id}` : "sistema"}
+                    </span>
+                  </Td>
                 </tr>
               ))}
             </tbody>

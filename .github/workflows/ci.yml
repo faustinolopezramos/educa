@@ -32,7 +32,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -r requirements.txt
+      # requirements-dev.txt pulls in requirements.txt and adds pytest, which
+      # the step below needs and the runtime file deliberately does not carry.
+      - run: pip install -r requirements-dev.txt
       - run: cp .env.example .env
       - run: alembic upgrade head
         env:
@@ -53,6 +55,9 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # `npm run build` runs `tsc -b` first, so typechecking is covered here.
       - run: npm run build
         env:
           VITE_API_URL: http://localhost:8000
+      # The vitest suite existed but nothing ever ran it on a push.
+      - run: npm run test -- --run

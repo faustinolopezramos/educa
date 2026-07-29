@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Button, Input, Modal } from "./ui";
+import { Button, Input, Modal, ModalActions } from "./ui";
 
 /**
  * In-product replacement for `window.prompt()`. Collects a single reason/text
@@ -33,12 +33,28 @@ export function PromptModal({
   const disabled = busy || (required && !value.trim());
 
   return (
-    <Modal title={title} onClose={onClose} maxWidth="max-w-sm">
-      <div className="space-y-4">
+    <Modal
+      title={title}
+      onClose={onClose}
+      maxWidth="max-w-sm"
+      onSubmit={() => {
+        if (!disabled) onSubmit(value.trim());
+      }}
+      footer={
+        <ModalActions hint={multiline ? undefined : "Enter para confirmar"}>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" variant={confirmVariant} disabled={disabled}>
+            {busy ? "Enviando…" : confirmLabel}
+          </Button>
+        </ModalActions>
+      }
+    >
+      <div className="space-y-3">
         {label && <label className="block text-sm text-slate-600">{label}</label>}
         {multiline ? (
           <textarea
-            autoFocus
             rows={3}
             value={value}
             placeholder={placeholder}
@@ -47,27 +63,11 @@ export function PromptModal({
           />
         ) : (
           <Input
-            autoFocus
             value={value}
             placeholder={placeholder}
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !disabled) onSubmit(value.trim());
-            }}
           />
         )}
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            variant={confirmVariant}
-            disabled={disabled}
-            onClick={() => onSubmit(value.trim())}
-          >
-            {confirmLabel}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

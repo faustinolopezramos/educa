@@ -12,6 +12,9 @@ class Course(Base):
     __tablename__ = "courses"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     level_id: Mapped[int] = mapped_column(
         ForeignKey("levels.id", ondelete="CASCADE"), index=True
     )

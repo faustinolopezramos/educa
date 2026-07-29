@@ -42,8 +42,20 @@ class Settings(BaseSettings):
     # cannot authenticate callers, so webhooks are rejected (fail closed).
     webhook_secret: str = ""
 
+    # The academy's own wall-clock. A schedule stores "the class runs 18:00–20:00"
+    # with no zone attached, because that is how a timetable is planned: local
+    # time, the same for everyone in the building. Comparing that against the
+    # server's clock only works if the server happens to sit in the same zone —
+    # on a UTC host it shifted the whole lobby window by six hours.
+    academy_timezone: str = "America/Guatemala"
+
     # CORS
     cors_origins: str = "http://localhost:5173"
+
+    # Set to true only when the API genuinely sits behind a reverse proxy that
+    # rewrites `X-Forwarded-For`. Left false, the login rate limiter counts by
+    # the socket's own address, which a client cannot forge.
+    trust_proxy_headers: bool = False
 
     # Seed
     seed_admin_email: str = "admin@educa.com"

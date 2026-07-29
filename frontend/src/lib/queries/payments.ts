@@ -19,10 +19,14 @@ export function useCreatePayment() {
       kind: PaymentKind;
       amount: number;
       method?: string;
+      /** Only read for a `charge`: the date it falls due. */
+      due_date?: string;
       notes?: string;
     }) => (await api.post("/payments", payload)).data,
-    onSuccess: (_d, v) =>
-      qc.invalidateQueries({ queryKey: ["ledger", v.enrollment_id] }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["ledger", v.enrollment_id] });
+      qc.invalidateQueries({ queryKey: ["enrollments"] });
+    },
   });
 }
 

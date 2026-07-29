@@ -47,6 +47,7 @@ export interface ProfilePatch {
   current_password?: string;
   phone?: string | null;
   address?: string | null;
+  cui_passport?: string | null;
   nationality_id?: number | null;
 }
 

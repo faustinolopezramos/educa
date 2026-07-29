@@ -1,7 +1,19 @@
-export type Role = "admin" | "teacher" | "student";
+export type Role = "superadmin" | "admin" | "teacher" | "student";
+
+export interface Tenant {
+  id: number;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  is_active: boolean;
+  max_active_students: number;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface User {
   id: number;
+  tenant_id?: number | null;
   email: string;
   full_name: string;
   role: Role;
@@ -9,6 +21,7 @@ export interface User {
   max_weekly_hours: number | null;
   phone: string | null;
   address: string | null;
+  cui_passport?: string | null;
   nationality_id: number | null;
 }
 
@@ -173,6 +186,8 @@ export interface Payment {
   kind: PaymentKind;
   amount: number;
   method: string | null;
+  /** Only meaningful on a `charge`: when it falls due (YYYY-MM-DD). */
+  due_date: string | null;
   paid_at: string;
   recorded_by: number | null;
   notes: string | null;
@@ -205,6 +220,45 @@ export interface ClassSession {
   topic: string | null;
   cancel_reason: string | null;
   origin_session_id: number | null;
+  recording_url?: string | null;
+}
+
+export interface Assignment {
+  id: number;
+  tenant_id?: number | null;
+  course_id: number;
+  title: string;
+  description: string | null;
+  resource_url?: string | null;
+  due_date: string | null;
+  created_at: string;
+}
+
+export interface AssignmentSubmission {
+  id: number;
+  assignment_id: number;
+  student_id: number;
+  content: string | null;
+  submission_url: string | null;
+  submitted_at: string;
+  status: "submitted" | "graded";
+  score: number | null;
+  feedback: string | null;
+  is_late?: boolean;
+  student?: UserBrief | null;
+}
+
+export interface RosterStudentStatus {
+  student_id: number;
+  full_name: string;
+  status: "not_submitted" | "submitted" | "submitted_late" | "graded";
+  submission_id?: number | null;
+  submitted_at?: string | null;
+  content?: string | null;
+  submission_url?: string | null;
+  score?: number | null;
+  feedback?: string | null;
+  is_late?: boolean;
 }
 
 export interface Holiday {
@@ -266,6 +320,21 @@ export interface AtRiskStudent {
   reasons: string[];
 }
 
+export interface ConsolidatedStudentReport {
+  student_id: number;
+  student_name: string;
+  course_id: number;
+  course_name: string;
+  // `null` = nothing recorded for that component in the period. Not a zero:
+  // rendering it as one would report an ungraded student as a failing one.
+  assignments_avg: number | null;
+  assignments_completion_rate: number | null;
+  exams_avg: number | null;
+  attendance_rate: number | null;
+  consolidated_score: number | null;
+  performance_status: "optimal" | "warning" | "critical" | "no_data";
+}
+
 export interface Report {
   period: ReportPeriod;
   date_from: string;
@@ -278,6 +347,7 @@ export interface Report {
   grades_recorded: number;
   grade_average: number | null;
   at_risk: AtRiskStudent[];
+  consolidated_students?: ConsolidatedStudentReport[];
 }
 
 export interface Notification {
@@ -313,4 +383,13 @@ export interface VirtualMeeting {
   end_time: string | null;
   status: MeetingStatus;
   recording_url: string | null;
+}
+
+export interface LobbyJoinInfo {
+  join_url: string | null;
+  host_url: string | null;
+  is_host: boolean;
+  can_join: boolean;
+  reason: string | null;
+  minutes_remaining: number;
 }

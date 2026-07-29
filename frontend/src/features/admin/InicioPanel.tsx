@@ -2,193 +2,121 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
-import { Badge, Button, Card, EmptyState, SectionHeading, Stat } from "../../components/ui";
-import { PromptModal } from "../../components/PromptModal";
-import { useLocationProposals, useReport, useRooms, useUsers } from "../../lib/queries";
-import { useReviewProposal } from "../../lib/queries";
-import { notify } from "../../lib/toast";
-import type { AtRiskStudent, LocationProposal } from "../../lib/types";
-import { onMutationError } from "./shared";
+import { Button, Card } from "../../components/ui";
+import { useLocationProposals, useReport, useUsers } from "../../lib/queries";
+import { SchedulePlanner } from "../schedules/SchedulePlanner";
+import { PendingModal } from "./PendingModal";
 
 export function InicioPanel() {
   const { user } = useAuth();
   const [, setParams] = useSearchParams();
   const { data: students = [] } = useUsers("student");
   const { data: pending = [] } = useLocationProposals("pending");
-  const { data: report, isLoading } = useReport("week");
+  const { data: report } = useReport("week");
+  const [showPendingModal, setShowPendingModal] = useState(false);
 
   const attendance = report?.attendance_rate;
 
   return (
-    <div>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="text-sm text-slate-500">
-            Hola, {user?.full_name?.split(" ")[0]}
+    <div className="space-y-4">
+      {/* Minimalist Ultra-Compact Top Bar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 font-bold text-lg">
+            🗓️
           </div>
-          <h1 className="font-serif text-3xl font-medium tracking-tight text-slate-900">
-            Resumen de la academia
-          </h1>
-        </div>
-        <Button onClick={() => setParams({ m: "enrollments" })}>+ Matricular</Button>
-      </div>
-
-      <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Alumnos" value={students.length} hint="registrados" />
-        <Stat
-          label="Clases esta semana"
-          value={isLoading ? "…" : (report?.sessions_total ?? 0)}
-          hint={report ? `${report.sessions_held} realizadas` : ""}
-        />
-        <Stat
-          label="Asistencia media"
-          value={attendance == null ? "—" : `${Math.round(attendance * 100)}%`}
-          hint="últimos 7 días"
-        />
-        <Stat
-          tone="dark"
-          label="Requieren tu atención"
-          value={pending.length}
-          hint="ubicaciones por aprobar"
-        />
-      </div>
-
-      <PendingInbox
-        pending={pending}
-        atRisk={report?.at_risk ?? []}
-        onSeeAll={() => setParams({ m: "pendientes" })}
-      />
-    </div>
-  );
-}
-
-function PendingInbox({
-  pending,
-  atRisk,
-  onSeeAll,
-}: {
-  pending: LocationProposal[];
-  atRisk: AtRiskStudent[];
-  onSeeAll: () => void;
-}) {
-  const { data: teachers = [] } = useUsers("teacher");
-  const { data: rooms = [] } = useRooms();
-  const review = useReviewProposal();
-  const [rejecting, setRejecting] = useState<number | null>(null);
-
-  const teacherName = (id: number) =>
-    teachers.find((t) => t.id === id)?.full_name ?? `#${id}`;
-  const roomName = (id: number | null) =>
-    id == null ? "—" : (rooms.find((r) => r.id === id)?.name ?? `#${id}`);
-
-  const empty = pending.length === 0 && atRisk.length === 0;
-
-  return (
-    <Card>
-      <div className="mb-4 flex items-center justify-between">
-        <SectionHeading className="mb-0">Bandeja de pendientes</SectionHeading>
-        <button
-          onClick={onSeeAll}
-          className="text-sm font-semibold text-brand-600 hover:text-brand-700"
-        >
-          Ver todo
-        </button>
-      </div>
-      {empty ? (
-        <EmptyState
-          icon="✓"
-          title="Todo al día"
-          message="No hay ubicaciones por aprobar ni alumnos en riesgo esta semana."
-        />
-      ) : (
-        <div className="space-y-2.5">
-          {pending.map((p) => (
-            <div
-              key={p.id}
-              className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3"
-            >
-              <Badge color="amber" dot>
-                Ubicación
-              </Badge>
-              <div className="min-w-0 flex-1 text-sm text-slate-700">
-                <strong>{teacherName(p.proposed_by)}</strong> propone{" "}
-                {p.modality === "virtual" ? (
-                  <span className="text-slate-500">Virtual · {p.join_url}</span>
-                ) : (
-                  <span className="text-slate-500">{roomName(p.room_id)}</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-serif text-xl font-bold tracking-tight text-slate-900">
+                Resumen Académico
+              </h1>
+              <span className="text-xs text-slate-400 font-medium">
+                · Hola, {user?.full_name?.split(" ")[0]}
+              </span>
+            </div>
+            {/* Inline Micro-KPI Badges */}
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-700">
+                🎓 {students.length} Alumnos
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-700">
+                📅 {report?.sessions_total ?? 0} Clases esta semana
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 font-semibold text-emerald-800">
+                📈 {attendance == null ? "—" : `${Math.round(attendance * 100)}%`} Asistencia
+              </span>
+              <button
+                onClick={() => setShowPendingModal(true)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-semibold transition ${
+                  pending.length > 0
+                    ? "bg-amber-100 text-amber-900 hover:bg-amber-200 shadow-2xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <span>📍 Pendientes</span>
+                {pending.length > 0 && (
+                  <span className="rounded-full bg-amber-600 px-1.5 py-0.2 text-[10px] text-white font-bold">
+                    {pending.length}
+                  </span>
                 )}
-              </div>
-              <div className="flex gap-1.5">
-                <Button
-                  className="px-3 py-1.5 text-xs"
-                  disabled={review.isPending}
-                  onClick={() =>
-                    review.mutate(
-                      { id: p.id, action: "approve" },
-                      {
-                        onSuccess: () => notify("Propuesta aprobada", "success"),
-                        onError: onMutationError("No se pudo aprobar"),
-                      },
-                    )
-                  }
-                >
-                  Aprobar
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="px-3 py-1.5 text-xs text-red-700"
-                  onClick={() => setRejecting(p.id)}
-                >
-                  Rechazar
-                </Button>
-              </div>
+              </button>
             </div>
-          ))}
-          {atRisk.map((r) => (
-            <div
-              key={`${r.student_id}-${r.course_id}`}
-              className="flex flex-wrap items-center gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3"
-            >
-              <Badge color="red" dot>
-                Riesgo
-              </Badge>
-              <div className="min-w-0 flex-1 text-sm text-slate-700">
-                <strong>{r.student_name}</strong> en <strong>{r.course_name}</strong>{" "}
-                <span className="text-slate-500">
-                  · asist. {r.attendance_rate == null ? "—" : `${Math.round(r.attendance_rate * 100)}%`}
-                </span>
-              </div>
-            </div>
-          ))}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            className="text-xs font-semibold !py-1.5 !px-3"
+            onClick={() => setShowPendingModal(true)}
+          >
+            📍 Pendientes {pending.length > 0 && `(${pending.length})`}
+          </Button>
+          <Button
+            variant="secondary"
+            className="text-xs font-semibold !py-1.5 !px-3"
+            onClick={() => setParams({ m: "courses" })}
+          >
+            📚 Cursos
+          </Button>
+          <Button
+            variant="primary"
+            className="text-xs font-semibold !py-1.5 !px-3 shadow-xs"
+            onClick={() => setParams({ m: "enrollments" })}
+          >
+            + Nueva Matrícula
+          </Button>
+        </div>
+      </div>
+
+      {/* Slim Pending Alert Banner (if pending proposals exist) */}
+      {pending.length > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-2.5 text-xs text-amber-900 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-600 font-bold">⚠️</span>
+            <span>
+              Tienes <strong>{pending.length} propuestas de aula/virtual</strong> pendientes por aprobar.
+            </span>
+          </div>
+          <button
+            onClick={() => setShowPendingModal(true)}
+            className="font-bold text-amber-900 underline hover:text-amber-950 text-xs"
+          >
+            Revisar propuestas →
+          </button>
         </div>
       )}
-      {rejecting != null && (
-        <PromptModal
-          title="Rechazar propuesta"
-          label="Motivo del rechazo (opcional)"
-          placeholder="Ej. usa el aula 3 en lugar de virtual"
-          confirmLabel="Rechazar"
-          confirmVariant="danger"
-          multiline
-          busy={review.isPending}
-          onClose={() => setRejecting(null)}
-          onSubmit={(note: string) =>
-            review.mutate(
-              { id: rejecting, action: "reject", note: note || undefined },
-              {
-                onSuccess: () => {
-                  setRejecting(null);
-                  notify("Propuesta rechazada", "success");
-                },
-                onError: (e) => {
-                  setRejecting(null);
-                  onMutationError("No se pudo rechazar")(e);
-                },
-              },
-            )
-          }
-        />
+
+      {/* Full Primary Schedule Calendar Section */}
+      <Card className="p-5 shadow-sm border border-slate-200/80 rounded-2xl space-y-3">
+        <SchedulePlanner />
+      </Card>
+
+      {/* Pending Modal Dialog */}
+      {showPendingModal && (
+        <PendingModal onClose={() => setShowPendingModal(false)} />
       )}
-    </Card>
+    </div>
   );
 }

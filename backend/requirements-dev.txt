@@ -1,0 +1,6 @@
+# Test and tooling dependencies. Kept out of requirements.txt so a production
+# image doesn't ship a test runner, but CI must install this file — otherwise
+# `pytest -q` runs against a binary that was never installed.
+-r requirements.txt
+
+pytest==9.1.1
