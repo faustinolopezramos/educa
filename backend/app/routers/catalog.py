@@ -46,6 +46,10 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 admin_only = require_role(UserRole.admin)
 staff_only = require_role(UserRole.admin, UserRole.teacher)
+# The nationality list is installation-wide, not one academy's data, so editing
+# it is not an academy admin's call: a rename or a delete there lands on every
+# other academy's student records (`users.nationality_id` is ON DELETE SET NULL).
+superadmin_only = require_role(UserRole.superadmin)
 
 
 # ---------------- Tenant-scoped lookups ----------------
@@ -92,7 +96,7 @@ def list_nationalities(
 def create_nationality(
     payload: NationalityCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(superadmin_only),
 ) -> Nationality:
     nationality = Nationality(name=payload.name)
     db.add(nationality)
@@ -115,7 +119,7 @@ def update_nationality(
     nationality_id: int,
     payload: NationalityUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(superadmin_only),
 ) -> Nationality:
     nationality = db.get(Nationality, nationality_id)
     if nationality is None:
@@ -143,7 +147,7 @@ def update_nationality(
 def delete_nationality(
     nationality_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(superadmin_only),
 ) -> None:
     nationality = db.get(Nationality, nationality_id)
     if nationality is None:

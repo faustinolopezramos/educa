@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from app.core.clock import academy_today
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.models import Notification, User, UserRole
@@ -89,7 +90,7 @@ def raise_at_risk_alerts(
 ) -> dict[str, int]:
     """Compute the period's at-risk students (in the caller's scope) and notify
     the teachers of the affected courses. Returns how many alerts were sent."""
-    report = build_report(db, current_user, period, anchor or date.today())
+    report = build_report(db, current_user, period, anchor or academy_today())
     by_course: dict[int, list[str]] = {}
     for r in report.at_risk:
         by_course.setdefault(r.course_id, []).append(

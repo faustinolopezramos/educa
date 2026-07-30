@@ -5,6 +5,7 @@ from app.models import (
     AssignmentSubmission,
     ClassSession,
     Course,
+    CourseTeacher,
     Level,
     Language,
     User,
@@ -32,6 +33,13 @@ def test_update_session_recording_url(client, db):
         password_hash=hash_password("secret123"),
     )
     db.add(teacher)
+    db.flush()
+
+    # Posting work into a course is downstream of being assigned to teach it —
+    # the same order the timetable already enforces for a slot. This test used
+    # to leave the teacher unassigned and still expect a 201, which is the
+    # behaviour that let any teacher drop homework into any colleague's course.
+    db.add(CourseTeacher(course_id=course.id, teacher_id=teacher.id, is_lead=True))
     db.flush()
 
     res_login = client.post(

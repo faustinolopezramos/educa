@@ -5,12 +5,22 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
+    apply_tenant,
+    enrollment_in_scope_or_404,
     get_current_user,
     require_role,
     teacher_course_ids,
     teacher_teaches_course,
 )
-from app.models import Attendance, ClassSession, Enrollment, Schedule, User, UserRole
+from app.models import (
+    Attendance,
+    ClassSession,
+    Course,
+    Enrollment,
+    Schedule,
+    User,
+    UserRole,
+)
 from app.schemas.attendance import AttendanceCreate, AttendanceRead, AttendanceUpdate
 from app.services.audit import record as record_audit
 from app.services.audit import snapshot
@@ -61,16 +71,25 @@ def list_attendance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Attendance]:
-    stmt = select(Attendance)
+    # A mark reaches its academy through enrollment → course, the same hop the
+    # grades list makes. Unscoped, this handed an admin every mark in the
+    # installation.
+    stmt = apply_tenant(
+        select(Attendance)
+        .join(Enrollment, Attendance.enrollment_id == Enrollment.id)
+        .join(Course, Enrollment.course_id == Course.id),
+        Course.tenant_id,
+        current_user,
+    )
     if enrollment_id is not None:
         stmt = stmt.where(Attendance.enrollment_id == enrollment_id)
     # Students only see their own attendance.
     if current_user.role == UserRole.student:
-        stmt = stmt.join(Enrollment).where(Enrollment.student_id == current_user.id)
+        stmt = stmt.where(Enrollment.student_id == current_user.id)
     # Teachers only see attendance for their own courses.
     elif current_user.role == UserRole.teacher:
         course_ids = teacher_course_ids(db, current_user.id)
-        stmt = stmt.join(Enrollment).where(Enrollment.course_id.in_(course_ids or [-1]))
+        stmt = stmt.where(Enrollment.course_id.in_(course_ids or [-1]))
     return list(db.scalars(stmt).all())
 
 
@@ -88,9 +107,7 @@ def create_attendance(
     a second one. The upsert is a single statement so two taps in flight at once
     cannot both insert. 201 when the mark is new, 200 when it corrects one.
     """
-    enrollment = db.get(Enrollment, payload.enrollment_id)
-    if enrollment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    enrollment = enrollment_in_scope_or_404(db, current_user, payload.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, enrollment)
     _session_for_enrollment(db, payload.session_id, enrollment)
 
@@ -136,6 +153,7 @@ def update_attendance(
     record = db.get(Attendance, attendance_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance record not found")
+    enrollment_in_scope_or_404(db, current_user, record.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, record.enrollment)
     before = snapshot(record)
     # Only the status is editable; the session a mark belongs to is fixed, so no
@@ -159,6 +177,7 @@ def delete_attendance(
     record = db.get(Attendance, attendance_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance record not found")
+    enrollment_in_scope_or_404(db, current_user, record.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, record.enrollment)
     record_audit(
         db, current_user, "delete", "attendance", record.id, before=snapshot(record)

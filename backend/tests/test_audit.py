@@ -105,3 +105,28 @@ def test_a_rolled_back_change_leaves_no_audit_row(client, world, session_a):
     assert res.status_code == 409
     after_rows = _audit(client, admin, entity="grade", entity_id=g2["id"])
     assert len(after_rows) == len(before_rows), "the failed rename recorded nothing"
+
+
+def test_creating_an_account_is_audited(client, world):
+    """Update and delete were both traced; creation was the one gap — the exact
+    point where an account with a role and a password comes into existence."""
+    admin = auth(client, "admin@test.com")
+    created = client.post(
+        "/users",
+        headers=admin,
+        json={
+            "email": "recien_creado@test.com",
+            "full_name": "Recién Creado",
+            "role": "teacher",
+            "password": "secret123",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    rows = _audit(client, admin, entity="user", entity_id=created.json()["id"])
+    assert [r["action"] for r in rows] == ["create"]
+    assert rows[0]["after"]["email"] == "recien_creado@test.com"
+    assert rows[0]["after"]["role"] == "teacher"
+    assert rows[0]["actor_id"] == world["admin"].id
+    # snapshot() redacts secrets, so the trail never carries the new password.
+    assert rows[0]["after"]["password_hash"] == "***"

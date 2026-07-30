@@ -21,6 +21,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clock import academy_today
 from app.models import Enrollment, EnrollmentStatus, Payment, PaymentKind, PaymentStatus
 
 # Money is stored as a float, so an exact `paid >= charged` comparison can trip
@@ -43,7 +44,7 @@ def derive_payment_status(
     db: Session, enrollment: Enrollment, *, on: date | None = None
 ) -> PaymentStatus:
     """What `enrollment.payment_status` should be right now, without writing it."""
-    today = on or date.today()
+    today = on or academy_today()
     charged, paid = enrollment_balance(db, enrollment.id)
 
     # An enrollment whose ledger was never opened falls back to the agreed

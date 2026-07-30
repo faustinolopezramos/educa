@@ -16,6 +16,7 @@ from app.core.crypto import encrypt
 from app.core.database import get_db
 from app.core.deps import (
     apply_tenant,
+    course_in_scope_or_404,
     get_current_user,
     is_admin,
     require_role,
@@ -224,6 +225,10 @@ def create_meeting(
     schedule = db.get(Schedule, payload.schedule_id)
     if schedule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
+    # `_require_schedule_ownership` only constrains teachers, so without this an
+    # admin could hang a meeting off another academy's class — and run it on
+    # their own academy's provider credentials.
+    course_in_scope_or_404(db, current_user, schedule.course_id)
     _require_schedule_ownership(current_user, schedule)
 
     # Scoped like `list_providers`/`upsert_provider`: a schedule must be run
@@ -400,6 +405,11 @@ def get_session_lobby_info(
     schedule = db.get(Schedule, session.schedule_id)
     if schedule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
+    # The academy gate, before anything hands out a link. `is_host` below is
+    # granted on role alone, so an admin used to receive the join *and host* URL
+    # of any session id in the installation — the one door the lobby's whole
+    # time-window exists to guard.
+    course_in_scope_or_404(db, current_user, schedule.course_id)
 
     is_host = is_admin(current_user) or (
         current_user.role == UserRole.teacher and schedule.teacher_id == current_user.id

@@ -4,10 +4,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
+    course_in_scope_or_404,
     get_current_user,
     require_role,
     student_course_ids,
     teacher_course_ids,
+    teacher_teaches_course,
 )
 from app.models import (
     Assignment,
@@ -30,6 +32,33 @@ from app.schemas.assignment import (
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
 staff_only = require_role(UserRole.admin, UserRole.teacher)
+
+
+def _staff_course_or_404(db: Session, user: User, course_id: int) -> Course:
+    """A course this staff member may act on, or 404/403.
+
+    Two questions, and every write endpoint here used to ask neither: is the
+    course in the caller's academy, and — for a teacher — do they actually teach
+    it? Without the first, any teacher could post work into another academy;
+    without the second, into a colleague's course.
+    """
+    course = course_in_scope_or_404(db, user, course_id)
+    if user.role == UserRole.teacher and not teacher_teaches_course(
+        db, user.id, course_id
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No enseñas este curso")
+    return course
+
+
+def _visible_assignment_or_404(
+    db: Session, user: User, assignment_id: int
+) -> Assignment:
+    """An assignment whose course the caller may act on, or 404."""
+    assignment = db.get(Assignment, assignment_id)
+    if assignment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada")
+    _staff_course_or_404(db, user, assignment.course_id)
+    return assignment
 
 
 @router.get("", response_model=list[AssignmentRead])
@@ -62,11 +91,12 @@ def create_assignment(
     db: Session = Depends(get_db),
     current_user: User = Depends(staff_only),
 ) -> Assignment:
-    course = db.get(Course, payload.course_id)
-    if course is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Curso no encontrado")
+    course = _staff_course_or_404(db, current_user, payload.course_id)
 
-    tenant_id = current_user.tenant_id or getattr(course, "tenant_id", None)
+    # The course decides the academy, not the caller: a superadmin is tenant-less
+    # and would otherwise stamp the assignment with no tenant at all, hiding it
+    # from the very academy whose course it belongs to.
+    tenant_id = course.tenant_id
     assignment = Assignment(
         **payload.model_dump(),
         tenant_id=tenant_id,
@@ -83,18 +113,31 @@ def list_submissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[AssignmentSubmission]:
-    assignment = db.get(Assignment, assignment_id)
-    if assignment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada")
-
-    stmt = select(AssignmentSubmission).where(
-        AssignmentSubmission.assignment_id == assignment_id
-    )
-
     if current_user.role == UserRole.student:
-        stmt = stmt.where(AssignmentSubmission.student_id == current_user.id)
+        # A student reaches an assignment only through their own enrolment, and
+        # only ever sees their own submission of it.
+        assignment = db.get(Assignment, assignment_id)
+        if assignment is None or assignment.course_id not in student_course_ids(
+            db, current_user.id
+        ):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada")
+        return list(
+            db.scalars(
+                select(AssignmentSubmission).where(
+                    AssignmentSubmission.assignment_id == assignment_id,
+                    AssignmentSubmission.student_id == current_user.id,
+                )
+            ).all()
+        )
 
-    return list(db.scalars(stmt).all())
+    _visible_assignment_or_404(db, current_user, assignment_id)
+    return list(
+        db.scalars(
+            select(AssignmentSubmission).where(
+                AssignmentSubmission.assignment_id == assignment_id
+            )
+        ).all()
+    )
 
 
 @router.post(
@@ -160,6 +203,9 @@ def grade_submission(
     submission = db.get(AssignmentSubmission, submission_id)
     if submission is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Entrega no encontrada")
+    # Grading is a write on someone's academic record; it needs the same course
+    # check as everything else here, which it had none of.
+    _visible_assignment_or_404(db, current_user, submission.assignment_id)
     submission.score = payload.score
     submission.feedback = payload.feedback
     submission.status = "graded"
@@ -175,9 +221,7 @@ def get_assignment_roster_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(staff_only),
 ) -> list[RosterStudentStatus]:
-    assignment = db.get(Assignment, assignment_id)
-    if assignment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada")
+    assignment = _visible_assignment_or_404(db, current_user, assignment_id)
 
     # Get enrolled students
     enrollments = list(

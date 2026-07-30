@@ -87,11 +87,14 @@ def test_self_update_requires_authentication(client, world):
     assert res.status_code == 401
 
 
-def test_a_student_can_set_their_own_contact_info(client, world):
-    admin = auth(client, "admin@test.com")
-    nat = client.post(
-        "/catalog/nationalities", headers=admin, json={"name": "Cuba"}
-    ).json()
+def test_a_student_can_set_their_own_contact_info(client, world, db):
+    # The country list is installation-wide, so only a superadmin may add to it.
+    from app.models import Nationality
+
+    nat_row = Nationality(name="Cuba")
+    db.add(nat_row)
+    db.flush()
+    nat = {"id": nat_row.id}
 
     headers = auth(client, "student@test.com")
     res = client.patch(

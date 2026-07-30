@@ -196,14 +196,26 @@ def list_schedules(
 def check_conflict(
     payload: ConflictCheck,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> ConflictResponse:
     """Live validation used by the calendar before committing a drag/resize."""
+    # The response names the courses it clashes with, so an unscoped probe was a
+    # read of another academy's timetable: pick their teacher, sweep the hours,
+    # and the conflicts come back labelled.
+    teacher = db.get(User, payload.teacher_id)
+    if not in_tenant(current_user, teacher) or teacher.role != UserRole.teacher:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Teacher not found")
+    if payload.room_id is not None and not in_tenant(
+        current_user, db.get(Room, payload.room_id)
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
+
     term_start = term_end = None
     if payload.course_id is not None:
         course = db.get(Course, payload.course_id)
-        if course is not None:
-            term_start, term_end = _course_term(course)
+        if not in_tenant(current_user, course):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+        term_start, term_end = _course_term(course)
 
     teacher_clashes = teacher_conflicts(
         db,

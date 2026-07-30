@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
+    apply_tenant,
+    enrollment_in_scope_or_404,
     get_current_user,
     require_role,
     student_is_solvent,
@@ -12,7 +14,15 @@ from app.core.deps import (
     teacher_teaches_course,
 )
 from app.core.http import commit_or_conflict
-from app.models import ClassSession, Enrollment, Grade, Schedule, User, UserRole
+from app.models import (
+    ClassSession,
+    Course,
+    Enrollment,
+    Grade,
+    Schedule,
+    User,
+    UserRole,
+)
 from app.schemas.grade import GradeCreate, GradeRead, GradeUpdate
 from app.services.audit import record, snapshot
 
@@ -52,7 +62,16 @@ def list_grades(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Grade]:
-    stmt = select(Grade)
+    # A grade reaches its academy through enrollment → course. Without this join
+    # the statement was a bare `select(Grade)` for an admin: every score of every
+    # student of every academy in the installation.
+    stmt = apply_tenant(
+        select(Grade)
+        .join(Enrollment, Grade.enrollment_id == Enrollment.id)
+        .join(Course, Enrollment.course_id == Course.id),
+        Course.tenant_id,
+        current_user,
+    )
     if enrollment_id is not None:
         stmt = stmt.where(Grade.enrollment_id == enrollment_id)
     # Students only see their own grades.
@@ -66,11 +85,12 @@ def list_grades(
                 status.HTTP_403_FORBIDDEN,
                 "Acceso restringido: Tienes pagos pendientes. Por favor regulariza tu saldo para consultar notas y certificados.",
             )
-        stmt = stmt.join(Enrollment).where(Enrollment.student_id == current_user.id)
+        # `Enrollment` is already joined for the tenant scope above.
+        stmt = stmt.where(Enrollment.student_id == current_user.id)
     # Teachers only see grades for their own courses.
     elif current_user.role == UserRole.teacher:
         course_ids = teacher_course_ids(db, current_user.id)
-        stmt = stmt.join(Enrollment).where(Enrollment.course_id.in_(course_ids or [-1]))
+        stmt = stmt.where(Enrollment.course_id.in_(course_ids or [-1]))
     return list(db.scalars(stmt).all())
 
 
@@ -90,9 +110,7 @@ def create_grade(
     student's average quietly counted both. Single-statement upsert, so
     concurrent saves resolve to one row.
     """
-    enrollment = db.get(Enrollment, payload.enrollment_id)
-    if enrollment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    enrollment = enrollment_in_scope_or_404(db, current_user, payload.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, enrollment)
     if payload.session_id is not None:
         _validate_session(db, payload.session_id, enrollment)
@@ -150,6 +168,7 @@ def update_grade(
     grade = db.get(Grade, grade_id)
     if grade is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Grade not found")
+    enrollment_in_scope_or_404(db, current_user, grade.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, grade.enrollment)
     before = snapshot(grade)
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -177,6 +196,7 @@ def delete_grade(
     grade = db.get(Grade, grade_id)
     if grade is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Grade not found")
+    enrollment_in_scope_or_404(db, current_user, grade.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, grade.enrollment)
     record(db, current_user, "delete", "grade", grade.id, before=snapshot(grade))
     db.delete(grade)

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
+    course_in_scope_or_404,
     get_current_user,
     in_tenant,
     require_role,
@@ -51,8 +52,9 @@ staff_only = require_role(UserRole.admin, UserRole.teacher)
 def list_evaluations(
     course_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(staff_only),
+    current_user: User = Depends(staff_only),
 ) -> list[CourseEvaluation]:
+    course_in_scope_or_404(db, current_user, course_id)
     return list(
         db.scalars(
             select(CourseEvaluation).where(CourseEvaluation.course_id == course_id)
@@ -69,10 +71,9 @@ def add_evaluation(
     course_id: int,
     payload: CourseEvaluationCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> CourseEvaluation:
-    if db.get(Course, course_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    course_in_scope_or_404(db, current_user, course_id)
     ev = CourseEvaluation(course_id=course_id, name=payload.name, weight=payload.weight)
     db.add(ev)
     try:
@@ -92,8 +93,9 @@ def delete_evaluation(
     course_id: int,
     evaluation_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> None:
+    course_in_scope_or_404(db, current_user, course_id)
     ev = db.get(CourseEvaluation, evaluation_id)
     if ev is None or ev.course_id != course_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Evaluation not found")
@@ -170,9 +172,10 @@ def issue_certificate(
     current_user: User = Depends(admin_only),
 ) -> Certificate:
     """Issue a level certificate — only if the student has actually passed."""
-    enrollment = db.get(Enrollment, enrollment_id)
-    if enrollment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    # Every read path in this module goes through `_visible_enrollment`; the one
+    # that mints a certificate used a bare `db.get`, so an admin could award one
+    # to another academy's student.
+    enrollment = _visible_enrollment(db, current_user, enrollment_id)
     if db.scalar(select(Certificate).where(Certificate.enrollment_id == enrollment_id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "El certificado ya fue emitido")
 

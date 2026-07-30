@@ -107,6 +107,11 @@ def create_user(
         password_hash=hash_password(payload.password),
     )
     db.add(user)
+    db.flush()
+    # An account appearing is as much a change to explain later as one being
+    # renamed or deleted, and those were both already traced — this was the one
+    # gap in the trail, sitting exactly where accounts are born.
+    record(db, current_user, "create", "user", user.id, after=snapshot(user))
     db.commit()
     db.refresh(user)
     return user

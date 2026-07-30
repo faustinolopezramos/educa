@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role
+from app.core.deps import apply_tenant, get_current_user, in_tenant, require_role
 from app.models import (
     Language,
     TeacherAvailability,
@@ -27,7 +27,7 @@ admin_only = require_role(UserRole.admin)
 @router.get("", response_model=list[AvailableTeacher])
 def list_teachers(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[AvailableTeacher]:
     """Public (any authenticated user): teacher id + name, e.g. to label a class."""
     teachers = db.scalars(
@@ -40,9 +40,17 @@ def list_teachers(
     return [AvailableTeacher(id=t.id, full_name=t.full_name) for t in teachers]
 
 
-def _require_teacher(db: Session, teacher_id: int, actor: User | None = None) -> User:
+def _require_teacher(db: Session, teacher_id: int, actor: User) -> User:
+    """The teacher, if they are one and they belong to the caller's academy.
+
+    `actor` is required rather than optional on purpose: it used to default to
+    `None`, which made the tenant check opt-in, and every endpoint here omitted
+    it — so an admin of one academy could read and rewrite the qualifications
+    and availability of another academy's teachers. A missing argument is now a
+    TypeError instead of a silent hole.
+    """
     teacher = db.get(User, teacher_id)
-    if actor is not None and not in_tenant(actor, teacher):
+    if not in_tenant(actor, teacher):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Teacher not found")
     if teacher is None or teacher.role != UserRole.teacher:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a teacher")
@@ -54,9 +62,9 @@ def _require_teacher(db: Session, teacher_id: int, actor: User | None = None) ->
 def list_teacher_languages(
     teacher_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> list[TeacherLanguage]:
-    _require_teacher(db, teacher_id)
+    _require_teacher(db, teacher_id, current_user)
     return list(
         db.scalars(
             select(TeacherLanguage).where(TeacherLanguage.teacher_id == teacher_id)
@@ -69,13 +77,20 @@ def set_teacher_languages(
     teacher_id: int,
     payload: TeacherLanguagesSet,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> list[TeacherLanguage]:
     """Replace the teacher's full set of language qualifications."""
-    _require_teacher(db, teacher_id)
+    _require_teacher(db, teacher_id, current_user)
+    # Scoped to the caller's academy: an unscoped lookup accepted another
+    # academy's language id, which would qualify the teacher to teach a track
+    # their own school does not even offer.
     valid_ids = set(
         db.scalars(
-            select(Language.id).where(Language.id.in_(payload.language_ids))
+            apply_tenant(
+                select(Language.id).where(Language.id.in_(payload.language_ids)),
+                Language.tenant_id,
+                current_user,
+            )
         ).all()
     )
     unknown = set(payload.language_ids) - valid_ids
@@ -105,9 +120,9 @@ def set_teacher_languages(
 def list_availability(
     teacher_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> list[TeacherAvailability]:
-    _require_teacher(db, teacher_id)
+    _require_teacher(db, teacher_id, current_user)
     return list(
         db.scalars(
             select(TeacherAvailability).where(
@@ -126,9 +141,9 @@ def add_availability(
     teacher_id: int,
     payload: AvailabilityCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> TeacherAvailability:
-    _require_teacher(db, teacher_id)
+    _require_teacher(db, teacher_id, current_user)
     window = TeacherAvailability(teacher_id=teacher_id, **payload.model_dump())
     db.add(window)
     db.commit()
@@ -144,8 +159,9 @@ def delete_availability(
     teacher_id: int,
     availability_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    current_user: User = Depends(admin_only),
 ) -> None:
+    _require_teacher(db, teacher_id, current_user)
     window = db.get(TeacherAvailability, availability_id)
     if window is None or window.teacher_id != teacher_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Availability not found")

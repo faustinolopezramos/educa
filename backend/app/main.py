@@ -41,6 +41,15 @@ _login_attempts: dict[str, list[datetime]] = defaultdict(list)
 LOGIN_RATE_LIMIT = 5  # max *failed* attempts
 LOGIN_RATE_WINDOW = 60  # seconds
 
+# `/auth/refresh` mints access tokens from a bearer secret, so it is the second
+# guessable door into an account and was left unlimited. The budget is looser
+# than login's because a real client legitimately refreshes on a schedule and
+# several tabs may do so at once; it only has to make bulk guessing expensive.
+_RATE_LIMITED_PATHS: dict[str, int] = {
+    "/auth/login": LOGIN_RATE_LIMIT,
+    "/auth/refresh": 20,
+}
+
 
 def _client_key(request: Request) -> str:
     """Who to count this attempt against.
@@ -56,11 +65,24 @@ def _client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _bucket_key(request: Request) -> str:
+    """Which counter this request spends from.
+
+    Keyed by path as well as caller, so exhausting the refresh budget cannot
+    lock the same client out of logging in (or the reverse). Kept as a named
+    function because the bookkeeping tests need to look the bucket up the same
+    way the middleware files it — hardcoding the shape in a test let one of them
+    keep passing against a key nothing wrote to any more.
+    """
+    return f"{request.url.path}|{_client_key(request)}"
+
+
 async def rate_limit_middleware(request: Request, call_next):
-    if not (request.url.path == "/auth/login" and request.method == "POST"):
+    limit = _RATE_LIMITED_PATHS.get(request.url.path)
+    if limit is None or request.method != "POST":
         return await call_next(request)
 
-    client_ip = _client_key(request)
+    client_ip = _bucket_key(request)
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(seconds=LOGIN_RATE_WINDOW)
     recent = [t for t in _login_attempts[client_ip] if t > window_start]
@@ -69,10 +91,10 @@ async def rate_limit_middleware(request: Request, call_next):
     else:
         # Nothing left in the window: drop the key instead of leaving an
         # empty list behind — otherwise every IP that has ever hit
-        # /auth/login stays in memory for the life of the process.
+        # one of these endpoints stays in memory for the life of the process.
         _login_attempts.pop(client_ip, None)
 
-    if len(recent) >= LOGIN_RATE_LIMIT:
+    if len(recent) >= limit:
         from fastapi.responses import JSONResponse
 
         return JSONResponse(

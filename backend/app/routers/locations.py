@@ -98,7 +98,9 @@ def propose_location(
         db, current_user.id, schedule.course_id
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No enseñas este curso")
-    if payload.room_id is not None and db.get(Room, payload.room_id) is None:
+    if payload.room_id is not None and not in_tenant(
+        current_user, db.get(Room, payload.room_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Room not found")
 
     self_approves = is_admin(current_user)

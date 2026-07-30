@@ -47,8 +47,14 @@ def _issue_tokens(db: Session, user: User) -> Token:
     """
     jti = secrets.token_urlsafe(24)
     db.add(RefreshSession(user_id=user.id, jti=jti))
+    # `ver` carries the user's token_version so `get_current_user` can reject an
+    # access token minted before a password change. Without it that check (which
+    # was already written) never fired, and a token issued before the change
+    # stayed usable for the rest of its life — the window a password reset is
+    # meant to close.
     access_token = create_access_token(
-        subject=str(user.id), extra={"role": user.role.value}
+        subject=str(user.id),
+        extra={"role": user.role.value, "ver": user.token_version},
     )
     refresh_token = create_refresh_token(
         subject=str(user.id), token_version=user.token_version, jti=jti

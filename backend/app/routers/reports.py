@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.clock import academy_today
 from app.core.database import get_db
 from app.core.deps import get_current_user, student_is_solvent
 from app.models import User, UserRole
@@ -37,7 +38,7 @@ def _report(
         )
     try:
         return build_report(
-            db, user, period, anchor or date.today(), course_id, teacher_id
+            db, user, period, anchor or academy_today(), course_id, teacher_id
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))

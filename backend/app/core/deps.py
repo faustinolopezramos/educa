@@ -98,6 +98,38 @@ def in_tenant(user: User, obj: object | None) -> bool:
     return getattr(obj, "tenant_id", None) == user.tenant_id
 
 
+def course_in_scope_or_404(db: Session, user: User, course_id: int) -> Course:
+    """A course of the caller's academy, or 404.
+
+    404 rather than 403: answering "forbidden" would confirm the course exists in
+    *some* academy, which is itself a fact one academy should not learn.
+    """
+    course = db.get(Course, course_id)
+    if not in_tenant(user, course):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    return course
+
+
+def enrollment_in_scope_or_404(
+    db: Session, user: User, enrollment_id: int
+) -> Enrollment:
+    """An enrollment of the caller's academy, or 404.
+
+    An enrollment carries no `tenant_id`; it belongs to whichever academy owns
+    its course, so that is the hop this makes. Three routers had grown their own
+    copy of exactly this check and three more had none at all — grades,
+    attendance and certificates among them — which is what made "did we scope
+    this one?" a question you had to answer per endpoint. There is now one
+    answer to reach for.
+    """
+    enrollment = db.get(Enrollment, enrollment_id)
+    if enrollment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    if not in_tenant(user, db.get(Course, enrollment.course_id)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Enrollment not found")
+    return enrollment
+
+
 def tenant_course_ids(db: Session, user: User) -> list[int]:
     """Every course in the caller's academy.
 
