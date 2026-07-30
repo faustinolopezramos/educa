@@ -7,11 +7,15 @@ import {
   Button,
   Card,
   EmptyState,
+  InlineAlert,
   Input,
-  PageTitle,
+  PageHeader,
   SectionHeading,
+  SegmentedControl,
   Select,
+  Stat,
 } from "../components/ui";
+import { IconBook, IconCalendar, IconClock, IconLock, IconUsers } from "../components/icons";
 import { GradeTable } from "../features/grades/GradeTable";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
@@ -126,30 +130,10 @@ export default function TeacherDashboard() {
   const [params] = useSearchParams();
   const section = params.get("m") ?? "clases";
 
-  if (section === "tareas") {
-    return (
-      <div>
-        <PageTitle subtitle="Docencia">Tareas y Entregas</PageTitle>
-        <AssignmentsPanel />
-      </div>
-    );
-  }
-  if (section === "reportes") {
-    return (
-      <div>
-        <PageTitle subtitle="Solo tus cursos">Reporte de mis clases</PageTitle>
-        <ReportView />
-      </div>
-    );
-  }
-  if (section === "perfil") {
-    return (
-      <div>
-        <PageTitle subtitle="Cuenta">Mi perfil</PageTitle>
-        <ProfilePanel />
-      </div>
-    );
-  }
+  // Cada panel dibuja su propia cabecera, así que aquí solo se enruta.
+  if (section === "tareas") return <AssignmentsPanel />;
+  if (section === "reportes") return <ReportView />;
+  if (section === "perfil") return <ProfilePanel />;
   return <ClassesView />;
 }
 
@@ -171,27 +155,23 @@ function ClassesView() {
   }, [featured, selected]);
 
   return (
-    <div className="space-y-6">
-      <PageTitle subtitle="Docencia">Mis clases y gestión académica</PageTitle>
+    <div>
+      <PageHeader title="Mis clases" />
 
-      <NowBar
-        featured={featured}
-        courseName={courseName}
-        onGo={(s) => setSelected(s)}
-      />
+      <NowBar featured={featured} courseName={courseName} onGo={(s) => setSelected(s)} />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-5 lg:grid-cols-3">
         {/* Left: Schedule Selector List */}
-        <Card className="lg:col-span-1 space-y-4">
+        <Card className="lg:col-span-1">
           <SectionHeading>Cursos asignados ({schedules.length})</SectionHeading>
           {schedules.length === 0 ? (
             <EmptyState
-              icon="◷"
+              icon={<IconClock className="h-5 w-5" />}
               title="Sin horarios asignados"
-              message="Cuando la administración te asigne un curso y horario, tus clases aparecerán aquí."
+              message="Cuando dirección te asigne un curso, tus clases aparecerán aquí."
             />
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {orderedSchedules.map((s) => {
                 const isActive = selected?.id === s.id;
                 const isToday = s.day_of_week === todayDow;
@@ -199,26 +179,29 @@ function ClassesView() {
                   <button
                     key={s.id}
                     onClick={() => setSelected(s)}
-                    className={`w-full rounded-xl border p-3.5 text-left transition-all ${
+                    aria-current={isActive ? "true" : undefined}
+                    className={`w-full rounded-lg border p-3 text-left transition-colors ${
                       isActive
-                        ? "border-brand-500 bg-brand-50/60 shadow-sm"
-                        : "border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                        ? "border-brand-500 bg-brand-50"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="font-semibold text-slate-900 text-sm">
+                      <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
                         {courseName(s.course_id)}
-                      </div>
+                      </span>
                       <Badge color={s.modality === "virtual" ? "indigo" : "slate"}>
                         {s.modality === "virtual" ? "Virtual" : "Presencial"}
                       </Badge>
                     </div>
-                    <div className="mt-1.5 flex items-center gap-2 text-xs font-mono text-slate-500">
-                      <span>
-                        📅 {isToday ? "Hoy" : dayName(s.day_of_week)}
-                      </span>
-                      <span>•</span>
-                      <span>⏰ {formatTime(s.start_time)}–{formatTime(s.end_time)}</span>
+                    <div className="tabular mt-1 text-xs text-slate-500">
+                      {isToday ? (
+                        <span className="font-semibold text-brand-700">Hoy</span>
+                      ) : (
+                        dayName(s.day_of_week)
+                      )}
+                      {" · "}
+                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
                     </div>
                   </button>
                 );
@@ -232,11 +215,11 @@ function ClassesView() {
           {selected ? (
             <ClassDetail schedule={selected} courseName={courseName(selected.course_id)} />
           ) : (
-            <Card className="py-16">
+            <Card>
               <EmptyState
-                icon="✎"
+                icon={<IconBook className="h-5 w-5" />}
                 title="Selecciona una clase"
-                message="Elige un horario del panel izquierdo para gestionar la ubicación, pasar lista y calificar a tus alumnos."
+                message="Elige un horario de la izquierda para pasar lista, calificar y fijar la ubicación."
               />
             </Card>
           )}
@@ -270,43 +253,43 @@ function NowBar({
 
   if (!featured) return null;
   const { s, when, live } = featured;
+  const todayOrNow = when === "ahora" || when === "hoy";
 
   return (
-    <div className="flex flex-wrap items-center gap-5 rounded-2xl bg-slate-900 px-6 py-4 text-slate-50 shadow-md">
-      <div className="border-r border-slate-700 pr-5 text-center">
-        <div className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
-          {live ? "En Vivo Ahora" : "Próxima Clase"}
+    <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl bg-slate-900 px-5 py-4 text-slate-100">
+      <div className="flex-none border-r border-slate-700 pr-5">
+        <div className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+          {live ? "En curso" : "Próxima clase"}
         </div>
-        <div className="font-mono text-2xl font-bold text-amber-400">
-          {formatTime(s.start_time)}
-        </div>
+        <div className="tabular text-2xl font-bold text-white">{formatTime(s.start_time)}</div>
       </div>
+
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2.5">
-          <h3 className="font-semibold text-lg text-white">{courseName(s.course_id)}</h3>
+        <div className="flex items-center gap-2">
+          <h2 className="truncate text-base font-semibold text-white">
+            {courseName(s.course_id)}
+          </h2>
           {live && (
-            <span className="rounded-full bg-emerald-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white animate-pulse">
-              ● En curso
+            <span className="flex-none rounded-md bg-emerald-500 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-white">
+              En vivo
             </span>
           )}
         </div>
-        <div className="mt-0.5 text-xs text-slate-400">
+        <div className="tabular mt-0.5 text-xs text-slate-400">
           {formatTime(s.start_time)}–{formatTime(s.end_time)} ·{" "}
-          {s.modality === "virtual" ? "Virtual" : "Presencial"} ·{" "}
-          {when === "ahora" ? "en curso" : `${when}`}
+          {s.modality === "virtual" ? "Virtual" : "Presencial"}
+          {!todayOrNow && ` · ${when}`}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {(when === "ahora" || when === "hoy") && (
+
+      <div className="flex flex-none flex-wrap items-center gap-2">
+        {todayOrNow && (
           <Button disabled={ensure.isPending} onClick={() => enterLobby(s)}>
-            {ensure.isPending ? "Abriendo…" : "📹 Entrar al Lobby A/V"}
+            {ensure.isPending ? "Abriendo…" : "Entrar al aula"}
           </Button>
         )}
-        <Button
-          variant={when === "ahora" || when === "hoy" ? "secondary" : "primary"}
-          onClick={() => onGo(s)}
-        >
-          Gestionar clase →
+        <Button variant={todayOrNow ? "secondary" : "primary"} onClick={() => onGo(s)}>
+          Gestionar clase
         </Button>
       </div>
     </div>
@@ -339,12 +322,12 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
 
   if (sessions.length === 0) {
     return (
-      <Card className="py-12">
+      <Card>
         <SectionHeading>{courseName}</SectionHeading>
         <EmptyState
-          icon="⊹"
-          title="Sesiones no generadas"
-          message="Para empezar a pasar lista y registrar evaluaciones, genera las sesiones del trimestre."
+          icon={<IconCalendar className="h-5 w-5" />}
+          title="Todavía no hay sesiones"
+          message="Genera las sesiones del periodo para poder pasar lista y registrar notas."
           action={
             <Button
               disabled={generate.isPending}
@@ -356,7 +339,7 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
                 })
               }
             >
-              Generar Sesiones del Trimestre
+              {generate.isPending ? "Generando…" : "Generar sesiones"}
             </Button>
           }
         />
@@ -365,59 +348,39 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header Metrics Card */}
+    <div className="space-y-5">
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">Alumnos Matriculados</div>
-          <div className="mt-0.5 text-2xl font-semibold text-slate-900">{enrollments.length}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">Sesiones Totales</div>
-          <div className="mt-0.5 text-2xl font-semibold text-slate-900">{sessions.length}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">Modalidad Actual</div>
-          <div className="mt-0.5 text-sm font-semibold text-brand-600 capitalize">
-            {schedule.modality === "virtual" ? "🌐 Virtual" : "🏫 Presencial"}
-          </div>
-        </div>
+        <Stat label="Alumnos" value={enrollments.length} />
+        <Stat label="Sesiones" value={sessions.length} />
+        <Stat
+          label="Modalidad"
+          value={
+            <span className="text-lg">
+              {schedule.modality === "virtual" ? "Virtual" : "Presencial"}
+            </span>
+          }
+        />
       </div>
 
-      {/* Location Proposal Panel */}
       <LocationPanel schedule={schedule} />
 
-      {/* Class Session Workspace Card */}
-      <Card className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-3">
-            <SectionHeading className="!mb-0">{courseName}</SectionHeading>
-            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
-              <button
-                onClick={() => setActiveTab("attendance")}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition ${
-                  activeTab === "attendance"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                📋 Lista y Diario
-              </button>
-              <button
-                onClick={() => setActiveTab("exams")}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition ${
-                  activeTab === "exams"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                📊 Exámenes del Curso
-              </button>
-            </div>
+      <Card>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <SectionHeading className="!mb-0 truncate">{courseName}</SectionHeading>
+            <SegmentedControl
+              value={activeTab}
+              onChange={setActiveTab}
+              options={[
+                { value: "attendance" as const, label: "Lista del día" },
+                { value: "exams" as const, label: "Exámenes" },
+              ]}
+            />
           </div>
 
           {activeTab === "attendance" && (
             <Select
+              aria-label="Sesión"
               className="max-w-[16rem]"
               value={sessionId ?? 0}
               onChange={(e) => setSessionId(Number(e.target.value))}
@@ -486,64 +449,66 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
     );
   }
 
+  const currentLabel =
+    schedule.modality === "virtual"
+      ? "Virtual"
+      : schedule.modality === "semi_presencial"
+        ? "Semi presencial"
+        : "Presencial";
+
   return (
-    <Card className="space-y-3">
-      <SectionHeading className="!mb-0">Ubicación y Enlace de Clase</SectionHeading>
-      <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs">
+    <Card>
+      <SectionHeading>Ubicación de la clase</SectionHeading>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+        <Badge color={schedule.modality === "virtual" ? "indigo" : "slate"}>
+          {currentLabel}
+        </Badge>
         {schedule.modality === "virtual" ? (
           schedule.join_url ? (
             <>
-              <Badge color="indigo">🌐 Virtual</Badge>
-              <span className="truncate font-mono text-slate-700">{schedule.join_url}</span>
-              <span className="ml-auto font-semibold text-emerald-700">✓ Aprobado</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-600">
+                {schedule.join_url}
+              </span>
+              <span className="flex-none text-xs font-semibold text-emerald-700">Aprobado</span>
             </>
           ) : (
-            <>
-              <Badge color="amber">🌐 Virtual</Badge>
-              <span className="text-amber-800">Pendiente de enlace</span>
-            </>
+            <span className="text-xs text-amber-800">Pendiente de enlace</span>
           )
         ) : (
-          <>
-            <Badge color="slate">
-              🏫 {schedule.modality === "semi_presencial" ? "Semi presencial" : "Presencial"}
-            </Badge>
-            <span className="text-slate-700 font-medium">
-              {roomName(schedule.room_id) ?? "Virtual"}
-            </span>
-          </>
+          <span className="text-slate-700">{roomName(schedule.room_id) ?? "Sin aula asignada"}</span>
         )}
       </div>
 
       {pending ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-800 font-medium">
-          ⌛ Tienes una propuesta pendiente de aprobación (
-          {pending.modality === "virtual" ? "Virtual" : "Presencial"}).
+        <div className="mt-3">
+          <InlineAlert type="warning">
+            Ya enviaste una propuesta ({pending.modality === "virtual" ? "virtual" : "presencial"})
+            y está esperando aprobación de dirección.
+          </InlineAlert>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-3 pt-1">
-          <div className="flex gap-1.5">
-            {(["presencial", "semi_presencial", "virtual"] as const).map((m) => (
-              <Button
-                key={m}
-                variant={modality === m ? "primary" : "secondary"}
-                className="!py-1.5 !px-3 text-xs"
-                onClick={() => setModality(m)}
-              >
-                {MODALITY_LABELS[m]}
-              </Button>
-            ))}
-          </div>
+        <div className="mt-3 flex flex-wrap items-end gap-2.5">
+          <SegmentedControl
+            value={modality}
+            onChange={setModality}
+            options={(["presencial", "semi_presencial", "virtual"] as const).map((m) => ({
+              value: m,
+              label: MODALITY_LABELS[m],
+            }))}
+          />
           {modality === "virtual" ? (
             <Input
-              className="max-w-xs text-xs"
-              placeholder="https://meet.google.com/… o Zoom"
+              className="max-w-xs"
+              aria-label="Enlace de la videollamada"
+              placeholder="https://meet.google.com/…"
               value={joinUrl}
               onChange={(e) => setJoinUrl(e.target.value)}
             />
           ) : (
             <Select
-              className="max-w-xs text-xs"
+              className="max-w-xs"
+              aria-label="Aula"
               value={roomId}
               onChange={(e) => setRoomId(Number(e.target.value))}
             >
@@ -557,13 +522,10 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
             </Select>
           )}
           <Button
-            disabled={
-              propose.isPending || (modality === "virtual" ? !joinUrl.trim() : !roomId)
-            }
+            disabled={propose.isPending || (modality === "virtual" ? !joinUrl.trim() : !roomId)}
             onClick={submit}
-            className="!py-1.5 text-xs"
           >
-            Enviar Propuesta
+            {propose.isPending ? "Enviando…" : "Enviar propuesta"}
           </Button>
         </div>
       )}
@@ -579,25 +541,28 @@ function SessionControls({ session }: { session: ClassSession }) {
 
   if (session.status === "cancelled") {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50/60 px-3.5 py-2 text-xs text-red-800 font-medium">
-        🚫 Clase cancelada{session.cancel_reason ? `: ${session.cancel_reason}` : "."}
-      </div>
+      <InlineAlert type="error" title="Clase cancelada">
+        {session.cancel_reason || "No se indicó motivo."}
+      </InlineAlert>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
       <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-slate-500">Reprogramar sesión a:</span>
+        <label htmlFor="reschedule-date" className="text-xs font-medium text-slate-600">
+          Reprogramar a
+        </label>
         <Input
+          id="reschedule-date"
           type="date"
           value={newDate}
           onChange={(e) => setNewDate(e.target.value)}
-          className="!py-1 text-xs max-w-[10rem]"
+          className="max-w-[10rem]"
         />
         <Button
           variant="secondary"
-          className="!py-1 text-xs"
+          size="sm"
           disabled={!newDate || reschedule.isPending}
           onClick={() =>
             reschedule.mutate(
@@ -605,7 +570,7 @@ function SessionControls({ session }: { session: ClassSession }) {
               {
                 onSuccess: () => {
                   setNewDate("");
-                  notify("Clase reprogramada (sesión de recuperación creada)", "success");
+                  notify("Clase reprogramada: se creó una sesión de recuperación", "success");
                 },
                 onError: onMutationError("No se pudo reprogramar"),
               },
@@ -618,7 +583,8 @@ function SessionControls({ session }: { session: ClassSession }) {
 
       <Button
         variant="secondary"
-        className="!py-1 text-xs text-red-700 border-red-200 hover:bg-red-50"
+        size="sm"
+        className="border-red-200 text-red-700 hover:bg-red-50"
         disabled={cancel.isPending}
         onClick={() => setCancelling(true)}
       >
@@ -676,13 +642,11 @@ function SessionSheet({
 
   if (isFuture) {
     return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-6 text-center text-xs space-y-2 my-2">
-        <div className="text-2xl">🔒</div>
-        <h4 className="font-semibold text-amber-900 text-sm">Clase no iniciada (Fecha: {sessionDate})</h4>
-        <p className="text-amber-800 max-w-md mx-auto">
-          No es posible registrar la asistencia ni asignar notas diarias para clases futuras que aún no han iniciado. La toma de lista se habilitará automáticamente el día de la clase.
-        </p>
-      </div>
+      <EmptyState
+        icon={<IconLock className="h-5 w-5" />}
+        title={`La clase del ${sessionDate} aún no empieza`}
+        message="La lista y las notas diarias se habilitan el mismo día de la clase."
+      />
     );
   }
 
@@ -716,72 +680,74 @@ function SessionSheet({
   if (enrollments.length === 0) {
     return (
       <EmptyState
-        icon="◎"
+        icon={<IconUsers className="h-5 w-5" />}
         title="Sin alumnos matriculados"
-        message="Cuando se matriculen alumnos en este curso podrás tomar la asistencia y asignar la nota diaria."
+        message="Cuando se matriculen alumnos podrás pasar lista y poner la nota diaria."
       />
     );
   }
 
-  return (
-    <div className="space-y-4 pt-2">
-      {/* Attendance Toolbar & Progress Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-4 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            className="!py-2 !px-4 text-xs font-bold shadow-md shadow-brand-600/20 hover:scale-[1.02] active:scale-98 transition-all"
-            disabled={markAll.isPending || marked === enrollments.length}
-            onClick={() => {
-              markEveryonePresent();
-              notify("Asistencia completada para todos los alumnos en 1 clic", "success");
-            }}
-          >
-            ✓ Marcar Todos Presentes (1 Clic)
-          </Button>
-          <span className="text-xs font-semibold text-slate-700">
-            {marked} de {enrollments.length} registrados
-          </span>
-        </div>
+  const pct = Math.round((marked / enrollments.length) * 100);
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-emerald-700 font-mono">
-            {Math.round((marked / enrollments.length) * 100)}%
+  return (
+    <div className="space-y-3">
+      {/* Barra de progreso de la toma de lista.
+          El botón dice lo que hace y nada más: antes se llamaba
+          "✓ Marcar Todos Presentes (1 Clic)", donde "(1 Clic)" describía el
+          esfuerzo de usarlo, no su efecto. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <Button
+          disabled={markAll.isPending || marked === enrollments.length}
+          onClick={() => {
+            markEveryonePresent();
+            notify("Todos marcados como presentes", "success");
+          }}
+        >
+          Marcar todos presentes
+        </Button>
+
+        <div className="flex items-center gap-2.5">
+          <span className="tabular text-xs text-slate-600">
+            {marked} de {enrollments.length}
           </span>
-          <div className="w-28 h-2.5 rounded-full bg-slate-200 overflow-hidden">
-            <div
-              className="h-full bg-emerald-500 transition-all duration-300"
-              style={{ width: `${(marked / enrollments.length) * 100}%` }}
-            />
+          <div
+            className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Asistencia registrada"
+          >
+            <div className="h-full bg-emerald-600" style={{ width: `${pct}%` }} />
           </div>
         </div>
       </div>
 
-      {/* Roster Cards */}
-      <div className="space-y-2">
+      {/* Roster */}
+      <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
         {enrollments.map((e) => (
-          <div
+          <li
             key={e.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs hover:border-slate-300 transition"
+            className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
           >
-            <div className="flex items-center gap-3 min-w-[14rem]">
-              <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-800">
+            <div className="flex min-w-[12rem] items-center gap-2.5">
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
                 {initials(studentName(e.student_id))}
-              </div>
-              <div className="font-semibold text-slate-900 text-sm">
+              </span>
+              <span className="text-sm font-medium text-slate-900">
                 {studentName(e.student_id)}
-              </div>
+              </span>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <AttendanceMarks
                 enrollmentId={e.id}
                 sessionId={sessionId}
                 current={markBySession.get(e.id)}
               />
 
-              <div className="flex items-center gap-1.5 border-l border-slate-100 pl-3">
-                <span className="text-xs text-slate-500 font-medium">Nota diaria:</span>
+              <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                <span className="text-xs text-slate-500">Nota</span>
                 <DailyGradeInput
                   enrollmentId={e.id}
                   sessionId={sessionId}
@@ -789,15 +755,24 @@ function SessionSheet({
                 />
               </div>
             </div>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }
 
 const MARK_LABELS = { present: "Presente", late: "Tarde", absent: "Ausente" } as const;
 type MarkableStatus = keyof typeof MARK_LABELS;
+
+// Un color por estado, aplicado solo al botón elegido. Antes se construía con
+// `!important` sobre el componente Button para forzar el fondo, lo que dejaba
+// tres alturas de botón distintas conviviendo en la misma fila.
+const MARK_SELECTED: Record<MarkableStatus, string> = {
+  present: "bg-emerald-600 text-white",
+  late: "bg-amber-500 text-white",
+  absent: "bg-red-600 text-white",
+};
 
 function AttendanceMarks({
   enrollmentId,
@@ -811,23 +786,14 @@ function AttendanceMarks({
   const attendance = useCreateAttendance();
 
   return (
-    <div className="flex gap-1">
+    <div role="group" aria-label="Asistencia" className="flex rounded-lg bg-slate-100 p-0.5">
       {(Object.keys(MARK_LABELS) as MarkableStatus[]).map((st) => {
         const selected = current === st;
         return (
-          <Button
+          <button
             key={st}
-            variant={selected ? (st === "present" ? "primary" : st === "late" ? "secondary" : "secondary") : "secondary"}
+            type="button"
             aria-pressed={selected}
-            className={`!py-1 !px-2.5 text-xs transition ${
-              selected
-                ? st === "present"
-                  ? "!bg-emerald-600 !text-white"
-                  : st === "late"
-                  ? "!bg-amber-500 !text-white"
-                  : "!bg-red-600 !text-white"
-                : "text-slate-600"
-            }`}
             disabled={attendance.isPending}
             onClick={() =>
               attendance.mutate({
@@ -836,9 +802,12 @@ function AttendanceMarks({
                 status: st,
               })
             }
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
+              selected ? MARK_SELECTED[st] : "text-slate-600 hover:text-slate-900"
+            }`}
           >
             {MARK_LABELS[st]}
-          </Button>
+          </button>
         );
       })}
     </div>
@@ -882,9 +851,11 @@ function DailyGradeInput({
   return (
     <div>
       <Input
-        className={`w-16 text-center font-mono !py-1 text-xs ${error ? "border-red-400" : ""}`}
+        className={`tabular w-14 px-2 text-center ${error ? "border-red-400" : ""}`}
         inputMode="decimal"
         placeholder="—"
+        aria-label={`Nota diaria (0 a ${SCORE_MAX})`}
+        aria-invalid={error ? true : undefined}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}

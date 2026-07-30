@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Badge, Button, Card, Input } from "../../components/ui";
+import {
+  Badge, Button, Card, Field, InlineAlert, Input, PageHeader, SegmentedControl,
+} from "../../components/ui";
 import { api, apiErrorMessage } from "../../lib/api";
 import { notify } from "../../lib/toast";
 import type { ProviderName } from "../../lib/types";
@@ -67,114 +69,93 @@ export function VideoProvidersPanel() {
   }
 
   return (
-    <Card>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="font-medium text-slate-900">Proveedor de Videoconferencia</h3>
-          <p className="text-xs text-slate-500">
-            Selecciona la integración de video para las clases virtuales de tu academia.
-          </p>
-        </div>
-        <Badge color={provider === "manual" ? "slate" : "green"}>
-          {provider === "manual" ? "Modo Manual (Default)" : `Nativo: ${provider.toUpperCase()}`}
-        </Badge>
-      </div>
+    <div>
+      <PageHeader
+        title="Videoconferencias"
+        description="Cómo se generan los enlaces de las clases virtuales."
+        actions={
+          <Badge color={provider === "manual" ? "slate" : "green"} dot>
+            {provider === "manual" ? "Modo manual" : provider.toUpperCase()}
+          </Badge>
+        }
+      />
 
-      <div className="mb-6 flex gap-2">
-        <Button
-          variant={provider === "manual" ? "primary" : "secondary"}
-          onClick={() => setProvider("manual")}
-        >
-          Manual (URL Pegada)
-        </Button>
-        <Button
-          variant={provider === "zoom" ? "primary" : "secondary"}
-          onClick={() => setProvider("zoom")}
-        >
-          Zoom (S2S OAuth)
-        </Button>
-        <Button
-          variant={provider === "google" ? "primary" : "secondary"}
-          onClick={() => setProvider("google")}
-        >
-          Google Meet API
-        </Button>
-      </div>
+      <Card className="max-w-2xl space-y-5">
+        <SegmentedControl
+          value={provider}
+          onChange={setProvider}
+          options={[
+            { value: "manual" as const, label: "Manual" },
+            { value: "zoom" as const, label: "Zoom" },
+            { value: "google" as const, label: "Google Meet" },
+          ]}
+        />
 
-      {provider === "manual" && (
-        <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-          <p className="font-medium text-slate-800">Modo Manual Activado</p>
-          <p className="mt-1 text-xs">
-            Los profesores ingresarán manualmente el enlace de Zoom, Meet o Teams al proponer la ubicación de su clase.
-            No se requieren credenciales API ni configuraciones externas.
-          </p>
-        </div>
-      )}
+        {provider === "manual" && (
+          <InlineAlert type="info" title="No hay nada que configurar">
+            Cada profesor pega el enlace de Zoom, Meet o Teams al proponer la ubicación de su
+            clase. No hacen falta credenciales.
+          </InlineAlert>
+        )}
 
-      {provider === "zoom" && (
-        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <h4 className="text-sm font-medium text-slate-800">Configuración Zoom Server-to-Server OAuth</h4>
-          <div>
-            <label className="text-xs font-medium text-slate-600">Account ID</label>
-            <Input
-              value={zoomAccountId}
-              onChange={(e) => setZoomAccountId(e.target.value)}
-              placeholder="Ej. abc123def456"
-            />
+        {provider === "zoom" && (
+          <div className="space-y-4">
+            <Field label="Account ID">
+              <Input
+                value={zoomAccountId}
+                onChange={(e) => setZoomAccountId(e.target.value)}
+                placeholder="Ej. abc123def456"
+              />
+            </Field>
+            <Field label="Client ID">
+              <Input
+                value={zoomClientId}
+                onChange={(e) => setZoomClientId(e.target.value)}
+                placeholder="Ej. client_id_zoom_123"
+              />
+            </Field>
+            <Field label="Client Secret">
+              <Input
+                type="password"
+                value={zoomClientSecret}
+                onChange={(e) => setZoomClientSecret(e.target.value)}
+                placeholder="••••••••••••••••"
+              />
+            </Field>
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600">Client ID</label>
-            <Input
-              value={zoomClientId}
-              onChange={(e) => setZoomClientId(e.target.value)}
-              placeholder="Ej. client_id_zoom_123"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600">Client Secret</label>
-            <Input
-              type="password"
-              value={zoomClientSecret}
-              onChange={(e) => setZoomClientSecret(e.target.value)}
-              placeholder="••••••••••••••••"
-            />
-          </div>
-        </div>
-      )}
+        )}
 
-      {provider === "google" && (
-        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <h4 className="text-sm font-medium text-slate-800">Configuración Google Calendar / Meet API</h4>
-          <div>
-            <label className="text-xs font-medium text-slate-600">OAuth Access Token / Service Account Key</label>
-            <Input
-              type="password"
-              value={googleAccessToken}
-              onChange={(e) => setGoogleAccessToken(e.target.value)}
-              placeholder="ya29.a0AfH6SM..."
-            />
+        {provider === "google" && (
+          <div className="space-y-4">
+            <Field label="Access token o clave de cuenta de servicio">
+              <Input
+                type="password"
+                value={googleAccessToken}
+                onChange={(e) => setGoogleAccessToken(e.target.value)}
+                placeholder="ya29.a0AfH6SM…"
+              />
+            </Field>
+            <Field label="ID del calendario" hint="Por defecto, «primary».">
+              <Input
+                value={googleCalendarId}
+                onChange={(e) => setGoogleCalendarId(e.target.value)}
+                placeholder="primary"
+              />
+            </Field>
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600">ID del Calendario (Default: primary)</label>
-            <Input
-              value={googleCalendarId}
-              onChange={(e) => setGoogleCalendarId(e.target.value)}
-              placeholder="primary"
-            />
-          </div>
-        </div>
-      )}
+        )}
 
-      {provider !== "manual" && (
-        <div className="mt-4 flex gap-2">
-          <Button variant="secondary" onClick={handleTestConnection} disabled={testing}>
-            {testing ? "Probando..." : "Probar Conexión"}
-          </Button>
-          <Button variant="primary" onClick={handleSaveProvider} disabled={saving}>
-            {saving ? "Guardando..." : "Guardar y Activar"}
-          </Button>
-        </div>
-      )}
-    </Card>
+        {provider !== "manual" && (
+          <div className="flex gap-2 border-t border-slate-100 pt-4">
+            <Button variant="secondary" onClick={handleTestConnection} disabled={testing}>
+              {testing ? "Probando…" : "Probar conexión"}
+            </Button>
+            <Button onClick={handleSaveProvider} disabled={saving}>
+              {saving ? "Guardando…" : "Guardar y activar"}
+            </Button>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }

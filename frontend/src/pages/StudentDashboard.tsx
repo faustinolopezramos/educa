@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
-import { Badge, Button, Card, EmptyState, PageTitle, SectionHeading } from "../components/ui";
+import {
+  Badge, Button, Card, EmptyState, InlineAlert, PageHeader, SectionHeading, SkeletonRows,
+} from "../components/ui";
+import { IconBook, IconClock, IconLock } from "../components/icons";
 import { StudentGrades } from "../features/grades/StudentGrades";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
@@ -44,54 +47,41 @@ export default function StudentDashboard() {
     [enrollments],
   );
 
-  if (section === "tareas") {
-    return (
-      <div>
-        <PageTitle subtitle="Mi progreso">Mis Tareas</PageTitle>
-        <AssignmentsPanel />
-      </div>
-    );
-  }
+  if (section === "tareas") return <AssignmentsPanel />;
 
   if (section === "calificaciones") {
-    if (isOverdue) {
-      return (
-        <div>
-          <PageTitle subtitle="Mi progreso">Mis calificaciones</PageTitle>
-          <Card>
-            <EmptyState
-              icon="◔"
-              title="Regulariza tu pago para ver tus notas"
-              message="Tus calificaciones estarán disponibles en cuanto tu cuota esté al día. Si ya pagaste, avisa a administración para que actualicen tu estado."
-            />
-          </Card>
-        </div>
-      );
-    }
     return (
       <div>
-        <PageTitle subtitle="Mi progreso">Mis calificaciones</PageTitle>
-        <StudentGrades />
+        <PageHeader title="Mis calificaciones" />
+        {isOverdue ? <PaymentGate what="tus notas" /> : <StudentGrades />}
       </div>
     );
   }
   if (section === "reportes") {
     return (
       <div>
-        <PageTitle subtitle="Mi progreso">Mi reporte</PageTitle>
+        <PageHeader title="Mi reporte" />
         <StudentReport />
       </div>
     );
   }
-  if (section === "perfil") {
-    return (
-      <div>
-        <PageTitle subtitle="Cuenta">Mi perfil</PageTitle>
-        <ProfilePanel />
-      </div>
-    );
-  }
+  if (section === "perfil") return <ProfilePanel />;
   return <WeekView />;
+}
+
+/**
+ * Pantalla que ve un alumno con la cuota vencida. Un solo componente para los
+ * dos sitios donde aplica: antes eran dos bloques con textos distintos que
+ * decían lo mismo.
+ */
+function PaymentGate({ what }: { what: string }) {
+  return (
+    <EmptyState
+      icon={<IconLock className="h-5 w-5" />}
+      title={`Ponte al día para ver ${what}`}
+      message="El acceso se restablece en cuanto se registre tu pago. Si ya pagaste, avisa a administración para que actualicen tu estado."
+    />
+  );
 }
 
 // The progress report is only shown to students who are up to date on payments.
@@ -101,24 +91,8 @@ function StudentReport() {
     (e) => e.status === "active" && e.payment_status === "overdue",
   );
 
-  if (isLoading) return <p className="text-slate-500">Cargando…</p>;
-
-  if (overdue.length > 0) {
-    return (
-      <Card>
-        <EmptyState
-          icon="◔"
-          title="Regulariza tu pago para ver tu reporte"
-          message="Tu reporte de avance estará disponible en cuanto tu cuota esté al día. Si ya pagaste, avisa a administración para que actualicen tu estado."
-          action={
-            <Button variant="danger" className="text-xs">
-              Regularizar pago
-            </Button>
-          }
-        />
-      </Card>
-    );
-  }
+  if (isLoading) return <SkeletonRows rows={4} />;
+  if (overdue.length > 0) return <PaymentGate what="tu reporte" />;
 
   return <ReportView />;
 }
@@ -193,12 +167,18 @@ function WeekView() {
 
   return (
     <div>
-      <PageTitle subtitle={`Hola, ${user?.full_name?.split(" ")[0] ?? ""}`}>
-        Tu semana
-      </PageTitle>
+      <PageHeader title={`Hola, ${user?.full_name?.split(" ")[0] ?? ""}`} />
 
-      <div className="mb-6 grid gap-5 lg:grid-cols-3">
-        {/* Hero: next class */}
+      {overdue && (
+        <div className="mb-5">
+          <InlineAlert type="error" title="Tienes un pago vencido">
+            La cuota de {courseName(overdue.course_id)} está vencida. Mientras siga así no
+            podrás ver tus notas ni descargar certificados.
+          </InlineAlert>
+        </div>
+      )}
+
+      <div className="mb-6 grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {next ? (
             <NextClassHero
@@ -214,55 +194,37 @@ function WeekView() {
           ) : (
             <Card className="h-full">
               <EmptyState
-                icon="◷"
-                title="No tienes clases programadas"
-                message="Cuando tengas una clase próxima, aparecerá aquí con acceso directo al Lobby."
+                icon={<IconClock className="h-5 w-5" />}
+                title="No tienes clases próximas"
+                message="Cuando se acerque una clase la verás aquí, con el acceso directo al aula."
               />
             </Card>
           )}
         </div>
 
-        {/* Side: payment nudge + weekly strip */}
-        <div className="space-y-5">
-          {overdue && (
-            <div className="rounded-xl border border-red-100 bg-red-50 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
-                <span className="h-2 w-2 rounded-full bg-red-600" />
-                Pago vencido
-              </div>
-              <p className="mt-1.5 text-sm text-red-700/90">
-                Tu cuota de {courseName(overdue.course_id)} está vencida.
-              </p>
-              <Button variant="danger" className="mt-3 text-xs">
-                Regularizar pago
-              </Button>
-            </div>
-          )}
-          <Card>
-            <SectionHeading>Esta semana</SectionHeading>
-            <div className="flex gap-1.5">
-              {DAYS.slice(0, 5).map((d, i) => {
-                const has = mySchedules.some((s) => s.day_of_week === i);
-                return (
-                  <div key={i} className="flex-1 text-center">
-                    <div className="font-mono text-[10px] text-slate-400">{d[0]}</div>
-                    <div
-                      className={`mt-1 h-7 rounded-md ${
-                        has ? "bg-brand-600" : "bg-slate-100"
-                      }`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </div>
+        <Card>
+          <SectionHeading>Esta semana</SectionHeading>
+          <div className="flex gap-1.5">
+            {DAYS.slice(0, 5).map((d, i) => {
+              const has = mySchedules.some((s) => s.day_of_week === i);
+              return (
+                <div key={i} className="flex-1 text-center">
+                  <div className="text-2xs font-medium text-slate-400">{d.slice(0, 2)}</div>
+                  <div
+                    title={has ? `${d}: tienes clase` : `${d}: sin clase`}
+                    className={`mt-1 h-7 rounded-md ${has ? "bg-brand-600" : "bg-slate-100"}`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </Card>
       </div>
 
       <SectionHeading>Mis cursos</SectionHeading>
       {enrollments.length === 0 ? (
         <EmptyState
-          icon="◈"
+          icon={<IconBook className="h-5 w-5" />}
           title="No estás matriculado en ningún curso"
           message="Cuando dirección te matricule, tus cursos y tu progreso aparecerán aquí."
         />
@@ -321,40 +283,36 @@ function NextClassHero({
         : `Empieza ${formatDateTime(startIso, tz)}`;
 
   return (
-    <div className="relative h-full overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-7 text-slate-50 shadow-xl border border-slate-800">
-      <div
-        className="pointer-events-none absolute -right-10 -top-10 h-56 w-56 rounded-full opacity-40 blur-2xl"
-        style={{ background: "radial-gradient(circle,#0F6E62,transparent 70%)" }}
-      />
-      <div className="inline-flex items-center gap-2 rounded-full bg-brand-600/90 backdrop-blur-md px-3.5 py-1 text-xs font-semibold text-white shadow-sm">
-        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+    <div className="flex h-full flex-col rounded-xl bg-slate-900 p-6 text-slate-100">
+      <div className="text-xs font-semibold uppercase tracking-wider text-brand-300">
         {countLabel}
       </div>
-      <h3 className="mt-4 font-serif text-3xl font-bold tracking-tight text-white">{courseName}</h3>
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300">
-        <span>
+
+      <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">{courseName}</h2>
+
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-400">
+        <span className="tabular">
           {formatDateTime(startIso, tz)}
           {tz && ` (${timeZoneLabel(startIso, tz)})`}
         </span>
-        <span>•</span>
+        <span aria-hidden="true">·</span>
         <span>Prof. {teacher}</span>
-        <span>•</span>
-        <span className="font-medium text-emerald-400">
-          {modality === "virtual" ? "Aula Virtual" : room ? `Aula ${room}` : "Presencial"}
-        </span>
+        <span aria-hidden="true">·</span>
+        <span>{modality === "virtual" ? "Aula virtual" : room ? `Aula ${room}` : "Presencial"}</span>
       </div>
-      <div className="mt-7 flex items-center gap-3">
+
+      <div className="mt-auto pt-6">
         {lobbyOpen ? (
           <Link
             to={`/lobby/${sessionId}`}
-            className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/40 transition hover:bg-brand-500 hover:scale-[1.02] active:scale-[0.98]"
+            className="inline-flex items-center rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-500"
           >
-            <span>🚀 Entrar a la Clase Ahora</span>
-            <span>→</span>
+            Entrar a la clase
           </Link>
         ) : (
-          <span className="inline-flex items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-800/60 px-5 py-3 text-sm font-medium text-slate-300 backdrop-blur-xs">
-            <span>⏰ El Lobby abre 15 min antes</span>
+          <span className="inline-flex items-center gap-2 text-sm text-slate-400">
+            <IconClock className="h-4 w-4" />
+            El acceso se abre {LOBBY_WINDOW_MIN} min antes
           </span>
         )}
       </div>
@@ -366,14 +324,16 @@ function NextClassHero({
 function Ring({ pct, tone }: { pct: number; tone: "green" | "amber" }) {
   const color = tone === "green" ? "#0F6E62" : "#B77A2B";
   return (
-    <div className="relative h-16 w-16 flex-none">
+    <div
+      className="relative h-14 w-14 flex-none"
+      role="img"
+      aria-label={`Asistencia: ${pct}%`}
+    >
       <div
-        className="h-16 w-16 rounded-full"
-        style={{
-          background: `conic-gradient(${color} 0 ${pct}%, #EFEADD ${pct}% 100%)`,
-        }}
+        className="h-14 w-14 rounded-full"
+        style={{ background: `conic-gradient(${color} 0 ${pct}%, #EFEADD ${pct}% 100%)` }}
       />
-      <div className="absolute inset-2 flex items-center justify-center rounded-full bg-white font-mono text-sm font-bold text-slate-800">
+      <div className="tabular absolute inset-[6px] flex items-center justify-center rounded-full bg-white text-xs font-bold text-slate-900">
         {pct}%
       </div>
     </div>
@@ -404,27 +364,34 @@ function CourseCard({
   return (
     <Card>
       <div className="mb-3 flex items-start justify-between gap-2">
-        <span className="font-serif text-lg font-medium text-slate-900">{name}</span>
+        <span className="min-w-0 truncate text-base font-semibold text-slate-900">{name}</span>
         <Badge color={enrollment.status === "active" ? "green" : "slate"}>
           {ENROLLMENT_LABELS[enrollment.status] ?? enrollment.status}
         </Badge>
       </div>
 
-      <div className="flex items-center gap-5">
-        {pct != null ? (
-          <Ring pct={pct} tone={tone} />
-        ) : (
-          <div className="flex h-16 w-16 flex-none items-center justify-center rounded-full bg-slate-100 font-mono text-xs text-slate-400">
-            —
-          </div>
-        )}
-        <div className="min-w-0 flex-1 space-y-2">
+      <div className="flex items-center gap-4">
+        <div className="flex flex-none flex-col items-center gap-1">
+          {pct != null ? (
+            <Ring pct={pct} tone={tone} />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-400">
+              —
+            </div>
+          )}
+          {/* El anillo necesitaba etiqueta: antes la única palabra
+              "Asistencia" estaba pegada a la insignia de pago, describiendo
+              un dato que no era el suyo. */}
+          <span className="text-2xs font-medium text-slate-500">Asistencia</span>
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-2.5">
           <div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">Promedio</span>
-              <span className="font-mono font-bold text-slate-800">
+              <span className="tabular font-semibold text-slate-900">
                 {avg ?? "—"}
-                <span className="text-slate-400">/10</span>
+                <span className="font-normal text-slate-400">/10</span>
               </span>
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
@@ -437,8 +404,8 @@ function CourseCard({
               />
             </div>
           </div>
-          <div className="text-xs font-medium text-slate-500">
-            Asistencia · Pago:{" "}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-500">Pago</span>
             <Badge color={payColor}>
               {PAYMENT_LABELS[enrollment.payment_status] ?? enrollment.payment_status}
             </Badge>
@@ -447,7 +414,7 @@ function CourseCard({
       </div>
 
       {nextClass && (
-        <div className="mt-3 text-xs text-slate-400">Próxima clase: {nextClass}</div>
+        <div className="mt-3 text-xs text-slate-500">Próxima clase: {nextClass}</div>
       )}
       <FinalGradeRow enrollmentId={enrollment.id} />
     </Card>
@@ -473,16 +440,16 @@ function FinalGradeRow({ enrollmentId }: { enrollmentId: number }) {
         {final.passed ? "Aprobado" : "No aprobado"}
       </Badge>
       {certificate && (
-        <button
+        <Button
+          size="sm"
           onClick={() =>
             downloadCertificatePdf(certificate.id, certificate.code).catch(() =>
               notify("No se pudo descargar el certificado", "error"),
             )
           }
-          className="rounded-lg bg-brand-600 px-2.5 py-1 font-semibold text-white hover:bg-brand-700"
         >
           Descargar certificado
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -1,18 +1,35 @@
 import { useState } from "react";
 
-import { Badge, Button, Card, Table, Td, Th } from "../../components/ui";
+import {
+  Badge, Button, Card, EmptyState, PageHeader, SegmentedControl, SkeletonRows, Table, Td, Th,
+} from "../../components/ui";
+import { IconShield } from "../../components/icons";
 import { formatDateTime } from "../../lib/format";
 import { useAudit } from "../../lib/queries";
 import type { AuditLog } from "../../lib/types";
 
 const ENTITIES = [
-  { id: "", label: "Todo" },
-  { id: "grade", label: "Notas" },
-  { id: "attendance", label: "Asistencia" },
-  { id: "enrollment", label: "Matrículas" },
-  { id: "location_proposal", label: "Ubicación" },
-  { id: "user", label: "Usuarios" },
+  { value: "", label: "Todo" },
+  { value: "grade", label: "Notas" },
+  { value: "attendance", label: "Asistencia" },
+  { value: "enrollment", label: "Matrículas" },
+  { value: "location_proposal", label: "Ubicación" },
+  { value: "user", label: "Usuarios" },
 ];
+
+const ACTION_LABELS: Record<string, string> = {
+  create: "Creación",
+  update: "Cambio",
+  delete: "Borrado",
+};
+
+const ENTITY_LABELS: Record<string, string> = {
+  grade: "Nota",
+  attendance: "Asistencia",
+  enrollment: "Matrícula",
+  location_proposal: "Ubicación",
+  user: "Usuario",
+};
 
 const ACTION_COLOR = {
   create: "green",
@@ -66,60 +83,58 @@ export function AuditPanel() {
   }
 
   return (
-    <Card>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="font-medium">Registro de cambios</h3>
-        <div className="ml-auto flex gap-1">
-          {ENTITIES.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => switchEntity(e.id)}
-              className={`rounded-md px-2 py-1 text-xs ${
-                entity === e.id
-                  ? "bg-brand-600 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              {e.label}
-            </button>
-          ))}
-        </div>
+    <div>
+      <PageHeader
+        title="Auditoría"
+        description="Quién cambió qué y cuándo. Solo lectura."
+      />
+
+      <div className="mb-4">
+        <SegmentedControl value={entity} onChange={switchEntity} options={ENTITIES} />
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-slate-400">Cargando…</p>
+        <SkeletonRows rows={6} />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">Sin cambios registrados.</p>
+        <EmptyState
+          icon={<IconShield className="h-5 w-5" />}
+          title="Sin cambios registrados"
+          message="Cuando alguien edite notas, asistencia o matrículas, el movimiento aparecerá aquí."
+        />
       ) : (
-        <>
+        <Card padding="none" className="overflow-hidden">
           <Table>
             <thead>
               <tr>
-                <Th>Fecha y Hora</Th>
+                <Th>Fecha</Th>
                 <Th>Acción</Th>
                 <Th>Entidad</Th>
-                <Th>Detalle del Cambio</Th>
-                <Th>Usuario / Actor</Th>
+                <Th>Cambio</Th>
+                <Th align="right">Autor</Th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
+            <tbody className="divide-y divide-slate-100">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                <tr key={r.id} className="hover:bg-slate-50">
                   <Td>
-                    <span className="font-mono text-slate-600 text-[11px]">{formatDateTime(r.at)}</span>
+                    <span className="tabular whitespace-nowrap text-xs text-slate-600">
+                      {formatDateTime(r.at)}
+                    </span>
                   </Td>
                   <Td>
-                    <Badge color={ACTION_COLOR[r.action]}>{r.action}</Badge>
+                    <Badge color={ACTION_COLOR[r.action]}>
+                      {ACTION_LABELS[r.action] ?? r.action}
+                    </Badge>
                   </Td>
                   <Td>
-                    <span className="font-semibold text-slate-800">{r.entity}</span>{" "}
-                    <span className="font-mono text-slate-400 text-[11px]">#{r.entity_id}</span>
+                    <span className="text-slate-800">{ENTITY_LABELS[r.entity] ?? r.entity}</span>{" "}
+                    <span className="font-mono text-xs text-slate-400">#{r.entity_id}</span>
                   </Td>
                   <Td>
-                    <span className="font-mono text-[11px] text-slate-700">{diff(r)}</span>
+                    <span className="font-mono text-xs text-slate-700">{diff(r)}</span>
                   </Td>
-                  <Td>
-                    <span className="font-mono text-[11px] text-slate-600">
+                  <Td align="right">
+                    <span className="font-mono text-xs text-slate-500">
                       {r.actor_id ? `#${r.actor_id}` : "sistema"}
                     </span>
                   </Td>
@@ -127,34 +142,34 @@ export function AuditPanel() {
               ))}
             </tbody>
           </Table>
+
           {totalPages > 1 && (
-            <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
-              <span>{total} registros</span>
+            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-2.5">
+              <span className="text-xs text-slate-500">
+                {total} registros · página {page + 1} de {totalPages}
+              </span>
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
-                  className="text-xs"
+                  size="sm"
                   disabled={page === 0}
                   onClick={() => setPage((p) => p - 1)}
                 >
-                  ← Anterior
+                  Anterior
                 </Button>
-                <span className="self-center">
-                  {page + 1} / {totalPages}
-                </span>
                 <Button
                   variant="secondary"
-                  className="text-xs"
+                  size="sm"
                   disabled={page >= totalPages - 1}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Siguiente →
+                  Siguiente
                 </Button>
               </div>
             </div>
           )}
-        </>
+        </Card>
       )}
-    </Card>
+    </div>
   );
 }

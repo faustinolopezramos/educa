@@ -5,15 +5,22 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  EmptyState,
   Field,
   Input,
+  MetaItem,
   Modal,
   ModalActions,
+  PageHeader,
+  SearchInput,
+  SegmentedControl,
   Select,
   Table,
   Td,
   Th,
+  Toolbar,
 } from "../../components/ui";
+import { IconBook } from "../../components/icons";
 import { DAYS } from "../../lib/format";
 import {
   useCourses,
@@ -33,16 +40,6 @@ import { CreateScheduleModal } from "../schedules/CreateScheduleModal";
 import { RegisterTeacherWizard } from "./RegisterTeacherWizard";
 import { UnifiedCourseWizardModal } from "./UnifiedCourseWizardModal";
 import { onMutationError } from "./shared";
-
-function initials(name: string): string {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
 
 export function CoursesPanel() {
   const { data: courses = [] } = useCourses();
@@ -123,107 +120,111 @@ export function CoursesPanel() {
     );
   }
 
+  const filtersActive =
+    selectedLevelId > 0 || selectedTeacherId > 0 || searchTerm.trim() !== "";
+
   return (
-    <div className="space-y-4">
-      {/* Ultra-Clean Minimalist Header Bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 font-bold text-lg">
-            📚
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif text-xl font-bold text-slate-900">
-                Gestión de Cursos
-              </h2>
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-                {courses.length} programas
-              </span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-              <span>👥 Capacidad total: <strong className="text-slate-800 font-semibold">{totalCapacity}</strong> cupos</span>
-              <span>·</span>
-              <span>🏷️ {levels.length} niveles</span>
-            </div>
-          </div>
-        </div>
+    <div>
+      <PageHeader
+        title="Cursos"
+        meta={
+          <>
+            <MetaItem value={courses.length} label="cursos" />
+            <MetaItem value={totalCapacity} label="cupos totales" />
+            <MetaItem value={levels.length} label="niveles" />
+          </>
+        }
+        actions={
+          <>
+            <SegmentedControl
+              value={viewMode}
+              onChange={setViewMode}
+              options={[
+                { value: "cards", label: "Tarjetas" },
+                { value: "table", label: "Tabla" },
+              ]}
+            />
+            <Button onClick={() => setIsWizardOpen(true)}>Nuevo curso</Button>
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg bg-slate-100 p-1 text-xs font-medium">
-            <button
-              onClick={() => setViewMode("cards")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                viewMode === "cards"
-                  ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                  : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              📱 Tarjetas
-            </button>
-            <button
-              onClick={() => setViewMode("table")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                viewMode === "table"
-                  ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                  : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              📋 Tabla
-            </button>
-          </div>
-
+      <Toolbar>
+        <SearchInput
+          className="w-full sm:w-72"
+          placeholder="Buscar por nombre o nivel"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        <Select
+          className="w-full sm:w-52"
+          value={selectedLevelId}
+          onChange={(e) => setSelectedLevelId(Number(e.target.value))}
+        >
+          <option value={0}>Todos los niveles</option>
+          {levels.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.code} · {l.name}
+            </option>
+          ))}
+        </Select>
+        <Select
+          className="w-full sm:w-52"
+          value={selectedTeacherId}
+          onChange={(e) => setSelectedTeacherId(Number(e.target.value))}
+        >
+          <option value={0}>Todos los profesores</option>
+          {teachers.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.full_name}
+            </option>
+          ))}
+        </Select>
+        {filtersActive && (
           <Button
-            className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs py-2 px-3.5 shadow-2xs"
-            onClick={() => setIsWizardOpen(true)}
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setSearchTerm("");
+              setSelectedLevelId(0);
+              setSelectedTeacherId(0);
+            }}
           >
-            + Nuevo Curso
+            Limpiar
           </Button>
-        </div>
-      </div>
+        )}
+      </Toolbar>
 
-      {/* Sleek Filters Bar */}
-      <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs text-xs">
-        <div className="w-full sm:w-80">
-          <Input
-            placeholder="🔍 Buscar por nombre o nivel…"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Select
-            value={selectedLevelId}
-            onChange={(e) => setSelectedLevelId(Number(e.target.value))}
-          >
-            <option value={0}>Todos los niveles</option>
-            {levels.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.code} · {l.name}
-              </option>
-            ))}
-          </Select>
-
-          <Select
-            value={selectedTeacherId}
-            onChange={(e) => setSelectedTeacherId(Number(e.target.value))}
-          >
-            <option value={0}>Todos los profesores</option>
-            {teachers.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.full_name}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </div>
-
-      {/* VIEW MODE 1: MINIMALIST CARDS GRID */}
+      {/* VIEW MODE 1: CARDS GRID */}
       {viewMode === "cards" && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredCourses.length === 0 ? (
-            <div className="col-span-full py-12 text-center text-slate-400 text-sm">
-              No se encontraron cursos con los filtros seleccionados.
+            <div className="col-span-full">
+              <EmptyState
+                icon={<IconBook className="h-5 w-5" />}
+                title={filtersActive ? "Ningún curso coincide" : "Todavía no hay cursos"}
+                message={
+                  filtersActive
+                    ? "Prueba con otro nivel, otro profesor o limpia la búsqueda."
+                    : "Crea el primero para poder matricular alumnos y asignar horarios."
+                }
+                action={
+                  filtersActive ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setSearchTerm("");
+                        setSelectedLevelId(0);
+                        setSelectedTeacherId(0);
+                      }}
+                    >
+                      Limpiar filtros
+                    </Button>
+                  ) : (
+                    <Button onClick={() => setIsWizardOpen(true)}>Nuevo curso</Button>
+                  )
+                }
+              />
             </div>
           ) : (
             filteredCourses.map((c) => {
@@ -241,116 +242,102 @@ export function CoursesPanel() {
                 : null;
 
               return (
-                <Card
-                  key={c.id}
-                  className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs hover:border-slate-300 transition flex flex-col justify-between space-y-3.5"
-                >
-                  {/* Header: Level + Name + Quick Actions */}
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                <Card key={c.id} padding="sm" className="flex flex-col">
+                  {/* Cabecera: nivel, nombre y menú.
+                      Las acciones viven en un solo menú en lugar de repartirse
+                      entre un enlace "Editar", una ✕ y enlaces sueltos por
+                      sección. */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
                       <Badge color="indigo">{levelCode(c.level_id)}</Badge>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setEditingCourse(c)}
-                          className="text-[11px] font-medium text-slate-400 hover:text-slate-700 px-1.5 py-0.5 rounded transition"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => setToDelete(c)}
-                          className="text-[11px] font-medium text-red-400 hover:text-red-600 px-1.5 py-0.5 rounded transition"
-                        >
-                          ✕
-                        </button>
-                      </div>
+                      <h3 className="mt-1.5 truncate text-sm font-bold text-slate-900">
+                        {c.name}
+                      </h3>
+                      <p className="truncate text-xs text-slate-500">{levelName(c.level_id)}</p>
                     </div>
-
-                    <h3 className="font-semibold text-base text-slate-900 leading-snug">
-                      {c.name}
-                    </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {levelName(c.level_id)}
-                    </p>
+                    <ActionMenu
+                      items={[
+                        { label: "Inscribir alumno", onClick: () => setEnrollCourseId(c.id) },
+                        {
+                          label: assignedTeacher ? "Cambiar profesor" : "Asignar profesor",
+                          onClick: () => setTeacherWizardCourseId(c.id),
+                        },
+                        { label: "Añadir horario", onClick: () => setScheduleCourseId(c.id) },
+                        { label: "Editar curso", onClick: () => setEditingCourse(c) },
+                        {
+                          label: "Eliminar curso",
+                          onClick: () => setToDelete(c),
+                          danger: true,
+                        },
+                      ]}
+                    />
                   </div>
 
-                  {/* Teacher Info */}
-                  <div className="flex items-center justify-between text-xs py-1.5 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-400 font-medium">Docente:</span>
-                      {assignedTeacher ? (
-                        <span className="font-semibold text-slate-800 flex items-center gap-1">
-                          <span className="h-5 w-5 rounded-full bg-brand-100 text-brand-700 font-bold text-[10px] inline-flex items-center justify-center">
-                            {initials(assignedTeacher.full_name)}
-                          </span>
-                          {assignedTeacher.full_name.split(" ")[0]} {assignedTeacher.full_name.split(" ")[1] ?? ""}
-                        </span>
-                      ) : (
-                        <span className="text-amber-700 text-[11px] font-medium">Sin asignar</span>
-                      )}
+                  <dl className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="text-slate-500">Profesor</dt>
+                      <dd className="min-w-0 truncate font-medium text-slate-900">
+                        {assignedTeacher ? (
+                          assignedTeacher.full_name
+                        ) : (
+                          <span className="text-amber-700">Sin asignar</span>
+                        )}
+                      </dd>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setTeacherWizardCourseId(c.id)}
-                      className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 hover:underline"
-                    >
-                      {assignedTeacher ? "Cambiar" : "+ Asignar"}
-                    </button>
-                  </div>
 
-                  {/* Schedules Summary */}
-                  <div className="py-1.5 border-t border-slate-100 text-xs">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] text-slate-400 font-medium">Horario:</span>
-                      <button
-                        type="button"
-                        onClick={() => setScheduleCourseId(c.id)}
-                        className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 hover:underline"
-                      >
-                        + Horario
-                      </button>
+                    <div className="flex items-start justify-between gap-2">
+                      <dt className="flex-none text-slate-500">Horario</dt>
+                      <dd className="min-w-0 text-right font-medium text-slate-900">
+                        {courseSchedules.length === 0 ? (
+                          <span className="text-amber-700">Sin definir</span>
+                        ) : (
+                          courseSchedules.map((s) => (
+                            <div key={s.id} className="tabular">
+                              {DAYS[s.day_of_week]} {s.start_time.slice(0, 5)}–
+                              {s.end_time.slice(0, 5)}
+                              <span className="ml-1.5 font-normal text-slate-500">
+                                {s.modality === "virtual" ? "Virtual" : "Presencial"}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </dd>
                     </div>
-                    {courseSchedules.length === 0 ? (
-                      <span className="text-[11px] text-slate-400 italic">Sin horario configurado</span>
-                    ) : (
-                      <div className="space-y-1">
-                        {courseSchedules.map((s) => (
-                          <div key={s.id} className="flex items-center justify-between text-[11px]">
-                            <span className="font-medium text-slate-700">
-                              🕒 {DAYS[s.day_of_week]} {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
-                            </span>
-                            <span className="text-[10px] font-semibold text-slate-500">
-                              {s.modality === "virtual" ? "Virtual" : "Presencial"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  </dl>
 
-                  {/* Cupos + Action */}
-                  <div className="border-t border-slate-100 pt-3 space-y-2">
+                  <div className="mt-auto space-y-1.5 border-t border-slate-100 pt-3">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-[11px] text-slate-500 font-medium">
-                        👥 Ocupación
-                      </span>
-                      <span className="font-bold text-slate-800 text-[11px]">
-                        {activeCount} / {c.max_students} ({capacityPct}%)
+                      <span className="text-slate-500">Ocupación</span>
+                      <span className="tabular font-semibold text-slate-900">
+                        {activeCount}/{c.max_students}
                       </span>
                     </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+                      role="progressbar"
+                      aria-valuenow={capacityPct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`Ocupación de ${c.name}`}
+                    >
                       <div
-                        className={`h-full transition-all duration-300 ${
-                          capacityPct >= 100 ? "bg-red-500" : capacityPct >= 80 ? "bg-amber-500" : "bg-emerald-500"
+                        className={`h-full ${
+                          capacityPct >= 100
+                            ? "bg-red-600"
+                            : capacityPct >= 80
+                              ? "bg-amber-500"
+                              : "bg-emerald-600"
                         }`}
                         style={{ width: `${capacityPct}%` }}
                       />
                     </div>
-
                     <Button
-                      className="w-full mt-2 bg-brand-50 text-brand-700 hover:bg-brand-100 font-semibold text-xs py-1.5 shadow-2xs"
+                      variant="secondary"
+                      size="sm"
+                      className="mt-2 w-full"
                       onClick={() => setEnrollCourseId(c.id)}
                     >
-                      + Inscribir Alumno
+                      Inscribir alumno
                     </Button>
                   </div>
                 </Card>
@@ -362,22 +349,20 @@ export function CoursesPanel() {
 
       {/* VIEW MODE 2: TABLE VIEW */}
       {viewMode === "table" && (
-        <div className="grid gap-6 lg:grid-cols-3 items-start">
-          <Card className="lg:col-span-1 space-y-4 border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
+        <div className="grid items-start gap-5 lg:grid-cols-3">
+          <Card className="lg:col-span-1">
             <div className="border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm">Creación Rápida</h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Alta directa de curso básico.
+              <h3 className="text-sm font-semibold text-slate-900">Creación rápida</h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Para un curso básico. El asistente completo pide horario y profesor.
               </p>
             </div>
 
-            <div className="space-y-3.5 text-xs">
-              <Field label="Nivel Académico (*)">
+            <div className="mt-4 space-y-3.5">
+              <Field label="Nivel académico">
                 <Select
                   value={form.level_id}
-                  onChange={(e) =>
-                    setForm({ ...form, level_id: Number(e.target.value) })
-                  }
+                  onChange={(e) => setForm({ ...form, level_id: Number(e.target.value) })}
                 >
                   <option value={0}>Selecciona nivel…</option>
                   {levels.map((l) => (
@@ -388,47 +373,45 @@ export function CoursesPanel() {
                 </Select>
               </Field>
 
-              <Field label="Nombre del Curso (*)">
+              <Field label="Nombre del curso">
                 <Input
-                  placeholder="Ej. Inglés A1 - Jornada Matutina"
+                  placeholder="Ej. Inglés A1 — Jornada matutina"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
               </Field>
 
-              <Field label="Cupo Máximo de Alumnos">
+              <Field label="Cupo máximo">
                 <Input
                   type="number"
                   min={1}
                   value={form.max_students}
-                  onChange={(e) =>
-                    setForm({ ...form, max_students: Number(e.target.value) })
-                  }
+                  onChange={(e) => setForm({ ...form, max_students: Number(e.target.value) })}
                 />
               </Field>
 
               <Button
-                className="w-full bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold"
+                className="w-full"
                 disabled={create.isPending || !form.level_id || !form.name}
                 onClick={submitQuick}
               >
-                Guardar Curso
+                {create.isPending ? "Guardando…" : "Guardar curso"}
               </Button>
             </div>
           </Card>
 
-          <Card className="lg:col-span-2 p-0 overflow-hidden border border-slate-200/80 rounded-2xl shadow-2xs">
+          <Card padding="none" className="overflow-hidden lg:col-span-2">
             <Table>
               <thead>
                 <tr>
                   <Th>Nivel</Th>
-                  <Th>Nombre Curso</Th>
+                  <Th>Curso</Th>
                   <Th>Profesor</Th>
-                  <Th>Cupo</Th>
-                  <Th>Acciones</Th>
+                  <Th align="right">Cupo</Th>
+                  <Th align="right">Acciones</Th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {filteredCourses.map((c) => {
                   const courseScheds = schedules.filter((s) => s.course_id === c.id);
                   const leadTeacherId = courseScheds.find((s) => s.teacher_id)?.teacher_id;
@@ -437,7 +420,7 @@ export function CoursesPanel() {
                     : null;
 
                   return (
-                    <tr key={c.id}>
+                    <tr key={c.id} className="hover:bg-slate-50">
                       <Td>
                         <span className="font-semibold text-slate-900">
                           {levelCode(c.level_id)}
@@ -446,37 +429,32 @@ export function CoursesPanel() {
                       <Td>{c.name}</Td>
                       <Td>
                         {assignedTeacher ? (
-                          <span className="font-medium text-slate-800">
-                            {assignedTeacher.full_name}
-                          </span>
+                          assignedTeacher.full_name
                         ) : (
-                          <span className="text-amber-700 text-xs italic">
-                            Sin profesor
-                          </span>
+                          <span className="text-amber-700">Sin asignar</span>
                         )}
                       </Td>
-                      <Td>{c.max_students}</Td>
-                      <Td>
+                      <Td align="right">
+                        <span className="tabular">{c.max_students}</span>
+                      </Td>
+                      <Td align="right">
                         <ActionMenu
                           items={[
                             {
-                              label: "+ Inscribir Alumno",
+                              label: "Inscribir alumno",
                               onClick: () => setEnrollCourseId(c.id),
                             },
                             {
-                              label: "Asignar / Cambiar Profesor",
+                              label: assignedTeacher ? "Cambiar profesor" : "Asignar profesor",
                               onClick: () => setTeacherWizardCourseId(c.id),
                             },
                             {
-                              label: "Gestionar Horarios",
+                              label: "Gestionar horarios",
                               onClick: () => setScheduleCourseId(c.id),
                             },
+                            { label: "Editar curso", onClick: () => setEditingCourse(c) },
                             {
-                              label: "Editar Curso",
-                              onClick: () => setEditingCourse(c),
-                            },
-                            {
-                              label: "Eliminar Curso",
+                              label: "Eliminar curso",
                               onClick: () => setToDelete(c),
                               danger: true,
                             },
@@ -534,13 +512,14 @@ export function CoursesPanel() {
       {/* Delete Confirmation */}
       {toDelete && (
         <ConfirmDialog
-          title="¿Eliminar este curso?"
-          confirmLabel="Sí, eliminar curso"
+          title="Eliminar curso"
+          confirmLabel="Eliminar curso"
+          busy={del.isPending}
           message={
-            <p className="text-xs text-slate-600">
-              Vas a eliminar <strong>{toDelete.name}</strong>. Esta acción
-              eliminará también sus matrículas e historial asociado.
-            </p>
+            <>
+              Se eliminará <strong>{toDelete.name}</strong> junto con sus matrículas,
+              calificaciones e historial. No se puede deshacer.
+            </>
           }
           onClose={() => setToDelete(null)}
           onConfirm={() => {
@@ -606,8 +585,8 @@ function EditCourseModal({ course, onClose }: { course: Course; onClose: () => v
         </ModalActions>
       }
     >
-      <div className="space-y-4 text-xs">
-        <Field label="Nivel Académico (*)">
+      <div className="space-y-4">
+        <Field label="Nivel académico">
           <Select value={levelId} onChange={(e) => setLevelId(Number(e.target.value))}>
             {levels.map((l) => (
               <option key={l.id} value={l.id}>
@@ -617,23 +596,27 @@ function EditCourseModal({ course, onClose }: { course: Course; onClose: () => v
           </Select>
         </Field>
 
-        <Field label="Nombre del Curso (*)">
+        <Field label="Nombre del curso">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
 
-        <Field label="Cupo Máximo">
-          <Input type="number" min={1} value={maxStudents} onChange={(e) => setMaxStudents(Number(e.target.value))} />
+        <Field label="Cupo máximo">
+          <Input
+            type="number"
+            min={1}
+            value={maxStudents}
+            onChange={(e) => setMaxStudents(Number(e.target.value))}
+          />
         </Field>
 
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Fecha Inicio">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Fecha de inicio">
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </Field>
-          <Field label="Fecha Fin">
+          <Field label="Fecha de fin">
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </Field>
         </div>
-
       </div>
     </Modal>
   );

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { PageTitle } from "../components/ui";
 import { AuditPanel } from "../features/audit/AuditPanel";
 import { ReportView } from "../features/reports/ReportView";
 import { CatalogPanel } from "../features/admin/CatalogPanel";
@@ -16,31 +15,21 @@ import { UsersPanel } from "../features/admin/UsersPanel";
 import { VideoProvidersPanel } from "../features/admin/VideoProvidersPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 
-const SECTION_TITLES: Record<string, string> = {
-  tenants: "Academias / Tenants",
-  pendientes: "Pendientes",
-  courses: "Gestión de Cursos",
-  catalog: "Estructura y Parámetros de la Academia",
-  schedules: "Planificador de Horarios Académicos",
-  enrollments: "Matrículas",
-  users: "Gestión de Usuarios",
-  rooms: "Aulas",
-  video_providers: "Videoconferencias",
-  holidays: "Festivos",
-  reports: "Reportes",
-  audit: "Auditoría",
-  perfil: "Mi perfil",
-};
-
+/**
+ * Each panel renders its own <PageHeader>, so this file only routes.
+ *
+ * It used to print a <PageTitle> above whatever panel it mounted, while every
+ * panel also drew its own title bar — so each admin screen opened with its name
+ * written twice, in two different type styles, one under the other.
+ */
 export default function AdminDashboard() {
   const [params] = useSearchParams();
   const section = params.get("m") ?? "inicio";
 
-  if (section === "inicio") return <InicioPanel />;
-
   const hub = <CoursesAndTeachersHub />;
 
   const panels: Record<string, ReactNode> = {
+    inicio: <InicioPanel />,
     tenants: <TenantsPanel />,
     pendientes: <LocationProposalsPanel />,
     courses: hub,
@@ -56,10 +45,5 @@ export default function AdminDashboard() {
     perfil: <ProfilePanel />,
   };
 
-  return (
-    <div>
-      <PageTitle>{SECTION_TITLES[section] ?? "Administración"}</PageTitle>
-      {panels[section] ?? <InicioPanel />}
-    </div>
-  );
+  return panels[section] ?? <InicioPanel />;
 }

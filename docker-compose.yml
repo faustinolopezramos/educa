@@ -1,0 +1,33 @@
+# Postgres for local development.
+#
+# The schema relies on Postgres-only features (GiST exclusion constraints for
+# the timetable, native ENUMs), so there is no SQLite fallback — neither the app
+# nor the test suite runs without a real server.
+#
+# The image is pinned to the same major version CI runs against, so a constraint
+# that passes locally cannot fail on a push for a version difference.
+services:
+  postgres:
+    image: postgres:16
+    # The README's test setup calls this container by name
+    # (`docker exec educa_postgres psql …`), so it is fixed rather than derived
+    # from the directory the project happens to sit in.
+    container_name: educa_postgres
+    environment:
+      POSTGRES_USER: educa
+      POSTGRES_PASSWORD: educa
+      POSTGRES_DB: educa
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # `alembic upgrade head` straight after `up -d` would otherwise race the
+    # server's first-boot initialization and fail to connect.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U educa -d educa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

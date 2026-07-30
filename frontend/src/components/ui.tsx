@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   ButtonHTMLAttributes,
@@ -7,28 +7,54 @@ import type {
   SelectHTMLAttributes,
 } from "react";
 
+import {
+  IconAlert,
+  IconCheck,
+  IconChevronDown,
+  IconClose,
+  IconInfo,
+  IconSearch,
+} from "./icons";
+
+/* ------------------------------------------------------------------ *
+ * Controls
+ * ------------------------------------------------------------------ */
+
+/**
+ * Two sizes, four variants. The size prop exists because panels used to reach
+ * for `!py-1.5 !px-3` to shrink a button — an `!important` override of the
+ * design system in ~30 places, which is how three different button heights
+ * ended up on the same toolbar.
+ */
 export function Button({
   className = "",
   variant = "primary",
+  size = "md",
   type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
+  size?: "sm" | "md";
 }) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold tracking-wide transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 select-none";
+    "inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-colors disabled:opacity-45 disabled:cursor-not-allowed select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1";
+  const sizes: Record<string, string> = {
+    sm: "px-2.5 py-1.5 text-xs",
+    md: "px-3.5 py-2 text-sm",
+  };
   const variants: Record<string, string> = {
-    primary:
-      "bg-brand-600 text-white shadow-xs shadow-brand-600/20 hover:bg-brand-700 hover:shadow-sm hover:shadow-brand-600/25 focus:outline-none focus:ring-2 focus:ring-brand-500/30",
+    primary: "bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-500/50",
     secondary:
-      "bg-white text-slate-700 border border-slate-200/90 shadow-2xs hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200",
-    danger:
-      "bg-red-600 text-white shadow-xs shadow-red-600/20 hover:bg-red-700 hover:shadow-sm hover:shadow-red-600/25 focus:outline-none focus:ring-2 focus:ring-red-500/30",
-    ghost:
-      "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 focus:outline-none",
+      "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-slate-300",
+    danger: "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500/50",
+    ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-slate-300",
   };
   return (
-    <button type={type} className={`${base} ${variants[variant]} ${className}`} {...props} />
+    <button
+      type={type}
+      className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}
+      {...props}
+    />
   );
 }
 
@@ -38,96 +64,188 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     return (
       <input
         ref={ref}
-        className={`w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/25 ${className}`}
+        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
         {...props}
       />
     );
   },
 );
 
-export function Card({
-  children,
+// Native select styled to match Input, with a single chevron affordance.
+export const Select = forwardRef<
+  HTMLSelectElement,
+  SelectHTMLAttributes<HTMLSelectElement>
+>(function Select({ className = "", ...props }, ref) {
+  return (
+    <div className="relative">
+      <select
+        ref={ref}
+        className={`w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
+        {...props}
+      />
+      <IconChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+    </div>
+  );
+});
+
+/**
+ * Search field with the magnifier as a real adornment.
+ *
+ * Placeholders across the app used to start with a "🔍" character, which put an
+ * icon inside the text value: screen readers read it aloud, it shifted the
+ * placeholder's baseline, and it disappeared the moment the user typed.
+ */
+export function SearchInput({
   className = "",
-  hoverable = false,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className={`relative ${className}`}>
+      <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <input
+        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+        {...props}
+      />
+    </div>
+  );
+}
+
+// Labeled field with an optional inline error message.
+export function Field({
+  label,
+  hint,
+  error,
+  children,
 }: {
+  label: string;
+  hint?: ReactNode;
+  error?: string | null;
   children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-semibold text-slate-700">{label}</label>
+      {children}
+      {hint && !error && <p className="text-xs leading-snug text-slate-500">{hint}</p>}
+      {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Segmented control for switching between views of the same data.
+ *
+ * This markup was copy-pasted into seven panels with slightly different
+ * padding, radius and active colours each time — the same control looked like
+ * three different controls depending on which screen you were on.
+ */
+export interface SegmentOption<T extends string> {
+  value: T;
+  label: string;
+  count?: number;
+}
+
+export function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  className = "",
+}: {
+  options: SegmentOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
   className?: string;
-  hoverable?: boolean;
 }) {
   return (
     <div
-      className={`rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-200 ${
-        hoverable ? "card-hover-lift cursor-pointer hover:border-brand-300" : ""
-      } ${className}`}
+      role="tablist"
+      className={`inline-flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5 ${className}`}
     >
-      {children}
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(o.value)}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              active
+                ? "bg-white text-slate-900 shadow-2xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            {o.label}
+            {o.count != null && (
+              <span className={active ? "ml-1.5 text-slate-400" : "ml-1.5 text-slate-400"}>
+                {o.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-export function QuickActionButton({
-  icon,
+/* ------------------------------------------------------------------ *
+ * Page structure
+ * ------------------------------------------------------------------ */
+
+/**
+ * The single page header for every module.
+ *
+ * Each panel used to render its own "header bar" — an icon tile, a title, a
+ * pill with a count, a row of emoji stats — *below* the title the dashboard had
+ * already rendered. Every admin screen opened with its name written twice, in
+ * two different type styles. One component, one title, one place for actions.
+ *
+ * `meta` is for facts about what is on screen (counts, totals). It is not a
+ * place for buttons: those go in `actions`.
+ */
+export function PageHeader({
   title,
   description,
-  onClick,
-  badge,
+  meta,
+  actions,
 }: {
-  icon: ReactNode;
-  title: string;
-  description?: string;
-  onClick: () => void;
-  badge?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  meta?: ReactNode;
+  actions?: ReactNode;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="group relative flex items-start gap-3.5 rounded-xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md active:translate-y-0"
-    >
-      <div className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-brand-50 text-brand-600 transition-colors group-hover:bg-brand-600 group-hover:text-white">
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-semibold text-slate-800 transition-colors group-hover:text-brand-700">
-            {title}
-          </span>
-          {badge && <span>{badge}</span>}
-        </div>
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-slate-900">{title}</h1>
         {description && (
-          <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{description}</p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">
+            {description}
+          </p>
+        )}
+        {meta && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+            {meta}
+          </div>
         )}
       </div>
-    </button>
-  );
-}
-
-export function InlineAlert({
-  type = "info",
-  title,
-  children,
-}: {
-  type?: "info" | "success" | "warning" | "error";
-  title?: string;
-  children: ReactNode;
-}) {
-  const styles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
-    info: { bg: "bg-blue-50/70", border: "border-blue-200", text: "text-blue-900", icon: "ℹ️" },
-    success: { bg: "bg-emerald-50/70", border: "border-emerald-200", text: "text-emerald-900", icon: "✓" },
-    warning: { bg: "bg-amber-50/70", border: "border-amber-200", text: "text-amber-900", icon: "⚠️" },
-    error: { bg: "bg-red-50/70", border: "border-red-200", text: "text-red-900", icon: "✕" },
-  };
-  const s = styles[type];
-  return (
-    <div className={`flex items-start gap-3 rounded-xl border ${s.border} ${s.bg} p-4 text-sm ${s.text}`}>
-      <span className="flex-none text-base">{s.icon}</span>
-      <div className="min-w-0 flex-1">
-        {title && <div className="font-semibold mb-0.5">{title}</div>}
-        <div>{children}</div>
-      </div>
+      {actions && <div className="flex flex-none flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
+/** A single fact in a PageHeader's `meta` row: "128 alumnos". */
+export function MetaItem({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <span>
+      <strong className="font-semibold text-slate-900">{value}</strong>{" "}
+      <span className="text-slate-500">{label}</span>
+    </span>
+  );
+}
+
+/** Back-compatible alias — same header, older call shape. */
 export function PageTitle({
   children,
   subtitle,
@@ -137,17 +255,7 @@ export function PageTitle({
   subtitle?: ReactNode;
   action?: ReactNode;
 }) {
-  return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200/60 pb-4">
-      <div>
-        {subtitle && <div className="text-xs font-semibold uppercase tracking-wider text-brand-600 mb-1">{subtitle}</div>}
-        <h1 className="font-serif text-3xl font-medium tracking-tight text-slate-900">
-          {children}
-        </h1>
-      </div>
-      {action}
-    </div>
-  );
+  return <PageHeader title={children} description={subtitle} actions={action} />;
 }
 
 // Section heading used inside cards/panels.
@@ -159,30 +267,222 @@ export function SectionHeading({
   className?: string;
 }) {
   return (
-    <h3 className={`mb-3 text-[15px] font-semibold text-slate-800 tracking-tight ${className}`}>
+    <h3 className={`mb-3 text-sm font-semibold tracking-tight text-slate-900 ${className}`}>
       {children}
     </h3>
   );
 }
 
-export function Table({ children }: { children: ReactNode }) {
+/** Filter/action strip that sits above a list. */
+export function Toolbar({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">{children}</table>
+    <div
+      className={`mb-4 flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 ${className}`}
+    >
+      {children}
     </div>
   );
 }
 
-export function Th({ children }: { children: ReactNode }) {
+export function Card({
+  children,
+  className = "",
+  padding = "md",
+}: {
+  children: ReactNode;
+  className?: string;
+  /** `none` for cards that wrap a full-bleed table. */
+  padding?: "none" | "sm" | "md";
+}) {
+  const pad = { none: "", sm: "p-3.5", md: "p-5" }[padding];
   return (
-    <th className="bg-slate-50/80 px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+    <div className={`rounded-xl border border-slate-200 bg-white ${pad} ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Data display
+ * ------------------------------------------------------------------ */
+
+export function Table({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">{children}</table>
+    </div>
+  );
+}
+
+// Written out in full rather than interpolated: Tailwind scans source as plain
+// text, so a `text-${align}` template produces a class that never gets built.
+const ALIGN: Record<string, string> = {
+  left: "text-left",
+  right: "text-right",
+  center: "text-center",
+};
+
+export function Th({
+  children,
+  align = "left",
+}: {
+  children: ReactNode;
+  align?: "left" | "right" | "center";
+}) {
+  return (
+    <th
+      className={`border-b border-slate-200 bg-slate-50 px-4 py-2.5 ${ALIGN[align]} text-xs font-semibold uppercase tracking-wide text-slate-500`}
+    >
       {children}
     </th>
   );
 }
 
-export function Td({ children }: { children: ReactNode }) {
-  return <td className="px-4 py-3 text-slate-700">{children}</td>;
+export function Td({
+  children,
+  align = "left",
+}: {
+  children: ReactNode;
+  align?: "left" | "right" | "center";
+}) {
+  return <td className={`px-4 py-3 ${ALIGN[align]} text-slate-700`}>{children}</td>;
+}
+
+/**
+ * KPI tile. Deliberately flat: a number that cannot be clicked should not lift
+ * off the page when the pointer crosses it, and a gradient does not make a
+ * count more informative.
+ */
+export function Stat({
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: "default" | "positive" | "warning" | "critical";
+}) {
+  const tones: Record<string, string> = {
+    default: "text-slate-900",
+    positive: "text-emerald-700",
+    warning: "text-amber-700",
+    critical: "text-red-700",
+  };
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className={`mt-1 text-2xl font-bold tabular tracking-tight ${tones[tone]}`}>
+        {value}
+      </div>
+      {hint && <div className="mt-0.5 text-xs text-slate-500">{hint}</div>}
+    </div>
+  );
+}
+
+// Square, semantic badge with an optional status dot.
+export function Badge({
+  children,
+  color = "slate",
+  dot = false,
+}: {
+  children: ReactNode;
+  color?: "slate" | "green" | "red" | "amber" | "indigo";
+  dot?: boolean;
+}) {
+  const colors: Record<string, { box: string; dot: string }> = {
+    slate: { box: "bg-slate-100 text-slate-700", dot: "bg-slate-400" },
+    green: { box: "bg-emerald-50 text-emerald-800", dot: "bg-emerald-600" },
+    red: { box: "bg-red-50 text-red-800", dot: "bg-red-600" },
+    amber: { box: "bg-amber-50 text-amber-800", dot: "bg-amber-600" },
+    indigo: { box: "bg-brand-50 text-brand-800", dot: "bg-brand-600" },
+  };
+  const c = colors[color];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-semibold ${c.box}`}
+    >
+      {dot && <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />}
+      {children}
+    </span>
+  );
+}
+
+export function InlineAlert({
+  type = "info",
+  title,
+  action,
+  children,
+}: {
+  type?: "info" | "success" | "warning" | "error";
+  title?: ReactNode;
+  action?: ReactNode;
+  children?: ReactNode;
+}) {
+  const styles = {
+    info: { box: "border-brand-200 bg-brand-50 text-brand-900", Icon: IconInfo },
+    success: { box: "border-emerald-200 bg-emerald-50 text-emerald-900", Icon: IconCheck },
+    warning: { box: "border-amber-200 bg-amber-50 text-amber-900", Icon: IconAlert },
+    error: { box: "border-red-200 bg-red-50 text-red-900", Icon: IconAlert },
+  }[type];
+  const { Icon } = styles;
+  return (
+    <div className={`flex items-start gap-3 rounded-xl border p-3.5 text-sm ${styles.box}`}>
+      <Icon className="mt-0.5 h-4 w-4 flex-none" />
+      <div className="min-w-0 flex-1">
+        {title && <div className="font-semibold">{title}</div>}
+        {children && (
+          <div className={title ? "mt-0.5 text-sm leading-relaxed" : "leading-relaxed"}>
+            {children}
+          </div>
+        )}
+      </div>
+      {action && <div className="flex-none">{action}</div>}
+    </div>
+  );
+}
+
+// Empty state with an optional call to action.
+export function EmptyState({
+  icon,
+  title,
+  message,
+  action,
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  message?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 px-6 py-10 text-center">
+      {icon && (
+        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+          {icon}
+        </div>
+      )}
+      <div className="text-sm font-semibold text-slate-900">{title}</div>
+      {message && (
+        <p className="mt-1 max-w-sm text-sm leading-relaxed text-slate-500">{message}</p>
+      )}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`animate-pulse-soft rounded-md bg-slate-200 ${className}`} />;
+}
+
+export function SkeletonRows({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-12 w-full rounded-xl" />
+      ))}
+    </div>
+  );
 }
 
 export interface ActionMenuItem {
@@ -201,9 +501,7 @@ export function ActionMenu({ items }: { items: ActionMenuItem[] }) {
         setOpen(false);
       }
     }
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    if (open) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
@@ -212,28 +510,33 @@ export function ActionMenu({ items }: { items: ActionMenuItem[] }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/60 hover:text-slate-900 transition-colors focus:outline-none"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
         aria-label="Acciones"
-        title="Opciones"
       >
-        <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
           <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
         </svg>
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-1 min-w-[140px] origin-top-right rounded-xl border border-slate-200 bg-white p-1 shadow-lg ring-1 ring-black/5">
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-1 min-w-[180px] origin-top-right rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
+        >
           {items.map((item, idx) => (
             <button
               key={idx}
               type="button"
+              role="menuitem"
               onClick={() => {
                 setOpen(false);
                 item.onClick();
               }}
-              className={`flex w-full items-center px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+              className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
                 item.danger
-                  ? "text-red-600 hover:bg-red-50 hover:text-red-700"
+                  ? "text-red-700 hover:bg-red-50"
                   : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -245,48 +548,6 @@ export function ActionMenu({ items }: { items: ActionMenuItem[] }) {
     </div>
   );
 }
-
-// Square, semantic badge with an optional status dot.
-export function Badge({
-  children,
-  color = "slate",
-  dot = false,
-}: {
-  children: ReactNode;
-  color?: "slate" | "green" | "red" | "amber" | "indigo";
-  dot?: boolean;
-}) {
-  const colors: Record<string, { bg: string; text: string; dot: string }> = {
-    slate: { bg: "bg-slate-100", text: "text-slate-700", dot: "bg-slate-400" },
-    green: { bg: "bg-emerald-50 text-emerald-700 border border-emerald-200/60", text: "text-emerald-700", dot: "bg-emerald-500" },
-    red: { bg: "bg-red-50 text-red-700 border border-red-200/60", text: "text-red-700", dot: "bg-red-500" },
-    amber: { bg: "bg-amber-50 text-amber-700 border border-amber-200/60", text: "text-amber-700", dot: "bg-amber-500" },
-    indigo: { bg: "bg-brand-50 text-brand-700 border border-brand-200/60", text: "text-brand-700", dot: "bg-brand-500" },
-  };
-  const c = colors[color];
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${c.bg} ${c.text}`}
-    >
-      {dot && <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />}
-      {children}
-    </span>
-  );
-}
-
-// Native select styled to match Input.
-export const Select = forwardRef<
-  HTMLSelectElement,
-  SelectHTMLAttributes<HTMLSelectElement>
->(function Select({ className = "", ...props }, ref) {
-  return (
-    <select
-      ref={ref}
-      className={`w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/25 ${className}`}
-      {...props}
-    />
-  );
-});
 
 // Intuitive TimePicker dropdown with 12h AM/PM & 24h formatted options.
 export function TimePicker({
@@ -315,16 +576,15 @@ export function TimePicker({
     <Select
       value={cleanVal}
       onChange={(e) => onChange(e.target.value)}
-      className={`font-mono text-xs ${className}`}
+      className={`tabular ${className}`}
     >
       {timeSlots.map((t) => {
         const [h, m] = t.split(":").map(Number);
         const ampm = h >= 12 ? "PM" : "AM";
         const h12 = h % 12 === 0 ? 12 : h % 12;
-        const displayLabel = `${t} (${h12}:${String(m).padStart(2, "0")} ${ampm})`;
         return (
           <option key={t} value={t}>
-            {displayLabel}
+            {`${t} (${h12}:${String(m).padStart(2, "0")} ${ampm})`}
           </option>
         );
       })}
@@ -332,124 +592,9 @@ export function TimePicker({
   );
 }
 
-// Labeled field with an optional inline error message.
-export function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string | null;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="block text-sm font-medium text-slate-700">{label}</label>
-      {children}
-      {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
-    </div>
-  );
-}
-
-// KPI / data card: big serif number + label + optional trend/hint.
-export function Stat({
-  label,
-  value,
-  hint,
-  tone = "default",
-  icon,
-}: {
-  label: ReactNode;
-  value: ReactNode;
-  hint?: ReactNode;
-  tone?: "default" | "dark" | "brand";
-  icon?: ReactNode;
-}) {
-  if (tone === "brand") {
-    return (
-      <div className="rounded-xl border border-brand-500/30 bg-gradient-to-br from-brand-600 to-brand-800 p-5 text-white shadow-md">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase tracking-wider text-brand-100">{label}</div>
-          {icon && <div className="text-xl text-brand-200">{icon}</div>}
-        </div>
-        <div className="mt-2 font-serif text-3xl font-bold tracking-tight text-white">{value}</div>
-        {hint && <div className="mt-1 text-xs text-brand-100/80">{hint}</div>}
-      </div>
-    );
-  }
-
-  const dark = tone === "dark";
-  return (
-    <div
-      className={`rounded-xl border p-5 transition-all card-hover-lift ${
-        dark ? "border-slate-800 bg-slate-900 text-slate-100" : "border-slate-200/80 bg-white"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className={`text-xs font-medium uppercase tracking-wider ${dark ? "text-slate-400" : "text-slate-500"}`}>
-          {label}
-        </div>
-        {icon && <div className={`text-lg ${dark ? "text-amber-400" : "text-brand-600"}`}>{icon}</div>}
-      </div>
-      <div
-        className={`mt-2 font-serif text-3xl font-semibold tracking-tight ${
-          dark ? "text-amber-400" : "text-slate-900"
-        }`}
-      >
-        {value}
-      </div>
-      {hint && (
-        <div className={`mt-1 text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>
-          {hint}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Friendly empty state with an optional call to action.
-export function EmptyState({
-  icon = "◈",
-  title,
-  message,
-  action,
-}: {
-  icon?: ReactNode;
-  title: ReactNode;
-  message?: ReactNode;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300/80 bg-slate-50/60 px-6 py-10 text-center animate-fade-in">
-      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-xl text-brand-600 shadow-sm">
-        {icon}
-      </div>
-      <div className="font-semibold text-slate-800 text-base">{title}</div>
-      {message && <p className="mt-1 max-w-sm text-sm text-slate-500 leading-relaxed">{message}</p>}
-      {action && <div className="mt-5">{action}</div>}
-    </div>
-  );
-}
-
-// Loading skeleton row — replaces "Cargando…" text.
-export function Skeleton({ className = "" }: { className?: string }) {
-  return (
-    <div
-      className={`rounded-md bg-slate-200/80 ${className}`}
-      style={{ animation: "pulse-soft 1.4s ease-in-out infinite" }}
-    />
-  );
-}
-
-export function SkeletonRows({ rows = 3 }: { rows?: number }) {
-  return (
-    <div className="space-y-2.5">
-      {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full rounded-xl" />
-      ))}
-    </div>
-  );
-}
+/* ------------------------------------------------------------------ *
+ * Overlays
+ * ------------------------------------------------------------------ */
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -489,6 +634,7 @@ export function Modal({
   maxWidth?: string;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -534,9 +680,11 @@ export function Modal({
 
   const body = (
     <>
-      <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
+      <div className="flex flex-none items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
         <div className="min-w-0">
-          <h3 className="font-serif text-xl font-medium text-slate-900">{title}</h3>
+          <h3 id={titleId} className="text-base font-bold tracking-tight text-slate-900">
+            {title}
+          </h3>
           {description && (
             <p className="mt-1 text-xs leading-relaxed text-slate-500">{description}</p>
           )}
@@ -544,19 +692,17 @@ export function Modal({
         <button
           type="button"
           onClick={onClose}
-          className="-mr-1.5 flex-none rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          className="-mr-1 -mt-0.5 flex-none rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
           aria-label="Cerrar"
         >
-          ✕
+          <IconClose className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
       {footer && (
-        <div className="flex-none border-t border-slate-100 bg-slate-50/60 px-6 py-3.5">
-          {footer}
-        </div>
+        <div className="flex-none border-t border-slate-100 bg-slate-50 px-5 py-3">{footer}</div>
       )}
     </>
   );
@@ -565,18 +711,19 @@ export function Modal({
   // the dialog centred while still letting the overlay scroll if it ever grows
   // taller than the window — with plain `items-center` the top would overflow
   // out of reach.
-  const frameClass = `my-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl ${maxWidth}`;
+  const frameClass = `my-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl ${maxWidth}`;
 
   return createPortal(
     <div
       ref={frameRef}
-      className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-xs animate-fade-in"
       onClick={onClose}
     >
       {onSubmit ? (
         <form
           role="dialog"
           aria-modal="true"
+          aria-labelledby={titleId}
           className={frameClass}
           onClick={(e) => e.stopPropagation()}
           onSubmit={(e) => {
@@ -590,6 +737,7 @@ export function Modal({
         <div
           role="dialog"
           aria-modal="true"
+          aria-labelledby={titleId}
           className={frameClass}
           onClick={(e) => e.stopPropagation()}
         >
@@ -614,9 +762,9 @@ export function ModalActions({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-      <div className="min-w-0 text-[11px] leading-snug text-slate-500">{hint}</div>
-      <div className="flex flex-none items-center gap-2.5">{children}</div>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0 text-xs leading-snug text-slate-500">{hint}</div>
+      <div className="flex flex-none items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -729,12 +877,12 @@ export function SearchSelect({
         aria-expanded={open}
         autoFocus={autoFocus}
         onClick={() => setOpen((o) => !o)}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm outline-none transition focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/25 disabled:opacity-50 ${
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 ${
           selected ? "text-slate-900" : "text-slate-400"
         }`}
       >
         <span className="truncate">{selected ? selected.label : placeholder}</span>
-        <span className="flex-none text-xs text-slate-400">▾</span>
+        <IconChevronDown className="h-3.5 w-3.5 flex-none text-slate-400" />
       </button>
 
       {open && rect && createPortal(
@@ -789,7 +937,7 @@ export function SearchSelect({
                   }`}
                 >
                   <span className="text-sm font-medium">{o.label}</span>
-                  {o.hint && <span className="text-[11px] text-slate-400">{o.hint}</span>}
+                  {o.hint && <span className="text-xs text-slate-400">{o.hint}</span>}
                 </button>
               ))
             )}
@@ -835,5 +983,42 @@ export function ConfirmDialog({
     >
       <div className="text-sm leading-relaxed text-slate-600">{message}</div>
     </Modal>
+  );
+}
+
+/**
+ * Large tap target for the primary actions on a landing screen.
+ * Kept because it is a real button; the hover lift was removed from the
+ * non-interactive tiles, not from this one.
+ */
+export function QuickActionButton({
+  icon,
+  title,
+  description,
+  onClick,
+  badge,
+}: {
+  icon: ReactNode;
+  title: string;
+  description?: string;
+  onClick: () => void;
+  badge?: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-brand-400 hover:bg-brand-50/40"
+    >
+      <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors group-hover:bg-brand-600 group-hover:text-white">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-slate-900">{title}</span>
+          {badge}
+        </div>
+        {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+      </div>
+    </button>
   );
 }

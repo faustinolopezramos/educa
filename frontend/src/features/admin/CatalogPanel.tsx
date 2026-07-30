@@ -4,12 +4,17 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  EmptyState,
   Field,
   Input,
+  MetaItem,
   Modal,
   ModalActions,
+  PageHeader,
+  SegmentedControl,
   Select,
 } from "../../components/ui";
+import { IconClose, IconLayers } from "../../components/icons";
 import {
   useCreateLanguage,
   useCreateLevel,
@@ -109,161 +114,111 @@ export function CatalogPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Ultra-Clean Header Bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 font-bold text-lg">
-            🌐
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif text-xl font-bold text-slate-900">
-                Estructura e Idiomas
-              </h2>
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-                {languages.length} materias
-              </span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-              <span>🏷️ {levels.length} niveles configurados en catálogo</span>
-            </div>
-          </div>
-        </div>
+    <div>
+      <PageHeader
+        title="Estructura académica"
+        description="Las materias agrupan niveles, y sobre cada nivel se crean los cursos."
+        meta={
+          <>
+            <MetaItem value={languages.length} label="materias" />
+            <MetaItem value={levels.length} label="niveles" />
+          </>
+        }
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => openLevelModal()}>
+              Nuevo nivel
+            </Button>
+            <Button onClick={() => setShowAddLangModal(true)}>Nueva materia</Button>
+          </>
+        }
+      />
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            className="text-xs font-semibold !py-1.5 !px-3"
-            onClick={() => openLevelModal()}
-          >
-            🏷️ + Nuevo Nivel
-          </Button>
-          <Button
-            className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs py-2 px-3.5 shadow-2xs"
-            onClick={() => setShowAddLangModal(true)}
-          >
-            + Nueva Materia
-          </Button>
-        </div>
-      </div>
-
-      {/* Category Filter Tabs */}
-      <div className="flex items-center justify-between bg-white p-2.5 rounded-2xl border border-slate-200/80 shadow-2xs text-xs">
-        <div className="flex items-center space-x-1 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab("all")}
-            className={`rounded-lg px-3 py-1.5 font-semibold transition ${
-              activeTab === "all"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            Todas ({languages.length})
-          </button>
-          {TRACK_ORDER.map((kind) => {
-            const count = languages.filter((l) => l.kind === kind).length;
-            return (
-              <button
-                key={kind}
-                onClick={() => setActiveTab(kind)}
-                className={`rounded-lg px-3 py-1.5 font-semibold transition ${
-                  activeTab === kind
-                    ? "bg-slate-900 text-white shadow-2xs"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {TRACK_LABELS[kind]} ({count})
-              </button>
-            );
-          })}
-        </div>
+      <div className="mb-4">
+        <SegmentedControl
+          value={activeTab}
+          onChange={setActiveTab}
+          options={[
+            { value: "all" as const, label: "Todas", count: languages.length },
+            ...TRACK_ORDER.map((kind) => ({
+              value: kind,
+              label: TRACK_LABELS[kind],
+              count: languages.filter((l) => l.kind === kind).length,
+            })),
+          ]}
+        />
       </div>
 
       {/* Main Catalog Cards Grid */}
       {filteredLanguages.length === 0 ? (
-        <Card className="p-8 text-center text-slate-400 text-xs italic">
-          No hay materias registradas en esta categoría.
-        </Card>
+        <EmptyState
+          icon={<IconLayers className="h-5 w-5" />}
+          title="No hay materias en esta categoría"
+          message="Una materia es el contenedor de los niveles: Inglés, Python, Liderazgo…"
+          action={<Button onClick={() => setShowAddLangModal(true)}>Nueva materia</Button>}
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredLanguages.map((lang) => {
             const langLevels = levels.filter((lvl) => lvl.language_id === lang.id);
 
             return (
-              <Card
-                key={lang.id}
-                className="flex flex-col justify-between p-4 border border-slate-200/80 rounded-2xl bg-white shadow-2xs hover:border-slate-300 transition space-y-3"
-              >
-                <div>
-                  {/* Header: Track badge & Delete */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
+              <Card key={lang.id} padding="sm" className="flex flex-col">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
                     <Badge color={TRACK_BADGE_COLORS[lang.kind]}>
                       {TRACK_LABELS[lang.kind]}
                     </Badge>
-                    <button
-                      type="button"
-                      onClick={() => setToDeleteLang(lang)}
-                      className="text-slate-300 hover:text-red-600 text-xs font-bold p-1 transition"
-                      title="Eliminar materia"
-                    >
-                      ✕
-                    </button>
+                    <h3 className="mt-1.5 truncate text-sm font-bold text-slate-900">
+                      {lang.name}
+                    </h3>
                   </div>
-
-                  <h3 className="font-semibold text-base text-slate-900">
-                    {lang.name}
-                  </h3>
-
-                  {/* Levels List */}
-                  <div className="mt-3 space-y-2">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-medium text-slate-400">
-                        Niveles ({langLevels.length})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => openLevelModal(lang.id)}
-                        className="font-semibold text-brand-600 hover:text-brand-700 hover:underline"
-                      >
-                        + Agregar Nivel
-                      </button>
-                    </div>
-
-                    {langLevels.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-2.5 text-center text-slate-400 text-[11px] italic">
-                        Sin niveles definidos aún.
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        {langLevels.map((lvl) => (
-                          <div
-                            key={lvl.id}
-                            className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs border border-slate-100/80"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <span className="font-bold text-brand-700 bg-brand-50 px-1.5 py-0.2 rounded text-[11px]">
-                                {lvl.code}
-                              </span>
-                              <span className="font-medium text-slate-700">
-                                {lvl.name}
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => setToDeleteLevel(lvl)}
-                              className="text-slate-300 hover:text-red-600 text-xs font-bold transition px-1"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setToDeleteLang(lang)}
+                    className="-mr-1 -mt-1 flex-none rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    aria-label={`Eliminar la materia ${lang.name}`}
+                  >
+                    <IconClose className="h-3.5 w-3.5" />
+                  </button>
                 </div>
+
+                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs">
+                  <span className="text-slate-500">
+                    {langLevels.length === 0
+                      ? "Sin niveles"
+                      : `${langLevels.length} ${langLevels.length === 1 ? "nivel" : "niveles"}`}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => openLevelModal(lang.id)}>
+                    Añadir nivel
+                  </Button>
+                </div>
+
+                {langLevels.length > 0 && (
+                  <ul className="mt-1 space-y-1">
+                    {langLevels.map((lvl) => (
+                      <li
+                        key={lvl.id}
+                        className="group flex items-center justify-between gap-2 rounded-lg bg-slate-50 py-1.5 pl-2.5 pr-1.5 text-xs"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="flex-none font-semibold text-brand-700">
+                            {lvl.code}
+                          </span>
+                          <span className="truncate text-slate-600">{lvl.name}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setToDeleteLevel(lvl)}
+                          className="flex-none rounded p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          aria-label={`Eliminar el nivel ${lvl.code}`}
+                        >
+                          <IconClose className="h-3 w-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </Card>
             );
           })}
@@ -288,8 +243,8 @@ export function CatalogPanel() {
             </ModalActions>
           }
         >
-          <div className="space-y-3.5 text-xs">
-            <Field label="Nombre de Asignatura (*)">
+          <div className="space-y-4">
+            <Field label="Nombre de la materia">
               <Input
                 placeholder="Ej. Francés, Python, Liderazgo…"
                 value={langName}
@@ -297,7 +252,7 @@ export function CatalogPanel() {
               />
             </Field>
 
-            <Field label="Área / Tipo de Programa">
+            <Field label="Área">
               <Select
                 value={langKind}
                 onChange={(e) => setLangKind(e.target.value as TrackKind)}
@@ -309,7 +264,6 @@ export function CatalogPanel() {
                 ))}
               </Select>
             </Field>
-
           </div>
         </Modal>
       )}
@@ -336,7 +290,7 @@ export function CatalogPanel() {
           }
         >
           <div className="space-y-3.5 text-xs">
-            <Field label="Materia / Idioma (*)">
+            <Field label="Materia">
               <Select
                 value={selectedLangForLevel}
                 onChange={(e) => setSelectedLangForLevel(Number(e.target.value))}
@@ -350,8 +304,8 @@ export function CatalogPanel() {
               </Select>
             </Field>
 
-            <div className="grid gap-3 grid-cols-2">
-              <Field label="Código Nivel (*)">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Código">
                 <Input
                   placeholder="Ej. A1, Mód. 1"
                   value={levelCode}
@@ -367,7 +321,6 @@ export function CatalogPanel() {
                 />
               </Field>
             </div>
-
           </div>
         </Modal>
       )}
@@ -375,12 +328,13 @@ export function CatalogPanel() {
       {/* Delete Confirmations */}
       {toDeleteLang && (
         <ConfirmDialog
-          title="¿Eliminar esta materia del catálogo?"
-          confirmLabel="Sí, eliminar"
+          title="Eliminar materia"
+          confirmLabel="Eliminar materia"
+          busy={delLang.isPending}
           message={
-            <p className="text-xs text-slate-600">
-              Vas a eliminar <strong>{toDeleteLang.name}</strong> y sus grados asociados.
-            </p>
+            <>
+              Se eliminará <strong>{toDeleteLang.name}</strong> y todos sus niveles.
+            </>
           }
           onClose={() => setToDeleteLang(null)}
           onConfirm={() => {
@@ -397,12 +351,17 @@ export function CatalogPanel() {
 
       {toDeleteLevel && (
         <ConfirmDialog
-          title="¿Eliminar este nivel académico?"
-          confirmLabel="Sí, eliminar nivel"
+          title="Eliminar nivel"
+          confirmLabel="Eliminar nivel"
+          busy={delLevel.isPending}
           message={
-            <p className="text-xs text-slate-600">
-              Vas a eliminar el nivel <strong>{toDeleteLevel.code} · {toDeleteLevel.name}</strong>.
-            </p>
+            <>
+              Se eliminará el nivel{" "}
+              <strong>
+                {toDeleteLevel.code} · {toDeleteLevel.name}
+              </strong>
+              .
+            </>
           }
           onClose={() => setToDeleteLevel(null)}
           onConfirm={() => {

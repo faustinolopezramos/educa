@@ -1,36 +1,61 @@
 import { useState } from "react";
+import type { ComponentType, SVGProps } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { defaultSection, NAV, type NavItem } from "../lib/nav";
 import { useLocationProposals } from "../lib/queries";
 import { CommandPalette, openCommandPalette } from "./CommandPalette";
+import {
+  IconBook,
+  IconBuilding,
+  IconCalendar,
+  IconCap,
+  IconChart,
+  IconChevronLeft,
+  IconChevronRight,
+  IconClipboard,
+  IconDoor,
+  IconGlobe,
+  IconHome,
+  IconLayers,
+  IconLogout,
+  IconMenu,
+  IconSearch,
+  IconShield,
+  IconUser,
+  IconUsers,
+  IconVideo,
+} from "./icons";
 import { NotificationBell } from "./NotificationBell";
 import { Toaster } from "./Toaster";
 
 const roleLabels: Record<string, string> = {
+  superadmin: "Superadministrador",
   admin: "Administrador",
   teacher: "Profesor",
   student: "Alumno",
 };
 
-const ITEM_ICONS: Record<string, string> = {
-  inicio: "🏠",
-  clases: "🏠",
-  courses: "📚",
-  enrollments: "📝",
-  users: "👥",
-  reports: "📊",
-  reportes: "📊",
-  catalog: "🏛️",
-  rooms: "🏫",
-  video_providers: "📹",
-  holidays: "📅",
-  audit: "🛡️",
-  tenants: "🏢",
-  tareas: "📋",
-  calificaciones: "🎓",
-  perfil: "👤",
+type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
+
+const ITEM_ICONS: Record<string, IconComponent> = {
+  inicio: IconHome,
+  clases: IconHome,
+  courses: IconBook,
+  enrollments: IconClipboard,
+  users: IconUsers,
+  reports: IconChart,
+  reportes: IconChart,
+  catalog: IconLayers,
+  rooms: IconDoor,
+  video_providers: IconVideo,
+  holidays: IconCalendar,
+  audit: IconShield,
+  tenants: IconBuilding,
+  tareas: IconClipboard,
+  calificaciones: IconCap,
+  perfil: IconUser,
 };
 
 export function Layout() {
@@ -38,9 +63,9 @@ export function Layout() {
   const [params] = useSearchParams();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
-    return localStorage.getItem("educa_nav_collapsed") === "true";
-  });
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("educa_nav_collapsed") === "true",
+  );
 
   if (!user) return null;
 
@@ -56,7 +81,6 @@ export function Layout() {
   const onHome = location.pathname === "/";
   const activeId = onHome ? (params.get("m") ?? defaultSection(user.role)) : "";
 
-  // Find active label for header breadcrumb
   let activeLabel = "Inicio";
   for (const group of groups) {
     const found = group.items.find((i) => i.id === activeId);
@@ -67,57 +91,46 @@ export function Layout() {
   }
 
   return (
-    <div className="flex min-h-full bg-slate-50/50">
-      {/* Mobile overlay */}
+    <div className="flex min-h-full">
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden transition-opacity"
+          className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* ---------- Sidebar ---------- */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-screen flex-none flex-col bg-slate-900 text-slate-300 shadow-xl transition-all duration-300 ease-in-out lg:sticky lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 flex-none flex-col border-r border-slate-800 bg-slate-900 text-slate-300 transition-transform duration-200 lg:sticky lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } ${collapsed ? "lg:w-20" : "lg:w-64"} w-64`}
+        } ${collapsed ? "lg:w-[4.5rem]" : "lg:w-60"}`}
       >
-        <div className="flex items-center justify-between px-4 py-4 border-b border-slate-800/80">
-          <Link to="/" className="flex items-center gap-3 overflow-hidden">
-            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 font-serif text-xl font-bold text-white shadow-md shadow-brand-600/30">
+        <div
+          className={`flex h-14 flex-none items-center border-b border-slate-800 px-4 ${
+            collapsed ? "lg:justify-center lg:px-0" : ""
+          }`}
+        >
+          <Link to="/" className="flex items-center gap-2.5 overflow-hidden">
+            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
               E
             </span>
             {!collapsed && (
-              <div className="min-w-0">
-                <span className="font-serif text-lg font-semibold tracking-tight text-white block leading-none truncate">
-                  Educa
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase block truncate">
-                  Plataforma Académica
-                </span>
-              </div>
+              <span className="truncate text-base font-bold tracking-tight text-white">
+                Educa
+              </span>
             )}
           </Link>
-          <button
-            onClick={toggleCollapsed}
-            className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition"
-            title={collapsed ? "Expandir menú" : "Colapsar menú"}
-          >
-            <span className="text-sm font-bold">{collapsed ? "»" : "«"}</span>
-          </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        <nav className="flex-1 space-y-5 overflow-y-auto px-2.5 py-4">
           {groups.map((group) => (
             <div key={group.label}>
-              {!collapsed ? (
-                <div className="px-3 pb-2 pt-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500 truncate">
+              {!collapsed && (
+                <div className="px-2.5 pb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
                   {group.label}
                 </div>
-              ) : (
-                <div className="h-px bg-slate-800/80 my-2 mx-1" />
               )}
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {group.items.map((item) => (
                   <SidebarLink
                     key={item.id}
@@ -132,9 +145,13 @@ export function Layout() {
           ))}
         </nav>
 
-        <div className="border-t border-slate-800/80 p-3 bg-slate-950/40">
-          <div className={`flex items-center gap-2.5 rounded-xl bg-slate-800/50 p-2 ${collapsed ? "justify-center" : ""}`}>
-            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white shadow-inner">
+        <div className="flex-none border-t border-slate-800 p-2.5">
+          <div
+            className={`flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 ${
+              collapsed ? "justify-center" : ""
+            }`}
+          >
+            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
               {initials(user.full_name)}
             </div>
             {!collapsed && (
@@ -142,76 +159,71 @@ export function Layout() {
                 <div className="truncate text-xs font-semibold text-slate-100">
                   {user.full_name}
                 </div>
-                <div className="text-[10px] text-brand-400 font-medium truncate">{roleLabels[user.role]}</div>
+                <div className="truncate text-2xs text-slate-400">
+                  {roleLabels[user.role]}
+                </div>
               </div>
             )}
           </div>
           <button
             onClick={logout}
-            title={collapsed ? "Cerrar sesión" : undefined}
-            className={`mt-2 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 active:scale-98 ${
-              collapsed ? "justify-center" : "justify-center"
+            title="Cerrar sesión"
+            className={`mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 ${
+              collapsed ? "justify-center" : ""
             }`}
           >
-            <span>{collapsed ? "🚪" : "Cerrar sesión"}</span>
+            <IconLogout className="h-4 w-4 flex-none" />
+            {!collapsed && <span>Cerrar sesión</span>}
           </button>
         </div>
       </aside>
 
       {/* ---------- Content ---------- */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/80 glass-panel px-4 py-3.5 lg:px-8 shadow-2xs">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-30 flex h-14 flex-none items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-sm lg:px-8">
+          <div className="flex min-w-0 items-center gap-2">
             <button
-              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-200/60 active:scale-95 lg:hidden"
+              className="-ml-1 rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 lg:hidden"
               onClick={() => setSidebarOpen(true)}
-              aria-label="Abrir menú móvil"
+              aria-label="Abrir menú"
             >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+              <IconMenu className="h-5 w-5" />
             </button>
+            {/* One collapse control, not two. The sidebar used to carry its own
+                chevron next to this one, both doing the same thing. */}
             <button
-              className="hidden lg:flex rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-200/60 hover:text-slate-900 active:scale-95"
+              className="-ml-1 hidden rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 lg:block"
               onClick={toggleCollapsed}
-              title={collapsed ? "Expandir menú lateral" : "Colapsar menú lateral"}
+              aria-label={collapsed ? "Expandir menú lateral" : "Colapsar menú lateral"}
             >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                {collapsed ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M19 19l-7-7 7-7" />
-                )}
-              </svg>
+              {collapsed ? (
+                <IconChevronRight className="h-4 w-4" />
+              ) : (
+                <IconChevronLeft className="h-4 w-4" />
+              )}
             </button>
-            <div className="flex items-center gap-2 text-sm text-slate-600 font-medium">
-              <span className="text-slate-400 hidden sm:inline">Educa</span>
-              <span className="text-slate-300 hidden sm:inline">/</span>
-              <span className="font-semibold text-slate-900">{activeLabel}</span>
-            </div>
+            <span className="truncate text-sm font-semibold text-slate-900">
+              {activeLabel}
+            </span>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex flex-none items-center gap-1.5">
             <button
               onClick={openCommandPalette}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white/70 px-3 py-1.5 text-xs text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+              className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
               aria-label="Buscar e ir a una sección"
             >
-              <span>⌕</span>
-              <span className="hidden sm:inline">Buscar…</span>
-              <kbd className="hidden rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 md:inline">
+              <IconSearch className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Buscar</span>
+              <kbd className="hidden rounded border border-slate-200 bg-slate-50 px-1 py-0.5 font-mono text-2xs text-slate-400 md:inline">
                 ⌘K
               </kbd>
             </button>
-            <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 border border-slate-200">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              {roleLabels[user.role]}
-            </span>
             <NotificationBell />
           </div>
         </header>
 
-        {/* Main Content Area - Max Width Expanded to 1600px */}
-        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 lg:px-10 lg:py-8 animate-fade-in">
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 lg:px-8 lg:py-8">
           <Outlet />
         </main>
       </div>
@@ -232,24 +244,25 @@ function SidebarLink({
   collapsed: boolean;
   onClick: () => void;
 }) {
-  const icon = ITEM_ICONS[item.id] || "📌";
+  const Icon = ITEM_ICONS[item.id] ?? IconGlobe;
   return (
     <Link
       to={`/?m=${item.id}`}
       onClick={onClick}
       title={collapsed ? item.label : undefined}
-      className={`flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-all ${
-        collapsed ? "justify-center px-2" : "px-3 justify-between"
+      aria-current={active ? "page" : undefined}
+      className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
+        collapsed ? "justify-center" : "justify-between"
       } ${
         active
-          ? "bg-brand-600 font-semibold text-white shadow-sm shadow-brand-600/20"
-          : "text-slate-300 hover:bg-slate-800/80 hover:text-slate-100"
+          ? "bg-brand-600 text-white"
+          : "text-slate-300 hover:bg-slate-800 hover:text-white"
       }`}
     >
-      <div className="flex items-center gap-2.5 truncate">
-        <span className="text-base leading-none">{icon}</span>
+      <span className="flex min-w-0 items-center gap-2.5">
+        <Icon className="h-[18px] w-[18px] flex-none" />
         {!collapsed && <span className="truncate">{item.label}</span>}
-      </div>
+      </span>
       {!collapsed && item.badge === "pending-locations" && <PendingBadge active={active} />}
     </Link>
   );
@@ -261,8 +274,8 @@ function PendingBadge({ active }: { active: boolean }) {
   if (pending.length === 0) return null;
   return (
     <span
-      className={`min-w-[20px] rounded-full px-2 py-0.5 text-center text-[11px] font-bold ${
-        active ? "bg-white/25 text-white" : "bg-amber-500 text-slate-950"
+      className={`min-w-[1.25rem] flex-none rounded-full px-1.5 py-0.5 text-center text-2xs font-bold ${
+        active ? "bg-white/20 text-white" : "bg-amber-500 text-slate-900"
       }`}
     >
       {pending.length}
@@ -279,4 +292,3 @@ function initials(name: string): string {
     .join("")
     .toUpperCase();
 }
-

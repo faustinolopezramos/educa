@@ -7,7 +7,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-import { Card } from "../../components/ui";
+import { Card, EmptyState, SectionHeading } from "../../components/ui";
+import { IconCap, IconLock } from "../../components/icons";
 import { useCourses, useEnrollments, useGrades } from "../../lib/queries";
 
 const SERIES = "#0F6E62";
@@ -41,37 +42,38 @@ export function StudentGrades() {
 
   if (hasOverdue) {
     return (
-      <Card className="border-amber-300 bg-amber-50/70 py-12 text-center shadow-sm">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-2xl text-amber-800 mb-3">
-          🔒
-        </div>
-        <h3 className="text-lg font-semibold text-amber-900">Acceso a Calificaciones Restringido</h3>
-        <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-amber-800">
-          Tienes saldo o mensualidades pendientes de pago en tus matrículas activas.
-          Por política de la institución, la consulta de calificaciones y la emisión de certificados
-          requieren estar al día con la administración.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<IconLock className="h-5 w-5" />}
+        title="Ponte al día para ver tus notas"
+        message="Tienes cuotas pendientes en alguna matrícula activa. El acceso a calificaciones y certificados se restablece en cuanto se registre el pago."
+      />
+    );
+  }
+
+  if (!hasGrades) {
+    return (
+      <EmptyState
+        icon={<IconCap className="h-5 w-5" />}
+        title="Todavía no tienes calificaciones"
+        message="Cuando tu profesor registre la primera evaluación, la verás aquí."
+      />
     );
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2">
       <Card>
-        <h3 className="mb-4 font-medium">Progreso por evaluación</h3>
-        {!hasGrades && (
-          <p className="text-sm text-slate-400">Todavía no tienes calificaciones.</p>
-        )}
+        <SectionHeading>Progreso por evaluación</SectionHeading>
         <div className="space-y-5">
           {byCourse
             .filter((c) => c.rows.length > 0)
             .map((c) => (
               <div key={c.enrollmentId}>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">
+                <div className="mb-2 flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
                     {courseName(c.courseId)}
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="tabular flex-none text-xs text-slate-500">
                     Promedio {c.avg.toFixed(1)}/{MAX_SCORE}
                   </span>
                 </div>
@@ -90,10 +92,10 @@ export function StudentGrades() {
       </Card>
 
       <Card>
-        <h3 className="mb-4 font-medium">Promedio por curso</h3>
+        <SectionHeading>Promedio por curso</SectionHeading>
         {radarData.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            Necesitas notas en al menos un curso para ver el radar.
+          <p className="text-sm text-slate-500">
+            Necesitas notas en al menos un curso para ver este gráfico.
           </p>
         ) : (
           <div style={{ height: 300 }}>

@@ -1,20 +1,60 @@
 import { useState } from "react";
 import { useAuth } from "../../auth/AuthContext";
-import { Badge, Card, Input, Select } from "../../components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  SearchInput,
+  SectionHeading,
+  SegmentedControl,
+  Select,
+  Stat,
+  Table,
+  Td,
+  Th,
+} from "../../components/ui";
+import { IconChart } from "../../components/icons";
 import type { Report } from "../../lib/types";
+
+type PerformanceStatus = "optimal" | "warning" | "critical" | "no_data";
+
+// El estado se nombra con palabras y color de fondo. Antes cada etiqueta
+// empezaba con un círculo de color (🟢🟡🔴⚪) que repetía exactamente la
+// información que ya daba el color del badge, y que además desaparece para
+// quien no distingue esos tonos.
+const STATUS_LABELS: Record<PerformanceStatus, string> = {
+  optimal: "Óptimo",
+  warning: "Atención",
+  critical: "Crítico",
+  no_data: "Sin datos",
+};
+
+const STATUS_COLORS: Record<PerformanceStatus, "green" | "amber" | "red" | "slate"> = {
+  optimal: "green",
+  warning: "amber",
+  critical: "red",
+  no_data: "slate",
+};
+
+function StatusBadge({ status }: { status: PerformanceStatus }) {
+  return (
+    <Badge color={STATUS_COLORS[status]} dot>
+      {STATUS_LABELS[status]}
+    </Badge>
+  );
+}
 
 export function ConsolidatedPerformanceView({ report }: { report: Report }) {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "optimal" | "warning" | "critical" | "no_data"
-  >("all");
+  const [statusFilter, setStatusFilter] = useState<PerformanceStatus | "all">("all");
   const [courseFilter, setCourseFilter] = useState<string>("all");
 
-  const students = Array.isArray(report.consolidated_students) ? report.consolidated_students : [];
+  const students = Array.isArray(report.consolidated_students)
+    ? report.consolidated_students
+    : [];
   const isStudent = user?.role === "student";
 
-  // Filtered Students for Staff View
   const filteredStudents = students.filter((s) => {
     const matchesSearch = s.student_name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || s.performance_status === statusFilter;
@@ -22,12 +62,10 @@ export function ConsolidatedPerformanceView({ report }: { report: Report }) {
     return matchesSearch && matchesStatus && matchesCourse;
   });
 
-  // Unique Courses for Filter Dropdown
   const uniqueCourses = Array.from(
-    new Set(students.map((s) => JSON.stringify({ id: s.course_id, name: s.course_name })))
+    new Set(students.map((s) => JSON.stringify({ id: s.course_id, name: s.course_name }))),
   ).map((str) => JSON.parse(str) as { id: number; name: string });
 
-  // KPI Calculations
   const totalStudents = students.length;
   const optimalCount = students.filter((s) => s.performance_status === "optimal").length;
   const warningCount = students.filter((s) => s.performance_status === "warning").length;
@@ -36,7 +74,7 @@ export function ConsolidatedPerformanceView({ report }: { report: Report }) {
 
   function averageOf(pick: (s: (typeof students)[number]) => number | null): string {
     const values = students.map(pick).filter((v): v is number => v !== null);
-    if (values.length === 0) return "N/A";
+    if (values.length === 0) return "—";
     return (values.reduce((acc, v) => acc + v, 0) / values.length).toFixed(1);
   }
 
@@ -45,7 +83,7 @@ export function ConsolidatedPerformanceView({ report }: { report: Report }) {
   const avgExams = averageOf((s) => s.exams_avg);
 
   function score(value: number | null): string {
-    return value === null ? "—" : `${value.toFixed(1)} / 10`;
+    return value === null ? "—" : value.toFixed(1);
   }
 
   function percent(value: number | null): string {
@@ -56,247 +94,211 @@ export function ConsolidatedPerformanceView({ report }: { report: Report }) {
     return value === null ? "0%" : `${Math.min(100, value * scale)}%`;
   }
 
-  function getStatusBadge(status: "optimal" | "warning" | "critical" | "no_data") {
-    if (status === "optimal") return <Badge color="green">🟢 Óptimo</Badge>;
-    if (status === "warning") return <Badge color="amber">🟡 Atención</Badge>;
-    if (status === "critical") return <Badge color="red">🔴 Crítico</Badge>;
-    return <Badge color="slate">⚪ Sin datos</Badge>;
-  }
-
-  // Single Student View (If logged in user is student)
+  /* ---------------- Vista del alumno ---------------- */
   if (isStudent) {
     const studentReport = students.find((s) => s.student_id === user?.id) || students[0];
 
     if (!studentReport) {
       return (
-        <Card className="p-8 text-center text-slate-400 text-xs italic">
-          No se encontró un reporte consolidado activo para tu cuenta en este periodo.
-        </Card>
+        <EmptyState
+          icon={<IconChart className="h-5 w-5" />}
+          title="Todavía no hay reporte"
+          message="Cuando tengas notas y asistencia registradas en el periodo, tu rendimiento aparecerá aquí."
+        />
       );
     }
 
     return (
       <div className="space-y-4">
-        <Card className="p-5 rounded-2xl border border-brand-200 bg-white shadow-2xs">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-brand-600">
+        <Card>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wide text-brand-600">
                 {studentReport.course_name}
-              </span>
-              <h2 className="text-xl font-serif font-bold text-slate-900 mt-1">
-                Tu Rendimiento Académico Consolidado 360°
+              </div>
+              <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900">
+                Tu nota consolidada
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                40% Tareas + 50% Exámenes + 10% Asistencia
+              <p className="mt-0.5 text-xs text-slate-500">
+                40% tareas · 50% exámenes · 10% asistencia
               </p>
             </div>
 
-            <div className="text-center bg-brand-50/60 px-5 py-3 rounded-xl border border-brand-100">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase">Nota Consolidada</span>
-              <div className="text-3xl font-extrabold text-brand-700 mt-0.5">
+            <div className="flex items-center gap-3">
+              <span className="tabular text-4xl font-bold tracking-tight text-brand-700">
                 {score(studentReport.consolidated_score)}
-              </div>
-              <div className="mt-1">{getStatusBadge(studentReport.performance_status)}</div>
+                <span className="text-lg font-semibold text-slate-400">/10</span>
+              </span>
+              <StatusBadge status={studentReport.performance_status} />
             </div>
           </div>
         </Card>
 
-        {/* 3 Metric Breakdown Cards */}
         <div className="grid gap-3 md:grid-cols-3">
-          <Card className="p-4 rounded-2xl border border-slate-200/80 bg-white shadow-2xs space-y-2">
-            <div className="flex items-center justify-between text-slate-700">
-              <span className="text-xs font-semibold text-slate-600">📚 Tareas (40%)</span>
-              <span className="text-sm font-bold text-brand-600">{score(studentReport.assignments_avg)}</span>
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-slate-100">
-              <div
-                className="h-1.5 rounded-full bg-brand-600 transition-all"
-                style={{ width: barWidth(studentReport.assignments_avg, 10) }}
-              />
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Entregadas: {percent(studentReport.assignments_completion_rate)}
-            </p>
-          </Card>
-
-          <Card className="p-4 rounded-2xl border border-slate-200/80 bg-white shadow-2xs space-y-2">
-            <div className="flex items-center justify-between text-slate-700">
-              <span className="text-xs font-semibold text-slate-600">📝 Exámenes (50%)</span>
-              <span className="text-sm font-bold text-indigo-600">{score(studentReport.exams_avg)}</span>
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-slate-100">
-              <div
-                className="h-1.5 rounded-full bg-indigo-600 transition-all"
-                style={{ width: barWidth(studentReport.exams_avg, 10) }}
-              />
-            </div>
-            <p className="text-[11px] text-slate-400">Evaluaciones periódicas</p>
-          </Card>
-
-          <Card className="p-4 rounded-2xl border border-slate-200/80 bg-white shadow-2xs space-y-2">
-            <div className="flex items-center justify-between text-slate-700">
-              <span className="text-xs font-semibold text-slate-600">🕒 Asistencia (10%)</span>
-              <span className="text-sm font-bold text-emerald-600">{percent(studentReport.attendance_rate)}</span>
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-slate-100">
-              <div
-                className="h-1.5 rounded-full bg-emerald-600 transition-all"
-                style={{ width: barWidth(studentReport.attendance_rate, 100) }}
-              />
-            </div>
-            <p className="text-[11px] text-slate-400">Presencia en clases</p>
-          </Card>
+          <MetricCard
+            label="Tareas"
+            weight="40%"
+            value={score(studentReport.assignments_avg)}
+            barWidth={barWidth(studentReport.assignments_avg, 10)}
+            barClass="bg-brand-600"
+            hint={`Entregadas: ${percent(studentReport.assignments_completion_rate)}`}
+          />
+          <MetricCard
+            label="Exámenes"
+            weight="50%"
+            value={score(studentReport.exams_avg)}
+            barWidth={barWidth(studentReport.exams_avg, 10)}
+            barClass="bg-brand-600"
+            hint="Evaluaciones periódicas"
+          />
+          <MetricCard
+            label="Asistencia"
+            weight="10%"
+            value={percent(studentReport.attendance_rate)}
+            barWidth={barWidth(studentReport.attendance_rate, 100)}
+            barClass="bg-emerald-600"
+            hint="Presencia en clases"
+          />
         </div>
       </div>
     );
   }
 
-  // Staff / Admin Dashboard View
+  /* ---------------- Vista de dirección / docente ---------------- */
   return (
     <div className="space-y-4">
-      {/* Executive Micro-KPI Summary Bar */}
-      <div className="grid gap-3 sm:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
-          <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Promedio Consolidado</div>
-          <div className="mt-0.5 font-serif text-2xl font-bold text-slate-900">{avgConsolidated}</div>
-          <div className="text-[10px] text-slate-400">Tareas: {avgAssignments} · Exámenes: {avgExams}</div>
-        </div>
-
-        <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 shadow-2xs">
-          <div className="text-[11px] text-emerald-800 font-medium uppercase tracking-wider">🟢 Óptimo (≥ 8.5)</div>
-          <div className="mt-0.5 font-serif text-2xl font-bold text-emerald-800">{optimalCount}</div>
-          <div className="text-[10px] text-emerald-700">Alumnos aprobados</div>
-        </div>
-
-        <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-3.5 shadow-2xs">
-          <div className="text-[11px] text-amber-900 font-medium uppercase tracking-wider">🟡 Atención (6.0 - 7.9)</div>
-          <div className="mt-0.5 font-serif text-2xl font-bold text-amber-900">{warningCount}</div>
-          <div className="text-[10px] text-amber-800">Alumnos a monitorear</div>
-        </div>
-
-        <div className="rounded-2xl border border-red-200/80 bg-red-50/50 p-3.5 shadow-2xs">
-          <div className="text-[11px] text-red-900 font-medium uppercase tracking-wider">🔴 Alerta Crítica (&lt; 6.0)</div>
-          <div className="mt-0.5 font-serif text-2xl font-bold text-red-900">{criticalCount}</div>
-          <div className="text-[10px] text-red-800">Alumnos en riesgo</div>
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat
+          label="Promedio consolidado"
+          value={avgConsolidated}
+          hint={`Tareas ${avgAssignments} · Exámenes ${avgExams}`}
+        />
+        <Stat label="Óptimo (≥ 8.5)" value={optimalCount} tone="positive" />
+        <Stat label="Atención (6.0 – 8.4)" value={warningCount} tone="warning" />
+        <Stat label="Crítico (< 6.0)" value={criticalCount} tone="critical" />
       </div>
 
-      {/* Sleek Filter Bar & Performance Table */}
-      <Card className="p-4 space-y-3 rounded-2xl border border-slate-200/80 bg-white shadow-2xs">
-        <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between text-xs">
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <Input
-              placeholder="🔍 Buscar por nombre del alumno…"
-              className="w-full sm:w-64"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-
-            <Select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-              <option value="all">Todos los Cursos</option>
-              {uniqueCourses.map((c) => (
-                <option key={c.id} value={String(c.id)}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-xs">
-            <button
-              onClick={() => setStatusFilter("all")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                statusFilter === "all" ? "bg-white text-slate-900 shadow-2xs font-semibold" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Todos ({totalStudents})
-            </button>
-            <button
-              onClick={() => setStatusFilter("optimal")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                statusFilter === "optimal" ? "bg-emerald-600 text-white font-semibold shadow-2xs" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Óptimo ({optimalCount})
-            </button>
-            <button
-              onClick={() => setStatusFilter("warning")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                statusFilter === "warning" ? "bg-amber-600 text-white font-semibold shadow-2xs" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Atención ({warningCount})
-            </button>
-            <button
-              onClick={() => setStatusFilter("critical")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                statusFilter === "critical" ? "bg-red-600 text-white font-semibold shadow-2xs" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Crítico ({criticalCount})
-            </button>
-            <button
-              onClick={() => setStatusFilter("no_data")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                statusFilter === "no_data" ? "bg-slate-600 text-white font-semibold shadow-2xs" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Sin datos ({noDataCount})
-            </button>
-          </div>
+      <Card padding="none" className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 p-2.5">
+          <SearchInput
+            placeholder="Buscar alumno"
+            className="w-full sm:w-56"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <Select
+            className="w-full sm:w-48"
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
+          >
+            <option value="all">Todos los cursos</option>
+            {uniqueCourses.map((c) => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+          <SegmentedControl
+            className="sm:ml-auto"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: "all" as const, label: "Todos", count: totalStudents },
+              { value: "optimal" as const, label: "Óptimo", count: optimalCount },
+              { value: "warning" as const, label: "Atención", count: warningCount },
+              { value: "critical" as const, label: "Crítico", count: criticalCount },
+              { value: "no_data" as const, label: "Sin datos", count: noDataCount },
+            ]}
+          />
         </div>
 
-        {/* 360° Consolidated Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+        {filteredStudents.length === 0 ? (
+          <div className="p-6">
+            <EmptyState
+              icon={<IconChart className="h-5 w-5" />}
+              title="Ningún alumno coincide"
+              message="Prueba con otro curso, otro estado o limpia la búsqueda."
+            />
+          </div>
+        ) : (
+          <Table>
+            <thead>
               <tr>
-                <th className="p-3">Alumno</th>
-                <th className="p-3">Curso</th>
-                <th className="p-3 text-center">📚 Tareas (40%)</th>
-                <th className="p-3 text-center">📝 Exámenes (50%)</th>
-                <th className="p-3 text-center">🕒 Asistencia (10%)</th>
-                <th className="p-3 text-center">💯 Nota 360°</th>
-                <th className="p-3 text-center">Estado</th>
+                <Th>Alumno</Th>
+                <Th>Curso</Th>
+                <Th align="right">Tareas 40%</Th>
+                <Th align="right">Exámenes 50%</Th>
+                <Th align="right">Asistencia 10%</Th>
+                <Th align="right">Consolidada</Th>
+                <Th>Estado</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredStudents.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400 italic">
-                    No se encontraron alumnos con los criterios seleccionados.
-                  </td>
+              {filteredStudents.map((st) => (
+                <tr key={`${st.student_id}-${st.course_id}`} className="hover:bg-slate-50">
+                  <Td>
+                    <span className="font-medium text-slate-900">{st.student_name}</span>
+                  </Td>
+                  <Td>
+                    <span className="text-slate-600">{st.course_name}</span>
+                  </Td>
+                  <Td align="right">
+                    <div className="tabular">{score(st.assignments_avg)}</div>
+                    <div className="tabular text-xs text-slate-400">
+                      {percent(st.assignments_completion_rate)} entregado
+                    </div>
+                  </Td>
+                  <Td align="right">
+                    <span className="tabular">{score(st.exams_avg)}</span>
+                  </Td>
+                  <Td align="right">
+                    <span className="tabular">{percent(st.attendance_rate)}</span>
+                  </Td>
+                  <Td align="right">
+                    <span className="tabular font-bold text-slate-900">
+                      {score(st.consolidated_score)}
+                    </span>
+                  </Td>
+                  <Td>
+                    <StatusBadge status={st.performance_status} />
+                  </Td>
                 </tr>
-              ) : (
-                filteredStudents.map((st) => (
-                  <tr key={`${st.student_id}-${st.course_id}`} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3 font-semibold text-slate-900">{st.student_name}</td>
-                    <td className="p-3 text-slate-600">{st.course_name}</td>
-                    <td className="p-3 text-center font-medium text-slate-700">
-                      <div>{score(st.assignments_avg)}</div>
-                      <span className="text-[10px] text-slate-400">
-                        Entregas: {percent(st.assignments_completion_rate)}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center font-medium text-slate-700">
-                      {score(st.exams_avg)}
-                    </td>
-                    <td className="p-3 text-center font-medium text-slate-700">
-                      {percent(st.attendance_rate)}
-                    </td>
-                    <td className="p-3 text-center text-sm font-extrabold text-brand-700">
-                      {st.consolidated_score === null
-                        ? "—"
-                        : st.consolidated_score.toFixed(1)}
-                    </td>
-                    <td className="p-3 text-center">{getStatusBadge(st.performance_status)}</td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        )}
       </Card>
     </div>
+  );
+}
+
+function MetricCard({
+  label,
+  weight,
+  value,
+  barWidth,
+  barClass,
+  hint,
+}: {
+  label: string;
+  weight: string;
+  value: string;
+  barWidth: string;
+  barClass: string;
+  hint: string;
+}) {
+  return (
+    <Card padding="sm">
+      <div className="flex items-baseline justify-between">
+        <SectionHeading className="!mb-0">
+          {label} <span className="font-normal text-slate-400">{weight}</span>
+        </SectionHeading>
+        <span className="tabular text-base font-bold text-slate-900">{value}</span>
+      </div>
+      <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${barClass}`} style={{ width: barWidth }} />
+      </div>
+      <p className="mt-1.5 text-xs text-slate-500">{hint}</p>
+    </Card>
   );
 }

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 
 import {
-  ActionMenu, Badge, Button, Card, ConfirmDialog, Field, Input, Modal, ModalActions, Select, Table, Td, Th,
+  ActionMenu, Badge, Button, Card, ConfirmDialog, EmptyState, Field, Input,
+  MetaItem, Modal, ModalActions, PageHeader, SearchInput, SegmentedControl, Select,
+  Table, Td, Th,
 } from "../../components/ui";
+import { IconUsers } from "../../components/icons";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
 import { RegisterTeacherWizard } from "./RegisterTeacherWizard";
 import {
@@ -68,201 +71,151 @@ export function UsersPanel() {
   const countTeachers = users.filter((u) => u.role === "teacher").length;
   const countAdmins = users.filter((u) => u.role === "admin" || u.role === "superadmin").length;
 
+  const createLabel =
+    activeTab === "teacher"
+      ? "Nuevo profesor"
+      : activeTab === "student"
+        ? "Nuevo alumno"
+        : "Nuevo usuario";
+
   return (
-    <div className="space-y-4">
-      {/* Role Navigation Tabs & Quick Search */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-1 rounded-xl bg-slate-200/60 p-1 text-xs">
-          <button
-            type="button"
-            onClick={() => setActiveTab("student")}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 font-medium transition ${
-              activeTab === "student"
-                ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Alumnos</span>
-            <span className="rounded-full bg-slate-200 px-1.5 py-0.2 text-[10px] text-slate-700">
-              {countStudents}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("teacher")}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 font-medium transition ${
-              activeTab === "teacher"
-                ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Profesores</span>
-            <span className="rounded-full bg-slate-200 px-1.5 py-0.2 text-[10px] text-slate-700">
-              {countTeachers}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("admin")}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 font-medium transition ${
-              activeTab === "admin"
-                ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Administradores</span>
-            <span className="rounded-full bg-slate-200 px-1.5 py-0.2 text-[10px] text-slate-700">
-              {countAdmins}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("all")}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 font-medium transition ${
-              activeTab === "all"
-                ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Todos</span>
-            <span className="rounded-full bg-slate-200 px-1.5 py-0.2 text-[10px] text-slate-700">
-              {users.length}
-            </span>
-          </button>
-        </div>
-
-        {/* Quick Search & Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            className="w-64 text-xs"
-            placeholder="Buscar por nombre, correo o teléfono…"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-
-          {activeTab === "student" && (
-            <>
-              <Button variant="secondary" onClick={() => setIsCreateOpen(true)}>
-                + Crear Alumno
-              </Button>
-              <Button variant="primary" onClick={() => setEnrollStudentId(0)}>
-                + Inscribir en Curso
-              </Button>
-            </>
-          )}
-
-          {activeTab === "teacher" && (
-            <>
-              <Button variant="secondary" onClick={() => setIsCreateOpen(true)}>
-                + Crear Profesor
-              </Button>
-              <Button variant="primary" onClick={() => setTeacherWizardId("new")}>
-                + Asignar a Curso
-              </Button>
-            </>
-          )}
-
-          {(activeTab === "admin" || activeTab === "all") && (
-            <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
-              + Nuevo Usuario
+    <div>
+      <PageHeader
+        title="Usuarios"
+        meta={
+          <>
+            <MetaItem value={countStudents} label="alumnos" />
+            <MetaItem value={countTeachers} label="profesores" />
+            <MetaItem value={countAdmins} label="administradores" />
+          </>
+        }
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setIsCreateOpen(true)}>
+              {createLabel}
             </Button>
-          )}
-        </div>
+            {activeTab === "student" && (
+              <Button onClick={() => setEnrollStudentId(0)}>Inscribir en curso</Button>
+            )}
+            {activeTab === "teacher" && (
+              <Button onClick={() => setTeacherWizardId("new")}>Asignar a curso</Button>
+            )}
+          </>
+        }
+      />
+
+      <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5">
+        <SegmentedControl
+          value={activeTab}
+          onChange={setActiveTab}
+          options={[
+            { value: "student", label: "Alumnos", count: countStudents },
+            { value: "teacher", label: "Profesores", count: countTeachers },
+            { value: "admin", label: "Administradores", count: countAdmins },
+            { value: "all", label: "Todos", count: users.length },
+          ]}
+        />
+        <SearchInput
+          className="w-full sm:ml-auto sm:w-72"
+          placeholder="Buscar por nombre, correo, CUI o teléfono"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
       </div>
 
-      {activeTab === "teacher" && (
-        <div className="flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50/70 p-3.5 text-xs text-brand-900">
-          <div>
-            <div className="font-semibold text-sm text-brand-950">Gestión Integrada de Docentes</div>
-            <div className="text-brand-800 mt-0.5">
-              Asigna cursos a profesores, cualifica materias/idiomas, configura tarifas por hora y gestiona sus credenciales.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Minimalist Full Width Table Card */}
-      <Card className="w-full shadow-xs overflow-hidden !p-0">
+      <Card padding="none" className="overflow-hidden">
         {filteredUsers.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-xs">
-            No hay usuarios registrados en esta categoría o búsqueda.
+          <div className="p-6">
+            <EmptyState
+              icon={<IconUsers className="h-5 w-5" />}
+              title={searchTerm ? "Nadie coincide con la búsqueda" : "No hay usuarios aquí"}
+              message={
+                searchTerm
+                  ? "Prueba con otro nombre, correo o número de teléfono."
+                  : "Crea el primero para empezar."
+              }
+              action={
+                searchTerm ? (
+                  <Button variant="secondary" onClick={() => setSearchTerm("")}>
+                    Limpiar búsqueda
+                  </Button>
+                ) : (
+                  <Button onClick={() => setIsCreateOpen(true)}>{createLabel}</Button>
+                )
+              }
+            />
           </div>
         ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Usuario</Th>
-                <Th>Contacto y Ubicación</Th>
+                <Th>Contacto</Th>
                 <Th>Rol</Th>
-                <Th>Acciones</Th>
+                <Th align="right">Acciones</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredUsers.map((u) => {
                 const userNat = nationalities.find((n) => n.id === u.nationality_id);
-                const contactLocationText = [userNat?.name, u.address].filter(Boolean).join(" · ");
+                const location = [userNat?.name, u.address].filter(Boolean).join(" · ");
                 return (
-                  <tr key={u.id} className="hover:bg-slate-50/70 transition-colors text-xs">
-                    {/* 1. Usuario */}
+                  <tr key={u.id} className="hover:bg-slate-50">
                     <Td>
-                      <div className="py-0.5">
-                        <div className="font-semibold text-slate-900 text-sm flex items-center gap-2">
-                          <span>{u.full_name}</span>
-                          {u.cui_passport && (
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 font-mono font-medium">
-                              {u.cui_passport}
-                            </span>
-                          )}
+                      <div className="font-medium text-slate-900">{u.full_name}</div>
+                      <div className="mt-0.5 font-mono text-xs text-slate-500">{u.email}</div>
+                      {u.cui_passport && (
+                        <div className="mt-0.5 font-mono text-xs text-slate-400">
+                          {u.cui_passport}
                         </div>
-                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                          {u.email}
-                        </div>
-                      </div>
+                      )}
                     </Td>
 
-                    {/* 2. Contacto y Ubicación */}
                     <Td>
-                      <div className="py-0.5 space-y-0.5">
-                        <div className="text-slate-800 font-mono text-xs font-medium">
-                          {u.phone || "—"}
+                      <div className="tabular text-slate-800">{u.phone || "—"}</div>
+                      {location && (
+                        <div className="mt-0.5 max-w-xs truncate text-xs text-slate-500" title={location}>
+                          {location}
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate max-w-xs" title={contactLocationText}>
-                          {contactLocationText || "—"}
-                        </div>
-                      </div>
+                      )}
                     </Td>
 
-                    {/* 3. Rol */}
                     <Td>
-                      <div className="py-0.5 space-y-1">
-                        <div>
-                          <Badge color={u.role === "admin" || u.role === "superadmin" ? "indigo" : u.role === "teacher" ? "amber" : "slate"}>
-                            {u.role === "student" ? "Alumno" : u.role === "teacher" ? "Profesor" : u.role === "superadmin" ? "SuperAdmin" : "Admin"}
-                          </Badge>
+                      <Badge
+                        color={
+                          u.role === "admin" || u.role === "superadmin"
+                            ? "indigo"
+                            : u.role === "teacher"
+                              ? "amber"
+                              : "slate"
+                        }
+                      >
+                        {u.role === "student"
+                          ? "Alumno"
+                          : u.role === "teacher"
+                            ? "Profesor"
+                            : u.role === "superadmin"
+                              ? "Superadmin"
+                              : "Admin"}
+                      </Badge>
+                      {u.role === "teacher" && (
+                        <div className="mt-1">
+                          <TeacherQualificationsSubline teacherId={u.id} />
                         </div>
-                        {u.role === "teacher" && (
-                          <div className="text-[11px] text-slate-500">
-                            <TeacherQualificationsSubline teacherId={u.id} />
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </Td>
 
-                    {/* 4. Acciones */}
-                    <Td>
+                    <Td align="right">
                       <ActionMenu
                         items={[
                           ...(u.role === "student"
                             ? [
                                 {
-                                  label: "Estado de Cuenta",
+                                  label: "Estado de cuenta",
                                   onClick: () => setStatementStudent(u),
                                 },
                                 {
-                                  label: "Inscribir en Curso",
+                                  label: "Inscribir en curso",
                                   onClick: () => setEnrollStudentId(u.id),
                                 },
                               ]
@@ -270,17 +223,14 @@ export function UsersPanel() {
                           ...(u.role === "teacher"
                             ? [
                                 {
-                                  label: "Asignar Curso / Tarifas",
+                                  label: "Asignar curso y tarifas",
                                   onClick: () => setTeacherWizardId(u.id),
                                 },
                               ]
                             : []),
+                          { label: "Editar usuario", onClick: () => setEditing(u) },
                           {
-                            label: "Editar Usuario",
-                            onClick: () => setEditing(u),
-                          },
-                          {
-                            label: "Eliminar",
+                            label: "Eliminar usuario",
                             onClick: () => setToDelete(u),
                             danger: true,
                           },
@@ -417,8 +367,8 @@ function CreateUserModal({
         </ModalActions>
       }
     >
-      <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-        <Field label="Nombre Completo (*)" error={errors.full_name}>
+      <div className="space-y-4">
+        <Field label="Nombre completo" error={errors.full_name}>
           <Input
             placeholder="Ej. Carlos Mendoza"
             value={form.full_name}
@@ -426,7 +376,7 @@ function CreateUserModal({
           />
         </Field>
 
-        <Field label="Correo Electrónico (*)" error={errors.email}>
+        <Field label="Correo electrónico" error={errors.email}>
           <Input
             type="email"
             placeholder="carlos@ejemplo.com"
@@ -435,7 +385,7 @@ function CreateUserModal({
           />
         </Field>
 
-        <Field label="CUI o Pasaporte (*)" error={errors.cui_passport}>
+        <Field label="CUI o pasaporte" error={errors.cui_passport}>
           <Input
             placeholder="Ej. 2540 12345 0101 o A12345678"
             value={form.cui_passport}
@@ -443,18 +393,19 @@ function CreateUserModal({
           />
         </Field>
 
-        <Field label="Rol del Usuario">
-          <Select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-          >
-            <option value="student">🎓 Alumno / Estudiante</option>
-            <option value="teacher">👨‍🏫 Profesor / Docente</option>
-            <option value="admin">👑 Administrador</option>
+        <Field label="Rol">
+          <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <option value="student">Alumno</option>
+            <option value="teacher">Profesor</option>
+            <option value="admin">Administrador</option>
           </Select>
         </Field>
 
-        <Field label="Contraseña Inicial (*)" error={errors.password}>
+        <Field
+          label="Contraseña inicial"
+          error={errors.password}
+          hint={`Mínimo ${PASSWORD_MIN_LENGTH} caracteres. El usuario podrá cambiarla desde su perfil.`}
+        >
           <Input
             type="password"
             placeholder="••••••••"
@@ -463,7 +414,7 @@ function CreateUserModal({
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Teléfono">
             <Input
               placeholder="+502 5555-5555"
@@ -504,7 +455,7 @@ function TeacherQualificationsSubline({ teacherId }: { teacherId: number }) {
   const { data: languages = [] } = useLanguages();
 
   if (teacherLangs.length === 0) {
-    return <span className="text-[11px] text-slate-400">Todas las materias</span>;
+    return <span className="text-xs text-slate-500">Todas las materias</span>;
   }
 
   const qualifiedNames = teacherLangs
@@ -513,7 +464,10 @@ function TeacherQualificationsSubline({ teacherId }: { teacherId: number }) {
     .join(", ");
 
   return (
-    <span className="text-[11px] text-amber-700 font-medium truncate max-w-[220px]" title={qualifiedNames}>
+    <span
+      className="block max-w-[14rem] truncate text-xs text-slate-500"
+      title={qualifiedNames}
+    >
       {qualifiedNames}
     </span>
   );
@@ -608,7 +562,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         </ModalActions>
       }
     >
-      <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+      <div className="space-y-4">
         <Field label="Nombre completo">
           <Input
             value={form.full_name}
@@ -622,17 +576,14 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
             onChange={(e) => setForm({ ...form, email: e.target.value })}
           />
         </Field>
-        <Field label="CUI / Pasaporte (*)">
+        <Field label="CUI o pasaporte">
           <Input
             value={form.cui_passport}
             onChange={(e) => setForm({ ...form, cui_passport: e.target.value })}
           />
         </Field>
         <Field label="Rol">
-          <Select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-          >
+          <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
             <option value="student">Alumno</option>
             <option value="teacher">Profesor</option>
             <option value="admin">Administrador</option>
@@ -640,56 +591,56 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         </Field>
 
         {form.role === "teacher" && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
-            <div className="font-semibold text-xs text-amber-900 flex items-center gap-1.5">
-              <span>📚</span> Materias / Idiomas Cualificados
-            </div>
-            <div className="text-[11px] text-amber-800 leading-snug">
-              Selecciona las materias o idiomas que este profesor está cualificado para enseñar. Si dejas todas desmarcadas, estará habilitado para cualquier materia.
-            </div>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {languages.map((lang) => {
-                const isSelected = selectedLangIds.includes(lang.id);
-                return (
-                  <button
-                    key={lang.id}
-                    type="button"
-                    onClick={() => {
-                      if (isSelected) {
-                        setSelectedLangIds(selectedLangIds.filter((id) => id !== lang.id));
-                      } else {
-                        setSelectedLangIds([...selectedLangIds, lang.id]);
+          <>
+            <Field
+              label="Materias que puede impartir"
+              hint="Si no marcas ninguna, el profesor queda habilitado para cualquier materia."
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {languages.map((lang) => {
+                  const isSelected = selectedLangIds.includes(lang.id);
+                  return (
+                    <button
+                      key={lang.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() =>
+                        setSelectedLangIds(
+                          isSelected
+                            ? selectedLangIds.filter((id) => id !== lang.id)
+                            : [...selectedLangIds, lang.id],
+                        )
                       }
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition flex items-center gap-1 cursor-pointer ${
-                      isSelected
-                        ? "bg-amber-600 text-white border-amber-600 shadow-2xs font-semibold"
-                        : "bg-white text-slate-700 border-slate-200 hover:border-amber-300"
-                    }`}
-                  >
-                    <span>{isSelected ? "✓" : "+"}</span>
-                    <span>{lang.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                        isSelected
+                          ? "border-brand-600 bg-brand-600 text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      {lang.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            <Field label="Tope de horas semanales">
+              <Input
+                type="number"
+                placeholder="Ej. 20"
+                value={form.max_weekly_hours}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    max_weekly_hours: e.target.value === "" ? "" : Number(e.target.value),
+                  })
+                }
+              />
+            </Field>
+          </>
         )}
 
-        <Field label="Tope de horas semanales (Profesor)">
-          <Input
-            type="number"
-            placeholder="Ej. 20"
-            value={form.max_weekly_hours}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                max_weekly_hours: e.target.value === "" ? "" : Number(e.target.value),
-              })
-            }
-          />
-        </Field>
-        <Field label="Nueva contraseña (dejar en blanco para no cambiar)">
+        <Field label="Nueva contraseña" hint="Déjala en blanco para no cambiarla.">
           <Input
             type="password"
             placeholder="••••••••"
@@ -698,10 +649,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
           />
         </Field>
         <Field label="Teléfono">
-          <Input
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          />
+          <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </Field>
         <Field label="Dirección">
           <Input

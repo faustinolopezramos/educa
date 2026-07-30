@@ -1,6 +1,20 @@
 import { useState } from "react";
 
-import { ActionMenu, Button, Card, Field, Input, Table, Td, Th } from "../../components/ui";
+import {
+  ActionMenu,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  MetaItem,
+  PageHeader,
+  SearchInput,
+  Table,
+  Td,
+  Th,
+} from "../../components/ui";
+import { IconCalendar } from "../../components/icons";
 import { useCreateHoliday, useDeleteHoliday, useHolidays } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import { onMutationError } from "./shared";
@@ -18,41 +32,28 @@ export function HolidaysPanel() {
     return h.name.toLowerCase().includes(term) || h.date.includes(term);
   });
 
+  // Ordenados por fecha: un calendario que se lee de arriba abajo.
+  const sorted = [...filteredHolidays].sort((a, b) => a.date.localeCompare(b.date));
+
   return (
-    <div className="space-y-5">
-      {/* Header Dashboard Metrics Bar */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Días Festivos Registrados</div>
-          <div className="mt-1 font-serif text-2xl font-bold text-slate-900">{holidays.length}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Días sin clases lectivas</div>
-        </div>
+    <div>
+      {/* Antes esta pantalla abría con tres tarjetas KPI, de las cuales dos
+          mostraban texto fijo ("Automático", "Activo · Año académico 2026")
+          que no se calculaba a partir de ningún dato. */}
+      <PageHeader
+        title="Días festivos"
+        description="Las sesiones programadas saltan automáticamente estas fechas."
+        meta={<MetaItem value={holidays.length} label="días registrados" />}
+      />
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Impacto en Asistencias</div>
-          <div className="mt-1 font-serif text-2xl font-bold text-amber-700">Automático</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Omisión automática en sesiones</div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Calendario Lectivo</div>
-          <div className="mt-1 font-serif text-2xl font-bold text-brand-700">Activo</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Año académico 2026</div>
-        </div>
-      </div>
-
-      {/* Main Grid: Clean Creation Card + Filterable Table */}
-      <div className="grid gap-6 lg:grid-cols-3 items-start">
-        <Card className="lg:col-span-1 space-y-4 border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
+      <div className="grid items-start gap-5 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
           <div className="border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-sm">Nuevo Día Festivo</h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Las sesiones programadas omitirán automáticamente esta fecha.
-            </p>
+            <h3 className="text-sm font-semibold text-slate-900">Nuevo día festivo</h3>
           </div>
 
-          <div className="space-y-3.5 text-xs">
-            <Field label="Fecha del Festivo (*)">
+          <div className="mt-4 space-y-3.5">
+            <Field label="Fecha">
               <Input
                 type="date"
                 value={form.date}
@@ -60,75 +61,75 @@ export function HolidaysPanel() {
               />
             </Field>
 
-            <Field label="Nombre / Motivo (*)">
+            <Field label="Motivo">
               <Input
-                placeholder="Ej. Día de la Independencia, Asueto Oficial"
+                placeholder="Ej. Día de la Independencia"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </Field>
 
             <Button
-              className="w-full !py-2 text-xs font-semibold"
+              className="w-full"
               disabled={!form.date || !form.name.trim() || create.isPending}
               onClick={() =>
                 create.mutate(form, {
                   onSuccess: () => {
                     setForm({ date: "", name: "" });
-                    notify("Festivo registrado correctamente", "success");
+                    notify("Festivo registrado", "success");
                   },
                   onError: onMutationError("No se pudo crear el festivo"),
                 })
               }
             >
-              {create.isPending ? "Registrando…" : "+ Añadir Día Festivo"}
+              {create.isPending ? "Registrando…" : "Añadir día festivo"}
             </Button>
           </div>
         </Card>
 
-        {/* Minimalist Table Card */}
-        <Card className="lg:col-span-2 space-y-4 border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <Input
-              className="max-w-xs text-xs"
-              placeholder="Buscar por fecha o nombre de festivo…"
+        <Card padding="none" className="overflow-hidden lg:col-span-2">
+          <div className="border-b border-slate-200 p-2.5">
+            <SearchInput
+              className="max-w-xs"
+              placeholder="Buscar por fecha o motivo"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <span className="text-xs text-slate-500 font-medium">
-              {filteredHolidays.length} día(s) registrado(s)
-            </span>
           </div>
 
-          {filteredHolidays.length === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-400 italic">
-              No hay días festivos registrados que coincidan con la búsqueda.
-            </p>
+          {sorted.length === 0 ? (
+            <div className="p-6">
+              <EmptyState
+                icon={<IconCalendar className="h-5 w-5" />}
+                title={searchTerm ? "Ningún festivo coincide" : "Todavía no hay festivos"}
+                message={
+                  searchTerm
+                    ? "Prueba con otra fecha o motivo."
+                    : "Añade el primero para que las sesiones lo salten al generarse."
+                }
+              />
+            </div>
           ) : (
             <Table>
               <thead>
                 <tr>
-                  <Th>Fecha Lectiva Libre</Th>
-                  <Th>Motivo / Festividad</Th>
-                  <th className="bg-slate-50 px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Acción
-                  </th>
+                  <Th>Fecha</Th>
+                  <Th>Motivo</Th>
+                  <Th align="right">Acciones</Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredHolidays.map((h) => (
-                  <tr key={h.id} className="hover:bg-slate-50/70 transition">
+              <tbody className="divide-y divide-slate-100">
+                {sorted.map((h) => (
+                  <tr key={h.id} className="hover:bg-slate-50">
                     <Td>
-                      <span className="font-mono font-semibold text-slate-900">{h.date}</span>
+                      <span className="tabular font-medium text-slate-900">{h.date}</span>
                     </Td>
-                    <Td>
-                      <span className="font-medium text-slate-800">{h.name}</span>
-                    </Td>
-                    <td className="px-4 py-2.5 text-right text-slate-700">
+                    <Td>{h.name}</Td>
+                    <Td align="right">
                       <ActionMenu
                         items={[
                           {
-                            label: "Eliminar Día Festivo",
+                            label: "Eliminar día festivo",
                             onClick: () =>
                               del.mutate(h.id, {
                                 onSuccess: () => notify("Festivo eliminado", "success"),
@@ -138,7 +139,7 @@ export function HolidaysPanel() {
                           },
                         ]}
                       />
-                    </td>
+                    </Td>
                   </tr>
                 ))}
               </tbody>

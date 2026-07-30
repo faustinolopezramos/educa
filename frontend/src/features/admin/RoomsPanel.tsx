@@ -1,6 +1,10 @@
 import { useState } from "react";
 
-import { ActionMenu, Badge, Button, Card, ConfirmDialog, Field, Input, Table, Td, Th } from "../../components/ui";
+import {
+  ActionMenu, Badge, Button, Card, ConfirmDialog, EmptyState, Field, Input, MetaItem,
+  PageHeader, SearchInput, Table, Td, Th,
+} from "../../components/ui";
+import { IconDoor } from "../../components/icons";
 import { useCreateRoom, useDeleteRoom, useRooms, useUpdateRoom } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { Room } from "../../lib/types";
@@ -45,48 +49,41 @@ export function RoomsPanel() {
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header Dashboard Metrics Bar */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Total Aulas e Infraestructura</div>
-          <div className="mt-1 font-serif text-2xl font-bold text-slate-900">{rooms.length}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Espacios habilitados para docencia</div>
-        </div>
+    <div>
+      {/* Los recuentos viven en la cabecera. Antes ocupaban tres tarjetas KPI
+          a ancho completo, dos de ellas con valores fijos escritos a mano
+          ("Automático", "Activo") que no medían nada. */}
+      <PageHeader
+        title="Aulas"
+        description="Espacios físicos y salas virtuales disponibles para programar clases."
+        meta={
+          <>
+            <MetaItem value={rooms.length} label="en total" />
+            <MetaItem value={physicalCount} label="presenciales" />
+            <MetaItem value={virtualCount} label="virtuales" />
+          </>
+        }
+      />
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Aulas Físicas / Presenciales</div>
-          <div className="mt-1 font-serif text-2xl font-bold text-slate-800">{physicalCount}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Espacios físicos en sede</div>
-        </div>
-
-        <div className="rounded-2xl border border-brand-200 bg-brand-50/50 p-4 shadow-2xs">
-          <div className="text-xs text-brand-900 font-medium">Salas Virtuales Online</div>
-          <div className="mt-1 font-serif text-2xl font-bold text-brand-700">{virtualCount}</div>
-          <div className="text-[11px] text-brand-600 mt-0.5">Videoconferencias integradas</div>
-        </div>
-      </div>
-
-      {/* Main Grid: Clean Creation Card + Filterable Table */}
-      <div className="grid gap-6 lg:grid-cols-3 items-start">
-        <Card className="lg:col-span-1 space-y-4 border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
+      <div className="grid items-start gap-5 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
           <div className="border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-sm">Nueva Aula</h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Registra un aula física o sala de clases virtual.
+            <h3 className="text-sm font-semibold text-slate-900">Nueva aula</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Un aula física o una sala virtual.
             </p>
           </div>
 
-          <div className="space-y-3.5 text-xs">
-            <Field label="Nombre del Aula (*)">
+          <div className="mt-4 space-y-3.5">
+            <Field label="Nombre">
               <Input
-                placeholder="Ej. Aula 102, Sala Virtual Zoom A"
+                placeholder="Ej. Aula 102"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </Field>
 
-            <Field label="Capacidad de Alumnos (opcional)">
+            <Field label="Capacidad" hint="Déjala vacía si no hay límite.">
               <Input
                 type="number"
                 min={1}
@@ -101,65 +98,63 @@ export function RoomsPanel() {
               />
             </Field>
 
-            <label className="flex items-center gap-2 text-xs text-slate-800 font-medium cursor-pointer bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
               <input
                 type="checkbox"
-                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                 checked={form.is_virtual}
                 onChange={(e) => setForm({ ...form, is_virtual: e.target.checked })}
               />
-              <span>Es un aula virtual (online / síncrona)</span>
+              <span>Es una sala virtual</span>
             </label>
 
-            <Button
-              className="w-full !py-2 text-xs font-semibold"
-              disabled={create.isPending}
-              onClick={submit}
-            >
-              {create.isPending ? "Creando…" : "+ Registrar Aula"}
+            <Button className="w-full" disabled={create.isPending} onClick={submit}>
+              {create.isPending ? "Creando…" : "Registrar aula"}
             </Button>
           </div>
         </Card>
 
-        {/* Minimalist Table Card */}
-        <Card className="lg:col-span-2 space-y-4 border border-slate-200/80 rounded-2xl p-5 shadow-2xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <Input
-              className="max-w-xs text-xs"
-              placeholder="Buscar por nombre de aula…"
+        <Card padding="none" className="overflow-hidden lg:col-span-2">
+          <div className="border-b border-slate-200 p-2.5">
+            <SearchInput
+              className="max-w-xs"
+              placeholder="Buscar por nombre"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <span className="text-xs text-slate-500 font-medium">
-              {filteredRooms.length} espacio(s)
-            </span>
           </div>
 
           {filteredRooms.length === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-400 italic">
-              No hay aulas registradas que coincidan con los criterios de búsqueda.
-            </p>
+            <div className="p-6">
+              <EmptyState
+                icon={<IconDoor className="h-5 w-5" />}
+                title={searchTerm ? "Ningún aula coincide" : "Todavía no hay aulas"}
+                message={
+                  searchTerm
+                    ? "Prueba con otro nombre."
+                    : "Registra la primera con el formulario de la izquierda."
+                }
+              />
+            </div>
           ) : (
             <Table>
               <thead>
                 <tr>
-                  <Th>Aula / Espacio</Th>
-                  <Th>Capacidad</Th>
+                  <Th>Aula</Th>
+                  <Th align="right">Capacidad</Th>
                   <Th>Modalidad</Th>
-                  <th className="bg-slate-50 px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Acciones
-                  </th>
+                  <Th align="right">Acciones</Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
+              <tbody className="divide-y divide-slate-100">
                 {filteredRooms.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/70 transition">
+                  <tr key={r.id} className="hover:bg-slate-50">
                     <Td>
-                      <span className="font-bold text-slate-900">{r.name}</span>
+                      <span className="font-medium text-slate-900">{r.name}</span>
                     </Td>
-                    <Td>
-                      <span className="font-mono text-slate-700">
-                        {r.capacity ? `${r.capacity} alumnos` : "Sin límite"}
+                    <Td align="right">
+                      <span className="tabular">
+                        {r.capacity ? r.capacity : <span className="text-slate-400">Sin límite</span>}
                       </span>
                     </Td>
                     <Td>
@@ -167,28 +162,31 @@ export function RoomsPanel() {
                         {r.is_virtual ? "Virtual" : "Presencial"}
                       </Badge>
                     </Td>
-                    <td className="px-4 py-2.5 text-right text-slate-700">
+                    <Td align="right">
                       <ActionMenu
                         items={[
                           {
-                            label: r.is_virtual ? "Cambiar a Aula Física" : "Cambiar a Sala Virtual",
+                            label: r.is_virtual
+                              ? "Convertir en aula física"
+                              : "Convertir en sala virtual",
                             onClick: () =>
                               update.mutate(
                                 { id: r.id, is_virtual: !r.is_virtual },
                                 {
-                                  onSuccess: () => notify("Modalidad de aula actualizada", "success"),
+                                  onSuccess: () =>
+                                    notify("Modalidad del aula actualizada", "success"),
                                   onError: onMutationError("No se pudo actualizar"),
                                 },
                               ),
                           },
                           {
-                            label: "Eliminar Aula",
+                            label: "Eliminar aula",
                             onClick: () => setToDelete(r),
                             danger: true,
                           },
                         ]}
                       />
-                    </td>
+                    </Td>
                   </tr>
                 ))}
               </tbody>

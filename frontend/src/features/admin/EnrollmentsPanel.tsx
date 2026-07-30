@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
-  ActionMenu, Badge, Button, Card, ConfirmDialog, Input, Modal, ModalActions, Select,
+  ActionMenu, Badge, Button, Card, ConfirmDialog, EmptyState, Field, InlineAlert, Input,
+  MetaItem, Modal, ModalActions, PageHeader, SearchInput, SegmentedControl, Select,
+  Table, Th, Td,
 } from "../../components/ui";
+import { IconClipboard } from "../../components/icons";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
 import {
   useCourses,
@@ -94,98 +97,56 @@ export function EnrollmentsPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Executive Ultra-Clean Top Bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 font-bold text-lg">
-            🎓
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif text-xl font-bold text-slate-900">
-                Matrículas & Inscripciones
-              </h2>
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-                {enrollments.length} totales
-              </span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-              <span>🟢 Activas: <strong className="text-slate-800 font-semibold">{activeCount}</strong></span>
-              <span>·</span>
-              <span>🔴 En mora: <strong className="text-red-700 font-semibold">{overdueCount}</strong></span>
-            </div>
-          </div>
-        </div>
+    <div>
+      <PageHeader
+        title="Matrículas"
+        meta={
+          <>
+            <MetaItem value={enrollments.length} label="matrículas" />
+            <MetaItem value={activeCount} label="activas" />
+            <span>
+              <strong
+                className={`font-semibold ${overdueCount > 0 ? "text-red-700" : "text-slate-900"}`}
+              >
+                {overdueCount}
+              </strong>{" "}
+              <span className="text-slate-500">en mora</span>
+            </span>
+          </>
+        }
+        actions={<Button onClick={() => setWizardCourseId("new")}>Nueva matrícula</Button>}
+      />
 
-        <Button
-          className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs py-2 px-3.5 shadow-2xs"
-          onClick={() => setWizardCourseId("new")}
+      <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5">
+        <SearchInput
+          className="w-full sm:w-64"
+          placeholder="Buscar por alumno, código o curso"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        <SegmentedControl
+          value={selectedStatus}
+          onChange={setSelectedStatus}
+          options={[
+            { value: "all", label: "Todas", count: enrollments.length },
+            { value: "active", label: "Activas", count: activeCount },
+            { value: "overdue", label: "En mora", count: overdueCount },
+          ]}
+        />
+        <Select
+          className="w-full sm:w-56"
+          value={selectedCourseId}
+          onChange={(e) =>
+            setSelectedCourseId(e.target.value === "all" ? "all" : Number(e.target.value))
+          }
         >
-          + Nueva Inscripción
-        </Button>
-      </div>
-
-      {/* Sleek Toolbar */}
-      <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs text-xs">
-        <div className="w-full sm:w-72">
-          <Input
-            placeholder="🔍 Buscar por alumno o código…"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          {/* Status Segmented Switcher */}
-          <div className="flex items-center rounded-lg bg-slate-100 p-1 font-medium">
-            <button
-              onClick={() => setSelectedStatus("all")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                selectedStatus === "all"
-                  ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Todas ({enrollments.length})
-            </button>
-            <button
-              onClick={() => setSelectedStatus("active")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                selectedStatus === "active"
-                  ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Activas ({activeCount})
-            </button>
-            <button
-              onClick={() => setSelectedStatus("overdue")}
-              className={`rounded-md px-2.5 py-1 transition ${
-                selectedStatus === "overdue"
-                  ? "bg-white text-red-700 shadow-2xs font-semibold"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              En Mora ({overdueCount})
-            </button>
-          </div>
-
-          <Select
-            className="max-w-xs"
-            value={selectedCourseId}
-            onChange={(e) =>
-              setSelectedCourseId(e.target.value === "all" ? "all" : Number(e.target.value))
-            }
-          >
-            <option value="all">Todos los cursos</option>
-            {courses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        </div>
+          <option value="all">Todos los cursos</option>
+          {courses.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
       </div>
 
       {wizardCourseId !== null && (
@@ -197,9 +158,22 @@ export function EnrollmentsPanel() {
 
       {/* Course-Grouped Enrollment List */}
       {filteredEnrollments.length === 0 ? (
-        <Card className="py-12 text-center text-xs text-slate-400 italic">
-          No se encontraron inscripciones con los criterios seleccionados.
-        </Card>
+        <EmptyState
+          icon={<IconClipboard className="h-5 w-5" />}
+          title={
+            enrollments.length === 0 ? "Todavía no hay matrículas" : "Ninguna matrícula coincide"
+          }
+          message={
+            enrollments.length === 0
+              ? "Inscribe al primer alumno para empezar a llevar asistencia y pagos."
+              : "Prueba con otro curso, otro estado o limpia la búsqueda."
+          }
+          action={
+            enrollments.length === 0 ? (
+              <Button onClick={() => setWizardCourseId("new")}>Nueva matrícula</Button>
+            ) : undefined
+          }
+        />
       ) : (
         <div className="space-y-4">
           {Array.from(courseGroupMap.entries()).map(([cId, courseEnrollments]) => {
@@ -207,104 +181,94 @@ export function EnrollmentsPanel() {
             const courseTitle = courseObj?.name ?? `Curso #${cId}`;
 
             return (
-              <Card key={cId} className="p-0 rounded-2xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
-                {/* Course Group Header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/80 border-b border-slate-200/60">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900 text-sm">{courseTitle}</span>
-                    <span className="rounded-full bg-white border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                      {courseEnrollments.length} {courseEnrollments.length === 1 ? "alumno" : "alumnos"}
+              <Card key={cId} padding="none" className="overflow-hidden">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="truncate text-sm font-semibold text-slate-900">
+                      {courseTitle}
+                    </span>
+                    <span className="flex-none text-xs text-slate-500">
+                      {courseEnrollments.length}{" "}
+                      {courseEnrollments.length === 1 ? "alumno" : "alumnos"}
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setWizardCourseId(cId)}
-                    className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 hover:underline transition"
-                  >
-                    + Inscribir alumno a este curso
-                  </button>
+                  <Button variant="ghost" size="sm" onClick={() => setWizardCourseId(cId)}>
+                    Inscribir alumno
+                  </Button>
                 </div>
 
-                {/* Enrollment Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="border-b border-slate-200/60 bg-slate-50/50 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                      <tr>
-                        <th className="px-4 py-3">Código</th>
-                        <th className="px-4 py-3">Alumno</th>
-                        <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3">Pago</th>
-                        <th className="px-4 py-3">Asistencia</th>
-                        <th className="px-4 py-3">Finanzas</th>
-                        <th className="px-4 py-3 text-right">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {courseEnrollments.map((e) => {
-                        const studentName = students.find((s) => s.id === e.student_id)?.full_name ?? `#${e.student_id}`;
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Código</Th>
+                      <Th>Alumno</Th>
+                      <Th>Estado</Th>
+                      <Th>Pago</Th>
+                      <Th>Asistencia</Th>
+                      <Th align="right">Acciones</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {courseEnrollments.map((e) => {
+                      const studentName =
+                        students.find((s) => s.id === e.student_id)?.full_name ??
+                        `#${e.student_id}`;
 
-                        return (
-                          <tr key={e.id} className="hover:bg-slate-50/60 transition-colors">
-                            <td className="px-4 py-3">
-                              <span className="font-mono text-[11px] text-slate-500">{e.enrollment_code}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="font-semibold text-slate-900">{studentName}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <StatusSelect enrollment={e} />
-                            </td>
-                            <td className="px-4 py-3">
-                              <Badge
-                                color={
-                                  e.payment_status === "paid"
-                                    ? "green"
-                                    : e.payment_status === "overdue"
+                      return (
+                        <tr key={e.id} className="hover:bg-slate-50">
+                          <Td>
+                            <span className="font-mono text-xs text-slate-500">
+                              {e.enrollment_code}
+                            </span>
+                          </Td>
+                          <Td>
+                            <span className="font-medium text-slate-900">{studentName}</span>
+                          </Td>
+                          <Td>
+                            <StatusSelect enrollment={e} />
+                          </Td>
+                          <Td>
+                            <Badge
+                              color={
+                                e.payment_status === "paid"
+                                  ? "green"
+                                  : e.payment_status === "overdue"
                                     ? "red"
                                     : "amber"
-                                }
-                              >
-                                {e.payment_status === "paid" ? "Al día" : e.payment_status === "overdue" ? "En mora" : "Pendiente"}
-                              </Badge>
-                            </td>
-                            <td className="px-4 py-3">
-                              <AttendanceToggle enrollment={e} />
-                            </td>
-                            <td className="px-4 py-3">
-                              <button
-                                type="button"
-                                onClick={() => setFinances(e)}
-                                className="text-xs font-medium text-brand-600 hover:text-brand-800 hover:underline"
-                              >
-                                Pagos / Ledger
-                              </button>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <ActionMenu
-                                items={[
-                                  {
-                                    label: "Pagos / Historial Financial",
-                                    onClick: () => setFinances(e),
-                                  },
-                                  {
-                                    label: "Trasladar a otro curso",
-                                    onClick: () => setTransferEnrollment(e),
-                                  },
-                                  {
-                                    label: "Anular matrícula",
-                                    onClick: () => setDeleting(e),
-                                    danger: true,
-                                  },
-                                ]}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              }
+                            >
+                              {e.payment_status === "paid"
+                                ? "Al día"
+                                : e.payment_status === "overdue"
+                                  ? "En mora"
+                                  : "Pendiente"}
+                            </Badge>
+                          </Td>
+                          <Td>
+                            <AttendanceToggle enrollment={e} />
+                          </Td>
+                          <Td align="right">
+                            <ActionMenu
+                              items={[
+                                { label: "Pagos e historial", onClick: () => setFinances(e) },
+                                {
+                                  label: "Trasladar a otro curso",
+                                  onClick: () => setTransferEnrollment(e),
+                                },
+                                {
+                                  label: "Anular matrícula",
+                                  onClick: () => setDeleting(e),
+                                  danger: true,
+                                },
+                              ]}
+                            />
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
               </Card>
             );
           })}
@@ -387,10 +351,17 @@ function AttendanceToggle({ enrollment }: { enrollment: Enrollment }) {
   return (
     <Button
       variant="secondary"
-      className={`!px-2 !py-1 text-xs font-medium transition ${
-        blocked ? "text-red-700 bg-red-50 border-red-200" : "text-emerald-700 bg-emerald-50 border-emerald-200"
-      }`}
+      size="sm"
+      // El estado se lee en la palabra, no en un emoji cuyo color y forma
+      // cambia entre sistemas operativos.
+      className={blocked ? "border-red-200 bg-red-50 text-red-700" : ""}
+      aria-pressed={!blocked}
       disabled={update.isPending}
+      title={
+        blocked
+          ? "El alumno no puede registrar asistencia. Pulsa para permitirla."
+          : "El alumno puede registrar asistencia. Pulsa para bloquearla."
+      }
       onClick={() =>
         update.mutate(
           { id: enrollment.id, attendance_blocked: !blocked },
@@ -398,7 +369,7 @@ function AttendanceToggle({ enrollment }: { enrollment: Enrollment }) {
         )
       }
     >
-      {blocked ? "🚫 Bloqueado" : "✓ Permitido"}
+      {blocked ? "Bloqueada" : "Permitida"}
     </Button>
   );
 }
@@ -460,40 +431,31 @@ function TransferCourseModal({
         </ModalActions>
       }
     >
-      <div className="space-y-4 text-xs">
-        <div>
-          <label className="block text-slate-700 font-medium mb-1">Nuevo curso destino</label>
-          <Select
-            value={newCourseId}
-            onChange={(e) => setNewCourseId(Number(e.target.value))}
-          >
+      <div className="space-y-4">
+        <Field
+          label="Nuevo curso"
+          hint={
+            selectedCourse
+              ? `Comienza el ${selectedCourse.start_date || "— fecha sin definir"}.`
+              : undefined
+          }
+        >
+          <Select value={newCourseId} onChange={(e) => setNewCourseId(Number(e.target.value))}>
             {courses.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} {c.id === enrollment.course_id ? "(Curso Actual)" : ""}
+                {c.name}
+                {c.id === enrollment.course_id ? " — curso actual" : ""}
               </option>
             ))}
           </Select>
-        </div>
+        </Field>
 
-        {selectedCourse && (
-          <div className="rounded-lg bg-slate-50 p-3 space-y-2 border border-slate-200">
-            <div className="flex items-center justify-between text-slate-700">
-              <span>Fecha de Inicio:</span>
-              <strong className="font-medium">{selectedCourse.start_date || "No definida"}</strong>
-            </div>
-
-            {hasStarted && (
-              <div className="rounded border border-blue-200 bg-blue-50 p-2 text-[11px] text-blue-800 space-y-1">
-                <p className="font-semibold">ℹ️ Este curso ya está en desarrollo</p>
-                <ul className="list-disc list-inside space-y-0.5 text-blue-700">
-                  <li>Se mantendrán intactos todos los pagos registrados previamente en la matrícula.</li>
-                  <li>El alumno aparecerá inmediatamente en el portal docente y lista de asistencia del nuevo curso.</li>
-                </ul>
-              </div>
-            )}
-          </div>
+        {hasStarted && (
+          <InlineAlert type="info" title="Este curso ya empezó">
+            Los pagos registrados se conservan, y el alumno aparecerá de inmediato en la lista
+            de asistencia del nuevo curso.
+          </InlineAlert>
         )}
-
       </div>
     </Modal>
   );
@@ -578,39 +540,44 @@ function FinancesModal({
         </ModalActions>
       }
     >
-      <div className="space-y-4 text-xs">
+      <div className="space-y-5">
         {ledger && (
-          <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-3 text-center border border-slate-200">
-            <div>
-              <span className="text-slate-500 block">Total:</span>
-              <span className="font-semibold text-slate-900 text-sm">Q{ledger.charged.toFixed(2)}</span>
+          <div className="grid grid-cols-3 divide-x divide-slate-200 rounded-xl border border-slate-200 bg-slate-50">
+            <div className="px-3 py-2.5">
+              <div className="text-xs text-slate-500">Cobrado</div>
+              <div className="tabular text-base font-bold text-slate-900">
+                Q{ledger.charged.toFixed(2)}
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500 block">Cobrado:</span>
-              <span className="font-semibold text-emerald-700 text-sm">Q{ledger.paid.toFixed(2)}</span>
+            <div className="px-3 py-2.5">
+              <div className="text-xs text-slate-500">Pagado</div>
+              <div className="tabular text-base font-bold text-emerald-700">
+                Q{ledger.paid.toFixed(2)}
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500 block">Saldo:</span>
-              <span className="font-semibold text-red-700 text-sm">Q{ledger.balance.toFixed(2)}</span>
+            <div className="px-3 py-2.5">
+              <div className="text-xs text-slate-500">Saldo</div>
+              <div
+                className={`tabular text-base font-bold ${
+                  ledger.balance > 0 ? "text-red-700" : "text-slate-900"
+                }`}
+              >
+                Q{ledger.balance.toFixed(2)}
+              </div>
             </div>
           </div>
         )}
 
-        <div className="space-y-2 border-t border-slate-100 pt-3">
-          <h4 className="font-semibold text-slate-800">Registrar Movimiento</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-slate-600 mb-1">Tipo</label>
-              <Select
-                value={kind}
-                onChange={(e) => setKind(e.target.value as PaymentKind)}
-              >
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-slate-900">Registrar movimiento</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Tipo">
+              <Select value={kind} onChange={(e) => setKind(e.target.value as PaymentKind)}>
                 <option value="payment">Pago recibido</option>
                 <option value="charge">Cobro / cuota</option>
               </Select>
-            </div>
-            <div>
-              <label className="block text-slate-600 mb-1">Monto (Q)</label>
+            </Field>
+            <Field label="Monto (Q)">
               <Input
                 type="number"
                 min="0"
@@ -618,51 +585,45 @@ function FinancesModal({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
-            </div>
+            </Field>
           </div>
           {isCharge ? (
-            <div>
-              <label className="block text-slate-600 mb-1">
-                Vence el (opcional)
-              </label>
-              <Input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-              />
-              <p className="mt-1 text-[11px] text-slate-500">
-                Pasada esta fecha sin cubrir, la matrícula queda en mora y se
-                restringe el acceso a notas y certificados. Sin fecha, el cobro
-                nunca vence por sí solo.
-              </p>
-            </div>
+            <Field
+              label="Vence el (opcional)"
+              hint="Pasada esta fecha sin cubrir, la matrícula queda en mora y se restringe el acceso a notas y certificados. Sin fecha, el cobro no vence por sí solo."
+            >
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </Field>
           ) : (
-            <div>
-              <label className="block text-slate-600 mb-1">Método</label>
+            <Field label="Método">
               <Select value={method} onChange={(e) => setMethod(e.target.value)}>
                 <option value="transfer">Transferencia</option>
                 <option value="cash">Efectivo</option>
                 <option value="card">Tarjeta</option>
               </Select>
-            </div>
+            </Field>
           )}
-          <div>
-            <label className="block text-slate-600 mb-1">Notas (opcional)</label>
+          <Field label="Notas (opcional)">
             <Input
-              placeholder="Ej. No. Boleta"
+              placeholder="Ej. No. de boleta"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
-          </div>
+          </Field>
         </div>
 
-        <div className="space-y-2 border-t border-slate-100 pt-3">
+        <div className="space-y-2 border-t border-slate-100 pt-4">
           <div className="flex items-center justify-between">
-            <h4 className="font-semibold text-slate-800">Facturas ({invoices.length})</h4>
+            <h4 className="text-sm font-semibold text-slate-900">
+              Facturas{invoices.length > 0 && ` (${invoices.length})`}
+            </h4>
             <Button
               variant="secondary"
-              className="!py-1 text-xs"
+              size="sm"
               disabled={issueInvoice.isPending || (ledger?.paid ?? 0) <= 0}
+              title={
+                (ledger?.paid ?? 0) <= 0 ? "Solo se factura lo ya cobrado" : undefined
+              }
               onClick={() =>
                 issueInvoice.mutate(enrollment.id, {
                   onSuccess: () => notify("Factura emitida", "success"),
@@ -670,26 +631,28 @@ function FinancesModal({
                 })
               }
             >
-              + Emitir Factura
+              Emitir factura
             </Button>
           </div>
 
-          <div className="space-y-1 max-h-32 overflow-y-auto">
+          <div className="max-h-32 space-y-1 overflow-y-auto">
             {invoices.length === 0 ? (
-              <p className="text-slate-400 italic">No hay facturas emitidas.</p>
+              <p className="text-xs text-slate-500">Todavía no se ha emitido ninguna factura.</p>
             ) : (
               invoices.map((inv) => (
                 <div
                   key={inv.id}
-                  className="flex items-center justify-between rounded bg-slate-50 p-2 border border-slate-200"
+                  className="flex items-center justify-between rounded-lg border border-slate-200 px-2.5 py-1.5"
                 >
-                  <span className="font-mono text-slate-700">{inv.code} · Q{inv.total_amount.toFixed(2)}</span>
+                  <span className="font-mono text-xs text-slate-700">
+                    {inv.code} · Q{inv.total_amount.toFixed(2)}
+                  </span>
                   <Button
                     variant="ghost"
-                    className="!py-0.5 !px-2 text-xs"
+                    size="sm"
                     onClick={() => downloadInvoicePdf(inv.id, inv.code)}
                   >
-                    PDF 📄
+                    Descargar PDF
                   </Button>
                 </div>
               ))
