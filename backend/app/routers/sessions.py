@@ -10,15 +10,16 @@ from app.core.deps import (
     get_current_user,
     in_tenant,
     is_admin,
-    require_role,
+    require_staff_permission,
     student_course_ids,
     teacher_course_ids,
 )
 from app.models import (
     ClassSession,
     Course,
+    ENROLLMENT_HAS_ACCESS,
     Enrollment,
-    EnrollmentStatus,
+    Permission,
     Schedule,
     User,
     UserRole,
@@ -41,7 +42,7 @@ from app.services.sessions import (
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+staff_only = require_staff_permission(Permission.manage_schedules)
 
 
 # ---------------- Visibility ----------------
@@ -115,7 +116,7 @@ def get_session(
             select(Enrollment.id).where(
                 Enrollment.student_id == current_user.id,
                 Enrollment.course_id == sched.course_id,
-                Enrollment.status == EnrollmentStatus.active,
+                Enrollment.status.in_(ENROLLMENT_HAS_ACCESS),
                 Enrollment.attendance_blocked.is_(True),
             )
         )

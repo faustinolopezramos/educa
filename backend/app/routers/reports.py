@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import academy_today
 from app.core.database import get_db
-from app.core.deps import get_current_user, student_is_solvent
-from app.models import User, UserRole
+from app.core.deps import get_current_user, has_user_permission, student_is_solvent
+from app.models import Permission, User, UserRole
 from app.schemas.report import ReportRead
 from app.services.report_pdf import build_report_pdf
 from app.services.reports import build_report
@@ -35,6 +35,17 @@ def _report(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Regulariza tu pago para ver tu reporte de avance.",
+        )
+    # An assistant reports on the whole academy — names, attendance rates and
+    # at-risk lists — so `view_reports` has to actually gate it. This endpoint
+    # only ever checked authentication, which made the permission decorative:
+    # granting it changed nothing, and withholding it prevented nothing.
+    if user.role == UserRole.assistant and not has_user_permission(
+        user, Permission.view_reports
+    ):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Permiso insuficiente: requiere 'view_reports'",
         )
     try:
         return build_report(
@@ -89,9 +100,14 @@ def export_report(
         ["Reporte", report.period, str(report.date_from), str(report.date_to)]
     )
     writer.writerow([])
-    writer.writerow(["Sesiones (total / realizadas / canceladas)"])
+    writer.writerow(["Sesiones (total / realizadas / sin registrar / canceladas)"])
     writer.writerow(
-        [report.sessions_total, report.sessions_held, report.sessions_cancelled]
+        [
+            report.sessions_total,
+            report.sessions_held,
+            report.sessions_pending,
+            report.sessions_cancelled,
+        ]
     )
     writer.writerow([])
     writer.writerow(["Asistencia por curso"])

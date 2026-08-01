@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -9,27 +9,47 @@ from app.core.deps import (
     apply_tenant,
     get_current_user,
     in_tenant,
+    require_permission,
     require_role,
     teacher_course_ids,
 )
 from app.models import (
+    COURSE_ACCEPTS_ENROLMENT,
+    COURSE_STATUS_LABELS,
+    ENROLLMENT_OCCUPIES_SEAT,
+    ENROLLMENT_OPENING_STATES,
+    ENROLLMENT_STATUS_LABELS,
     Course,
     Enrollment,
+    enrollment_transition_allowed,
     EnrollmentStatus,
     Payment,
     PaymentKind,
+    Permission,
     User,
     UserRole,
 )
-from app.schemas.enrollment import EnrollmentCreate, EnrollmentRead, EnrollmentUpdate
+from app.schemas.enrollment import (
+    BulkEnrollOutcome,
+    BulkEnrollRequest,
+    BulkEnrollResult,
+    EnrollmentCreate,
+    EnrollmentRead,
+    EnrollmentUpdate,
+)
 from app.services.audit import record, snapshot
+from app.services.enrollments import (
+    attach_balances,
+    check_tenant_student_quota,
+    seats_taken,
+)
 from app.services.finance import refresh_payment_status
 from app.services.scheduling import student_schedule_conflicts
 from app.services.sequences import next_enrollment_code
 
 router = APIRouter(prefix="/enrollments", tags=["enrollments"])
 
-admin_only = require_role(UserRole.admin)
+admin_only = require_permission(Permission.manage_enrollments)
 
 
 def _in_scope_or_404(db: Session, actor: User, enrollment_id: int) -> Enrollment:
@@ -68,7 +88,7 @@ def list_enrollments(
             stmt = stmt.where(Enrollment.student_id == student_id)
     if course_id is not None:
         stmt = stmt.where(Enrollment.course_id == course_id)
-    return list(db.scalars(stmt).all())
+    return attach_balances(db, db.scalars(stmt).all())
 
 
 @router.post("", response_model=EnrollmentRead, status_code=status.HTTP_201_CREATED)
@@ -82,12 +102,41 @@ def create_enrollment(
     if not in_tenant(current_user, student) or student.role != UserRole.student:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "student_id must be a student")
 
+    if current_user.tenant_id is not None:
+        check_tenant_student_quota(db, current_user.tenant_id)
+
+
+    # A matrícula is born either "Inscrito" or "Activo". Accepting any status the
+    # caller sent let one be created already certified or withdrawn — states that
+    # describe how a course *ended*, applied to one that never began.
+    if payload.status not in ENROLLMENT_OPENING_STATES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Una matrícula sólo puede crearse como Inscrito o Activo",
+        )
+
     # Lock the course row so concurrent enrollments cannot exceed max_students.
     course = db.scalar(
         select(Course).where(Course.id == payload.course_id).with_for_update()
     )
     if not in_tenant(current_user, course):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+
+    # A draft has no timetable and no teacher yet; a closed or archived course
+    # is over. Seating a student in either produces a matrícula for something
+    # that cannot be delivered.
+    if course.status not in COURSE_ACCEPTS_ENROLMENT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    f"El curso está en «{COURSE_STATUS_LABELS[course.status]}» y no "
+                    "admite matrículas."
+                ),
+                "reason": "course_not_open",
+                "course_status": course.status.value,
+            },
+        )
 
     if db.scalar(
         select(Enrollment).where(
@@ -98,23 +147,13 @@ def create_enrollment(
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "Student already enrolled")
 
-    # Capacity check (active enrollments only).
-    active_count = (
-        db.scalar(
-            select(func.count())
-            .select_from(Enrollment)
-            .where(
-                Enrollment.course_id == payload.course_id,
-                Enrollment.status == EnrollmentStatus.active,
-            )
-        )
-        or 0
-    )
-    if active_count >= course.max_students:
+    # Capacity: every enrollment holding a seat, not just the activated ones.
+    taken = seats_taken(db, payload.course_id)
+    if taken >= course.max_students:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "message": f"Cupo lleno ({active_count}/{course.max_students})",
+                "message": f"Cupo lleno ({taken}/{course.max_students})",
                 "reason": "capacity",
             },
         )
@@ -168,9 +207,20 @@ def create_enrollment(
     # one the caller sent: a cuota already past its due date is delinquent from
     # the moment it exists.
     refresh_payment_status(db, enrollment)
+    # A matrícula appearing is the academic *and* financial entry point of the
+    # whole system — it seats a student, opens a ledger and mints a code. Editing
+    # and deleting one were both traced; creating one was the gap.
+    record(
+        db,
+        current_user,
+        "create",
+        "enrollment",
+        enrollment.id,
+        after=snapshot(enrollment),
+    )
     db.commit()
     db.refresh(enrollment)
-    return enrollment
+    return attach_balances(db, [enrollment])[0]
 
 
 @router.patch("/{enrollment_id}", response_model=EnrollmentRead)
@@ -183,12 +233,37 @@ def update_enrollment(
 ) -> Enrollment:
     enrollment = _in_scope_or_404(db, current_user, enrollment_id)
 
-    # Reactivating re-runs the checks that guarded the original enrollment:
-    # capacity, and the student's own timetable.
-    if (
-        payload.status == EnrollmentStatus.active
-        and enrollment.status != EnrollmentStatus.active
+    # The lifecycle is a path, not a set of interchangeable labels. Without this
+    # a PATCH could walk a matrícula straight from "Desistió" back to "Activo",
+    # or un-certify a student whose certificate had already been issued against
+    # that very state.
+    if payload.status is not None and not enrollment_transition_allowed(
+        enrollment.status, payload.status
     ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    f"No se puede pasar de "
+                    f"«{ENROLLMENT_STATUS_LABELS[enrollment.status]}» a "
+                    f"«{ENROLLMENT_STATUS_LABELS[payload.status]}»"
+                ),
+                "reason": "illegal_transition",
+                "from": enrollment.status.value,
+                "to": payload.status.value,
+            },
+        )
+
+    # Taking a seat back re-runs the checks that guarded the original enrollment:
+    # capacity, and the student's own timetable. A paused matrícula released its
+    # seat, so returning to the room has to find one free.
+    if (
+        payload.status is not None
+        and payload.status in ENROLLMENT_OCCUPIES_SEAT
+        and enrollment.status not in ENROLLMENT_OCCUPIES_SEAT
+    ):
+        if current_user.tenant_id is not None:
+            check_tenant_student_quota(db, current_user.tenant_id)
         course = db.scalar(
             select(Course).where(Course.id == enrollment.course_id).with_for_update()
         )
@@ -197,23 +272,12 @@ def update_enrollment(
         # through the API, but "cannot happen" is not a reason to fall open.
         if course is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
-        active_count = (
-            db.scalar(
-                select(func.count())
-                .select_from(Enrollment)
-                .where(
-                    Enrollment.course_id == enrollment.course_id,
-                    Enrollment.status == EnrollmentStatus.active,
-                    Enrollment.id != enrollment_id,
-                )
-            )
-            or 0
-        )
-        if active_count >= course.max_students:
+        taken = seats_taken(db, enrollment.course_id, exclude_enrollment_id=enrollment_id)
+        if taken >= course.max_students:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "message": f"Cupo lleno ({active_count}/{course.max_students})",
+                    "message": f"Cupo lleno ({taken}/{course.max_students})",
                     "reason": "capacity",
                 },
             )
@@ -244,7 +308,7 @@ def update_enrollment(
     )
     db.commit()
     db.refresh(enrollment)
-    return enrollment
+    return attach_balances(db, [enrollment])[0]
 
 
 @router.delete("/{enrollment_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -264,3 +328,168 @@ def delete_enrollment(
     )
     db.delete(enrollment)
     db.commit()
+
+
+@router.post("/bulk", response_model=BulkEnrollResult)
+def bulk_enroll(
+    payload: BulkEnrollRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+) -> BulkEnrollResult:
+    """Seat several students in one course, reporting on each.
+
+    Deliberately not all-or-nothing: seating thirty students where two clash is
+    twenty-eight successes and two problems to look at. A rollback would make
+    the admin find the two by hand and redo the other twenty-eight.
+
+    Every rule the single-student endpoint applies applies here too — course
+    state, duplicate matrícula, capacity, timetable clash — checked per student
+    and against a capacity that shrinks as the batch fills the room.
+    """
+    course = db.scalar(
+        select(Course).where(Course.id == payload.course_id).with_for_update()
+    )
+    if not in_tenant(current_user, course):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+    if course.status not in COURSE_ACCEPTS_ENROLMENT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    f"El curso está en «{COURSE_STATUS_LABELS[course.status]}» y no "
+                    "admite matrículas."
+                ),
+                "reason": "course_not_open",
+            },
+        )
+
+    taken = seats_taken(db, course.id)
+    year = datetime.now(timezone.utc).year
+    outcomes: list[BulkEnrollOutcome] = []
+
+    # Deduplicated, but in the order the admin picked them: the result list
+    # should read like the selection they made.
+    seen: set[int] = set()
+    ordered_ids = [
+        sid for sid in payload.student_ids if not (sid in seen or seen.add(sid))
+    ]
+
+    for student_id in ordered_ids:
+        student = db.get(User, student_id)
+        name = student.full_name if student else f"#{student_id}"
+
+        if current_user.tenant_id is not None:
+            try:
+                check_tenant_student_quota(db, current_user.tenant_id)
+            except HTTPException:
+                outcomes.append(
+                    BulkEnrollOutcome(
+                        student_id=student_id,
+                        student_name=name,
+                        ok=False,
+                        reason="Se ha alcanzado el límite de estudiantes de la academia",
+                    )
+                )
+                continue
+
+
+        if not in_tenant(current_user, student) or student.role != UserRole.student:
+            outcomes.append(
+                BulkEnrollOutcome(
+                    student_id=student_id,
+                    student_name=name,
+                    ok=False,
+                    reason="No es un alumno de esta academia",
+                )
+            )
+            continue
+
+        if db.scalar(
+            select(Enrollment.id).where(
+                Enrollment.student_id == student_id,
+                Enrollment.course_id == course.id,
+                Enrollment.status != EnrollmentStatus.withdrawn,
+            )
+        ):
+            outcomes.append(
+                BulkEnrollOutcome(
+                    student_id=student_id,
+                    student_name=name,
+                    ok=False,
+                    reason="Ya está matriculado en este curso",
+                )
+            )
+            continue
+
+        # Counted as the batch goes, so a batch bigger than the room fills it
+        # and then starts refusing rather than overshooting.
+        if taken >= course.max_students:
+            outcomes.append(
+                BulkEnrollOutcome(
+                    student_id=student_id,
+                    student_name=name,
+                    ok=False,
+                    reason=f"Cupo lleno ({taken}/{course.max_students})",
+                )
+            )
+            continue
+
+        if not payload.force:
+            clashes = student_schedule_conflicts(
+                db, student_id=student_id, course_id=course.id
+            )
+            if clashes:
+                outcomes.append(
+                    BulkEnrollOutcome(
+                        student_id=student_id,
+                        student_name=name,
+                        ok=False,
+                        reason="Su horario choca con otra clase suya",
+                    )
+                )
+                continue
+
+        enrollment = Enrollment(
+            student_id=student_id,
+            course_id=course.id,
+            amount=payload.amount,
+            enrollment_code=next_enrollment_code(db, year=year),
+        )
+        db.add(enrollment)
+        db.flush()
+        if enrollment.amount:
+            db.add(
+                Payment(
+                    enrollment_id=enrollment.id,
+                    kind=PaymentKind.charge,
+                    amount=enrollment.amount,
+                    due_date=payload.due_date,
+                    notes="Cuota inicial de matrícula",
+                )
+            )
+            db.flush()
+        refresh_payment_status(db, enrollment)
+        record(
+            db,
+            current_user,
+            "create",
+            "enrollment",
+            enrollment.id,
+            after=snapshot(enrollment),
+        )
+        taken += 1
+        outcomes.append(
+            BulkEnrollOutcome(
+                student_id=student_id,
+                student_name=name,
+                ok=True,
+                enrollment_id=enrollment.id,
+                enrollment_code=enrollment.enrollment_code,
+            )
+        )
+
+    db.commit()
+    created = sum(1 for o in outcomes if o.ok)
+    return BulkEnrollResult(
+        created=created, failed=len(outcomes) - created, outcomes=outcomes
+    )

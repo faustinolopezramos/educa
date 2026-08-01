@@ -19,16 +19,18 @@ from app.core.deps import (
     course_in_scope_or_404,
     get_current_user,
     is_admin,
-    require_role,
+    require_permission,
+    require_staff_permission,
     student_course_ids,
 )
 from app.integrations.meeting_factory import get_provider
 from app.models import (
     ClassSession,
     Course,
+    ENROLLMENT_HAS_ACCESS,
     Enrollment,
-    EnrollmentStatus,
     MeetingProvider,
+    Permission,
     ProviderName,
     Schedule,
     SessionStatus,
@@ -49,8 +51,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
-admin_only = require_role(UserRole.admin)
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+admin_only = require_permission(Permission.manage_schedules)
+staff_only = require_staff_permission(Permission.manage_schedules)
 
 
 # ---------------- Visibility ----------------
@@ -419,9 +421,7 @@ def get_session_lobby_info(
             select(Enrollment).where(
                 Enrollment.student_id == current_user.id,
                 Enrollment.course_id == schedule.course_id,
-                Enrollment.status.in_(
-                    [EnrollmentStatus.active, EnrollmentStatus.enrolled]
-                ),
+                Enrollment.status.in_(ENROLLMENT_HAS_ACCESS),
             )
         )
         if enrollment is None:
@@ -443,7 +443,13 @@ def get_session_lobby_info(
     # The schedule stores wall-clock times with no zone, meaning the academy's
     # own clock — so that is the zone they have to be read back in. Both sides of
     # every comparison below are timezone-aware.
-    tz = ZoneInfo(settings.academy_timezone)
+    tenant = db.get(Tenant, schedule.course.tenant_id) if (schedule.course and schedule.course.tenant_id) else None
+    tz_name = (tenant.timezone if tenant and tenant.timezone else None) or settings.academy_timezone
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo(settings.academy_timezone)
+
     return lobby_access(
         cancelled=session.status == SessionStatus.cancelled,
         start_dt=datetime.combine(session.date, schedule.start_time, tzinfo=tz),

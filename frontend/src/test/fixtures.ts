@@ -10,6 +10,7 @@ export const createUser = (overrides?: Partial<User>): User => ({
   phone: null,
   address: null,
   nationality_id: null,
+  is_active: true,
   ...overrides,
 });
 
@@ -32,12 +33,17 @@ export const createEnrollment = (overrides?: Partial<Enrollment>): Enrollment =>
   payment_status: "paid",
   attendance_blocked: false,
   amount: 0,
+  balance: 0,
   ...overrides,
 });
 
 export const createCourse = (overrides?: Partial<Course>): Course => ({
   id: 1,
   level_id: 1,
+  status: "open",
+  seats_taken: 0,
+  teacher_count: 1,
+  schedule_count: 1,
   name: "Test Course",
   start_date: "2026-01-01",
   end_date: "2026-03-31",

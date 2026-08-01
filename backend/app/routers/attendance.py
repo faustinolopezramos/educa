@@ -8,7 +8,7 @@ from app.core.deps import (
     apply_tenant,
     enrollment_in_scope_or_404,
     get_current_user,
-    require_role,
+    require_staff_permission,
     teacher_course_ids,
     teacher_teaches_course,
 )
@@ -16,18 +16,23 @@ from app.models import (
     Attendance,
     ClassSession,
     Course,
+    ENROLLMENT_OCCUPIES_SEAT,
+    ENROLLMENT_STATUS_LABELS,
     Enrollment,
+    Permission,
     Schedule,
+    SessionStatus,
     User,
     UserRole,
 )
 from app.schemas.attendance import AttendanceCreate, AttendanceRead, AttendanceUpdate
 from app.services.audit import record as record_audit
 from app.services.audit import snapshot
+from app.services.sessions import mark_held
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+staff_only = require_staff_permission(Permission.manage_grades)
 
 
 def _ensure_teacher_owns_enrollment(
@@ -62,7 +67,33 @@ def _session_for_enrollment(
             status.HTTP_400_BAD_REQUEST,
             "La sesión no pertenece al curso de esta matrícula",
         )
+    # Nobody attended a class that was called off, so a mark against one is
+    # always a mistake — usually the wrong row tapped on a list that still
+    # showed it. It also fed the reports, which count a cancelled session as
+    # not held while its attendance kept counting.
+    if session.status == SessionStatus.cancelled:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "La clase fue cancelada; no se puede pasar lista sobre ella",
+        )
     return session
+
+
+def _ensure_enrollment_is_live(enrollment: Enrollment) -> None:
+    """Refuse marks against a matrícula that is no longer in the room.
+
+    A student who dropped out, finished, or paused the course is not somebody
+    who can be present or absent from it — recording either quietly changes the
+    attendance rate the reports and the at-risk sweep are built on.
+    """
+    if enrollment.status not in ENROLLMENT_OCCUPIES_SEAT:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            (
+                f"La matrícula está en «{ENROLLMENT_STATUS_LABELS[enrollment.status]}»; "
+                "no se puede registrar asistencia sobre ella"
+            ),
+        )
 
 
 @router.get("", response_model=list[AttendanceRead])
@@ -109,7 +140,8 @@ def create_attendance(
     """
     enrollment = enrollment_in_scope_or_404(db, current_user, payload.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, enrollment)
-    _session_for_enrollment(db, payload.session_id, enrollment)
+    _ensure_enrollment_is_live(enrollment)
+    session = _session_for_enrollment(db, payload.session_id, enrollment)
 
     existing = db.scalar(
         select(Attendance).where(
@@ -129,6 +161,9 @@ def create_attendance(
         .returning(Attendance)
     )
     record = db.scalars(stmt, execution_options={"populate_existing": True}).one()
+    # Somebody was marked, so the class took place. This is the only signal the
+    # system has that a scheduled session actually happened — see `mark_held`.
+    mark_held(db, session)
     record_audit(
         db,
         current_user,

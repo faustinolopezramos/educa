@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type {
   Course,
+  CourseStatus,
   CourseTeacher,
   Language,
   Level,
@@ -208,3 +209,23 @@ export const useCourseStudents = (courseId?: number) =>
     queryFn: async () =>
       (await api.get<UserBrief[]>(`/catalog/courses/${courseId}/students`)).data,
   });
+
+/**
+ * Move a course through its lifecycle.
+ *
+ * A dedicated call rather than a field on `useUpdateCourse`: every move has
+ * prerequisites the API checks (a course cannot open without a timetable and a
+ * teacher, cannot be archived with students in it), and a generic patch would
+ * route around all of them.
+ */
+export function useChangeCourseStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: CourseStatus }) =>
+      (await api.post<Course>(`/catalog/courses/${id}/status`, { status })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["courses"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}

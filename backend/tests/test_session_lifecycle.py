@@ -82,7 +82,14 @@ def test_a_cancelled_session_does_not_count_as_held_in_the_report(client, world)
         params={"period": "month", "anchor": sessions[0]["date"]},
     ).json()
     assert body["sessions_cancelled"] >= 1
-    assert body["sessions_held"] == body["sessions_total"] - body["sessions_cancelled"]
+    # "Held" is no longer "everything that was not cancelled" — that counted
+    # classes still in the future. A cancelled session is neither held nor
+    # pending, and nothing here was ever registered, so held stays at zero.
+    assert body["sessions_held"] == 0
+    assert (
+        body["sessions_held"] + body["sessions_pending"] + body["sessions_cancelled"]
+        == body["sessions_total"]
+    )
 
 
 # ---------------- Reschedule ----------------

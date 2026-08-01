@@ -37,3 +37,42 @@ class EnrollmentRead(BaseModel):
     payment_status: PaymentStatus
     attendance_blocked: bool
     amount: float
+    # `charged − paid` from the ledger, so the list can show what is owed
+    # instead of only whether it is late. Populated by `attach_balances`;
+    # defaulted so a lone enrollment built without it still serialises.
+    balance: float = 0.0
+
+
+class BulkEnrollRequest(BaseModel):
+    """Seat several students in one course in a single pass."""
+
+    course_id: int
+    student_ids: list[int] = Field(min_length=1, max_length=200)
+    amount: float = Field(default=0.0, ge=0)
+    due_date: date | None = None
+    #: Enrol despite a timetable clash, the same override the single endpoint has.
+    force: bool = False
+
+
+class BulkEnrollOutcome(BaseModel):
+    """What happened to one student in the batch."""
+
+    student_id: int
+    student_name: str
+    ok: bool
+    enrollment_id: int | None = None
+    enrollment_code: str | None = None
+    reason: str | None = None
+
+
+class BulkEnrollResult(BaseModel):
+    """Per-student outcomes, not all-or-nothing.
+
+    Seating thirty students where two clash is twenty-eight successes and two
+    problems to look at — rolling the whole batch back would make the admin
+    hunt for the two by hand and repeat the other twenty-eight.
+    """
+
+    created: int
+    failed: int
+    outcomes: list[BulkEnrollOutcome]

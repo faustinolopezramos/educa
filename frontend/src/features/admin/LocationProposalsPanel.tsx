@@ -5,6 +5,7 @@ import { PromptModal } from "../../components/PromptModal";
 import { useLocationProposals, useReviewProposal, useRooms, useUsers } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import { onMutationError } from "./shared";
+import { modalityColor, modalityLabel } from "../../lib/format";
 
 export function LocationProposalsPanel() {
   const { data: pending = [] } = useLocationProposals("pending");
@@ -52,8 +53,8 @@ export function LocationProposalsPanel() {
               <tr key={p.id}>
                 <Td>{teacherName(p.proposed_by)}</Td>
                 <Td>
-                  <Badge color={p.modality === "virtual" ? "indigo" : "slate"}>
-                    {p.modality}
+                  <Badge color={modalityColor(p.modality)}>
+                    {modalityLabel(p.modality)}
                   </Badge>
                 </Td>
                 <Td>

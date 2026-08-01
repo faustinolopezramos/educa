@@ -5,6 +5,7 @@ import { PromptModal } from "../../components/PromptModal";
 import { useLocationProposals, useReviewProposal, useRooms, useUsers } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import { onMutationError } from "./shared";
+import { modalityColor, modalityLabel } from "../../lib/format";
 
 interface Props {
   onClose: () => void;
@@ -78,8 +79,8 @@ export function PendingModal({ onClose }: Props) {
                         <span className="font-semibold text-slate-900">{teacherName(p.proposed_by)}</span>
                       </Td>
                       <Td>
-                        <Badge color={p.modality === "virtual" ? "indigo" : "slate"}>
-                          {p.modality === "virtual" ? "💻 Virtual" : "🏫 Presencial"}
+                        <Badge color={modalityColor(p.modality)}>
+                          {modalityLabel(p.modality)}
                         </Badge>
                       </Td>
                       <Td>

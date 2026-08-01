@@ -1,9 +1,9 @@
 from datetime import date
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import TrackKind
+from app.models.enums import CourseStatus, TrackKind
 from app.schemas.base import PatchModel
 
 
@@ -70,8 +70,12 @@ class CourseCreate(BaseModel):
     name: str
     start_date: date | None = None
     end_date: date | None = None
-    max_students: int = 20
-    passing_score: float = 6.0
+    max_students: int = Field(default=20, ge=1)
+    passing_score: float = Field(default=6.0, ge=0, le=10)
+    # A course is born a draft: it has no timetable and no teacher yet, so it
+    # cannot honestly be offered to anybody. `POST /catalog/courses/{id}/status`
+    # opens it once it does.
+    status: CourseStatus = CourseStatus.draft
 
 
 class CourseUpdate(PatchModel):
@@ -87,8 +91,11 @@ class CourseUpdate(PatchModel):
     name: str | None = None
     start_date: date | None = None
     end_date: date | None = None
-    max_students: int | None = None
-    passing_score: float | None = None
+    max_students: int | None = Field(default=None, ge=1)
+    passing_score: float | None = Field(default=None, ge=0, le=10)
+    # Deliberately absent: status moves through `POST /courses/{id}/status`,
+    # which checks what the move requires. Letting a generic PATCH set it would
+    # route around every one of those checks.
 
 
 class CourseRead(BaseModel):
@@ -96,7 +103,25 @@ class CourseRead(BaseModel):
     id: int
     level_id: int
     name: str
+    status: CourseStatus
     start_date: date | None
     end_date: date | None
     max_students: int
     passing_score: float
+    # Filled by `attach_course_stats` on the list endpoint: how full the course
+    # is, so the panel does not have to count enrolments client-side.
+    seats_taken: int = 0
+    teacher_count: int = 0
+    schedule_count: int = 0
+
+
+class CourseStatusChange(BaseModel):
+    status: CourseStatus
+
+
+class CourseStatusRefusal(BaseModel):
+    """What the API answers when a move is legal but not yet earned."""
+
+    reason: str
+    message: str
+    blockers: list[str]

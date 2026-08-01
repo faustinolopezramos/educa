@@ -149,13 +149,65 @@ def test_payments_and_invoices_are_admin_only(client, world):
     assert res.status_code == 403
 
 
-def test_enrollment_status_covers_the_five_stakeholder_values(client, world):
+def test_the_lifecycle_walks_forward_through_the_five_stakeholder_values(
+    client, world
+):
+    """The five states are a path, not five interchangeable labels.
+
+    This used to assert that *any* status could be set from any other, which is
+    exactly what let a matrícula be walked back from "Desistió" to "Activo".
+    """
     admin = auth(client, "admin@test.com")
-    for value in ("enrolled", "active", "inactive", "certified", "withdrawn"):
+    enrollment_id = world["enrollment"].id
+
+    # active → inactive → active → certified is the long way round, and legal.
+    for value in ("inactive", "active", "certified"):
         res = client.patch(
-            f"/enrollments/{world['enrollment'].id}",
-            headers=admin,
-            json={"status": value},
+            f"/enrollments/{enrollment_id}", headers=admin, json={"status": value}
         )
         assert res.status_code == 200, f"{value}: {res.text}"
         assert res.json()["status"] == value
+
+
+def test_a_terminal_status_cannot_be_walked_back(client, world):
+    admin = auth(client, "admin@test.com")
+    enrollment_id = world["enrollment"].id
+
+    assert (
+        client.patch(
+            f"/enrollments/{enrollment_id}", headers=admin, json={"status": "withdrawn"}
+        ).status_code
+        == 200
+    )
+    res = client.patch(
+        f"/enrollments/{enrollment_id}", headers=admin, json={"status": "active"}
+    )
+    assert res.status_code == 409, res.text
+    assert res.json()["detail"]["reason"] == "illegal_transition"
+
+
+def test_resending_the_status_it_already_has_is_a_no_op(client, world):
+    """A PATCH that carries the current status alongside another field — which
+    is what a form submitting every field does — must not be read as a move."""
+    admin = auth(client, "admin@test.com")
+    res = client.patch(
+        f"/enrollments/{world['enrollment'].id}",
+        headers=admin,
+        json={"status": "active", "amount": 25.0},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["amount"] == 25.0
+
+
+def test_an_enrollment_cannot_be_born_in_a_terminal_state(client, world):
+    admin = auth(client, "admin@test.com")
+    res = client.post(
+        "/enrollments",
+        headers=admin,
+        json={
+            "student_id": world["outsider"].id,
+            "course_id": world["course_b"].id,
+            "status": "certified",
+        },
+    )
+    assert res.status_code == 400, res.text

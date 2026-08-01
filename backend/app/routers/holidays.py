@@ -6,13 +6,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import apply_tenant, get_current_user, in_tenant, require_role
-from app.models import AcademicHoliday, User, UserRole
+from app.core.deps import (
+    apply_tenant,
+    get_current_user,
+    in_tenant,
+    require_permission,
+)
+from app.models import AcademicHoliday, Permission, User, UserRole
 from app.schemas.holiday import HolidayCreate, HolidayRead
+from app.services.audit import record, snapshot
 
 router = APIRouter(prefix="/holidays", tags=["holidays"])
 
-admin_only = require_role(UserRole.admin)
+admin_only = require_permission(Permission.manage_catalog)
 
 
 @router.get("", response_model=list[HolidayRead])
@@ -38,6 +44,10 @@ def create_holiday(
         date=payload.date, name=payload.name, tenant_id=current_user.tenant_id
     )
     db.add(holiday)
+    db.flush()
+    # Adding or removing a closed day changes which classes get generated at
+    # all, so it is as much an academic decision as a calendar one.
+    record(db, current_user, "create", "holiday", holiday.id, after=snapshot(holiday))
     try:
         db.commit()
     except IntegrityError:
@@ -56,5 +66,6 @@ def delete_holiday(
     holiday = db.get(AcademicHoliday, holiday_id)
     if not in_tenant(current_user, holiday):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Holiday not found")
+    record(db, current_user, "delete", "holiday", holiday.id, before=snapshot(holiday))
     db.delete(holiday)
     db.commit()

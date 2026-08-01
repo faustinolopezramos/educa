@@ -19,9 +19,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    ENROLLMENT_OCCUPIES_SEAT,
     Course,
     Enrollment,
-    EnrollmentStatus,
     Level,
     Schedule,
     TeacherAvailability,
@@ -234,11 +234,15 @@ def room_conflicts(
 def student_schedule_conflicts(
     db: Session, student_id: int, course_id: int
 ) -> list[Schedule]:
-    """Schedules of the student's active courses that clash with `course_id`.
+    """Schedules of the student's current courses that clash with `course_id`.
 
     Compares every schedule of the target course against every schedule of the
-    courses where the student already has an *active* enrollment, taking the
-    course term into account (a finished course cannot clash with a new one).
+    courses where the student already holds a seat, taking the course term into
+    account (a finished course cannot clash with a new one).
+
+    Seat-holding rather than strictly `active` is the right test: a student can
+    only be in one room at a time, and a course they are merely "Inscrito" in
+    will still expect them in that room.
     """
     target = list(
         db.scalars(select(Schedule).where(Schedule.course_id == course_id)).all()
@@ -250,7 +254,7 @@ def student_schedule_conflicts(
         db.scalars(
             select(Enrollment.course_id).where(
                 Enrollment.student_id == student_id,
-                Enrollment.status == EnrollmentStatus.active,
+                Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
                 Enrollment.course_id != course_id,
             )
         ).all()

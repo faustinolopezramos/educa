@@ -9,12 +9,12 @@ from app.core.deps import (
     apply_tenant,
     get_current_user,
     in_tenant,
-    require_role,
+    require_permission,
     student_course_ids,
     teacher_teaches_course,
 )
 from app.core.http import commit_or_conflict
-from app.models import Course, Room, Schedule, User, UserRole
+from app.models import Course, Permission, Room, Schedule, User, UserRole
 from app.schemas.schedule import (
     ConflictCheck,
     ConflictInfo,
@@ -35,7 +35,7 @@ from app.services.scheduling import (
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
-admin_only = require_role(UserRole.admin)
+admin_only = require_permission(Permission.manage_schedules)
 
 
 def _to_read(schedule: Schedule, user: User) -> ScheduleRead:

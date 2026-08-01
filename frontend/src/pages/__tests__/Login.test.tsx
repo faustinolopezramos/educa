@@ -30,6 +30,7 @@ describe("Login", () => {
       login: mockLogin,
       logout: vi.fn(),
       hasRole: vi.fn(),
+      hasPermission: vi.fn(),
       updateUser: vi.fn(),
     });
   });

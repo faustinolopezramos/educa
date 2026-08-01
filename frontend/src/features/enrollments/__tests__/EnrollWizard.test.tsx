@@ -1,102 +1,140 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
 import { render, screen, fireEvent, waitFor } from "../../../test/utils";
 import { EnrollWizard } from "../EnrollWizard";
 import * as queries from "../../../lib/queries";
+import { createCourse, createUser } from "../../../test/fixtures";
 
 vi.mock("../../../lib/queries");
 
+/**
+ * Enrolling is one screen that finishes the job.
+ *
+ * These replace the tests of the previous design, which asserted a
+ * single-student form that offered every course in the academy — including the
+ * drafts and closed ones the API now refuses — and counted free seats itself
+ * over `status === "active"` while the cupo counts anyone holding a seat.
+ */
 describe("EnrollWizard", () => {
-  let mockOnClose: any;
+  let onClose: ReturnType<typeof vi.fn>;
+  let bulkMutate: ReturnType<typeof vi.fn>;
+
+  const openCourse = createCourse({
+    id: 1,
+    name: "English A1",
+    status: "open",
+    max_students: 20,
+    seats_taken: 3,
+  });
+  const draftCourse = createCourse({
+    id: 2,
+    name: "English B2 (preparando)",
+    status: "draft",
+  });
+  const closedCourse = createCourse({
+    id: 3,
+    name: "Francés A1 (terminado)",
+    status: "closed",
+  });
+
+  const ana = createUser({ id: 10, full_name: "Ana Pérez", email: "ana@test.com" });
+  const luis = createUser({ id: 11, full_name: "Luis Gómez", email: "luis@test.com" });
 
   beforeEach(() => {
-    mockOnClose = vi.fn();
+    onClose = vi.fn();
+    bulkMutate = vi.fn();
+
     vi.mocked(queries.useCourses).mockReturnValue({
-      data: [
-        { id: 1, name: "English A1", level_id: 1, start_date: "2026-01-01", end_date: "2026-03-31", max_students: 20, passing_score: 6.0 },
-      ],
-      isLoading: false,
-      error: null,
-    } as any);
-
-    vi.mocked(queries.useUsers).mockReturnValue({
-      data: [
-        { id: 1, email: "student@educa.com", full_name: "Test Student", role: "student", timezone: "UTC" },
-      ],
-      isLoading: false,
-      error: null,
-    } as any);
-
-    vi.mocked(queries.useCreateEnrollment).mockReturnValue({
-      mutate: vi.fn().mockResolvedValue({}),
-      isPending: false,
-    } as any);
-
+      data: [openCourse, draftCourse, closedCourse],
+    } as never);
+    vi.mocked(queries.useUsers).mockReturnValue({ data: [ana, luis] } as never);
+    vi.mocked(queries.usePublicTeachers).mockReturnValue({ data: [] } as never);
+    vi.mocked(queries.useEnrollments).mockReturnValue({ data: [] } as never);
+    vi.mocked(queries.useSchedules).mockReturnValue({ data: [] } as never);
     vi.mocked(queries.useCreateUser).mockReturnValue({
-      mutateAsync: vi.fn().mockResolvedValue({ id: 99, full_name: "Nuevo Alumno", email: "nuevo@test.com" }),
+      mutateAsync: vi.fn(),
       isPending: false,
-    } as any);
-
-    vi.mocked(queries.useEnrollments).mockReturnValue({
-      data: [],
-      isLoading: false,
-      error: null,
-    } as any);
-
-    vi.mocked(queries.useSchedules).mockReturnValue({
-      data: [],
-      isLoading: false,
-      error: null,
-    } as any);
+    } as never);
+    vi.mocked(queries.useBulkEnroll).mockReturnValue({
+      mutate: bulkMutate,
+      isPending: false,
+    } as never);
   });
 
-  it("shows student and course on a single screen", () => {
-    render(<EnrollWizard onClose={mockOnClose} />);
-
-    expect(screen.getByText("Inscribir Alumno al Curso")).toBeInTheDocument();
-    expect(screen.getByText("Alumno")).toBeInTheDocument();
-    expect(screen.getByText("Curso")).toBeInTheDocument();
-  });
-
-  it("keeps the submit button disabled until student and course are chosen", async () => {
-    render(<EnrollWizard onClose={mockOnClose} />);
-
-    const submit = screen.getByRole("button", { name: /inscribir al curso/i });
-    expect(submit).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("button", { name: /nuevo/i }));
-    fireEvent.change(screen.getByPlaceholderText("Ej. María Fernanda López"), {
-      target: { value: "Nuevo Alumno" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("maria@ejemplo.com"), {
-      target: { value: "nuevo@test.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText(/2540 12345 0101/i), {
-      target: { value: "1234567890101" },
-    });
-
-    // Student is filled in but no course yet — still blocked.
-    expect(submit).toBeDisabled();
+  it("offers only the courses that would accept somebody", async () => {
+    render(<EnrollWizard onClose={onClose} />);
 
     fireEvent.click(screen.getByRole("button", { name: /buscar un curso/i }));
-    fireEvent.click(await screen.findByRole("option", { name: /English A1/ }));
 
-    await waitFor(() => expect(submit).toBeEnabled());
+    expect(await screen.findByRole("option", { name: /English A1/ })).toBeInTheDocument();
+    // A draft has no timetable and a closed course is over: both are refused by
+    // the API, so offering them would be a picker that leads to a 409.
+    expect(screen.queryByRole("option", { name: /preparando/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /terminado/ })).not.toBeInTheDocument();
   });
 
-  it("preselects the course it is opened with", () => {
-    render(<EnrollWizard initialCourseId={1} onClose={mockOnClose} />);
-
-    expect(screen.getByText("English A1")).toBeInTheDocument();
-    // The pinned footer reports the live capacity of the preselected course.
-    expect(screen.getByText("20 cupos libres en English A1")).toBeInTheDocument();
+  it("reports free seats from the server count, not its own", async () => {
+    render(<EnrollWizard initialCourseId={1} onClose={onClose} />);
+    // 20 offered, 3 held → 17. Counting `active` client-side used to promise
+    // seats that were already taken.
+    expect(await screen.findByText(/17 cupos libres en English A1/)).toBeInTheDocument();
   });
 
-  it("should close wizard on cancel", () => {
-    render(<EnrollWizard onClose={mockOnClose} />);
+  it("stays blocked until there is at least one student and a course", () => {
+    render(<EnrollWizard onClose={onClose} />);
+    expect(screen.getByRole("button", { name: /^inscribir$/i })).toBeDisabled();
+  });
 
-    const cancelButton = screen.getByRole("button", { name: /cancelar/i });
-    fireEvent.click(cancelButton);
+  it("enrols one student and several through the same flow", async () => {
+    render(<EnrollWizard initialCourseId={1} initialStudentIds={[10, 11]} onClose={onClose} />);
 
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(screen.getByText("Inscribir 2 alumnos")).toBeInTheDocument();
+    expect(screen.getByText("Ana Pérez")).toBeInTheDocument();
+    expect(screen.getByText("Luis Gómez")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^inscribir$/i }));
+    await waitFor(() => expect(bulkMutate).toHaveBeenCalled());
+    expect(bulkMutate.mock.calls[0][0]).toMatchObject({
+      course_id: 1,
+      student_ids: [10, 11],
+    });
+  });
+
+  it("carries the cuota so finance does not need a second trip", async () => {
+    render(<EnrollWizard initialCourseId={1} initialStudentIds={[10]} onClose={onClose} />);
+
+    // Queried by role, not by label: `Field` renders a <label> that is not
+    // associated with its control, so `getByLabelText` finds nothing. That gap
+    // is app-wide and worth fixing on its own, not as a side effect here.
+    fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "350" } });
+    fireEvent.click(screen.getByRole("button", { name: /^inscribir$/i }));
+
+    await waitFor(() => expect(bulkMutate).toHaveBeenCalled());
+    expect(bulkMutate.mock.calls[0][0]).toMatchObject({ amount: 350 });
+  });
+
+  it("refuses to submit more students than there are seats", () => {
+    const tight = createCourse({ id: 1, name: "English A1", status: "open", max_students: 4, seats_taken: 3 });
+    vi.mocked(queries.useCourses).mockReturnValue({ data: [tight] } as never);
+
+    render(<EnrollWizard initialCourseId={1} initialStudentIds={[10, 11]} onClose={onClose} />);
+
+    expect(screen.getByRole("button", { name: /^inscribir$/i })).toBeDisabled();
+    expect(screen.getByText(/sólo quedan 1 cupos/i)).toBeInTheDocument();
+  });
+
+  it("says so when the academy has nothing open to enrol into", () => {
+    vi.mocked(queries.useCourses).mockReturnValue({
+      data: [draftCourse, closedCourse],
+    } as never);
+
+    render(<EnrollWizard onClose={onClose} />);
+    expect(screen.getByText(/ningún curso admite matrícula/i)).toBeInTheDocument();
+  });
+
+  it("closes on cancel", () => {
+    render(<EnrollWizard onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: /cancelar/i }));
+    expect(onClose).toHaveBeenCalled();
   });
 });

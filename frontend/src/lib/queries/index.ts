@@ -1,3 +1,4 @@
+export { useDashboard } from "./dashboard";
 export {
   useAttendance,
   useVisibleAttendance,
@@ -27,12 +28,14 @@ export {
   useAssignCourseTeacher,
   useUnassignCourseTeacher,
   useCourseStudents,
+  useChangeCourseStatus,
 } from "./catalog";
 export {
   useEnrollments,
   useCreateEnrollment,
   useUpdateEnrollment,
   useDeleteEnrollment,
+  useBulkEnroll,
 } from "./enrollments";
 export {
   useGrades,
@@ -116,6 +119,8 @@ export {
   useTeacherAvailability,
   useAddAvailability,
   useDeleteAvailability,
+  useTeacherAssignments,
+  useReassignTeacher,
 } from "./teachers";
 export {
   useUsers,

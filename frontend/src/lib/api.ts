@@ -132,6 +132,25 @@ api.interceptors.response.use(
   },
 );
 
+/**
+ * The structured `detail` of a FastAPI error, when there is one.
+ *
+ * Several endpoints answer a refusal with more than a sentence — the courses
+ * still to reassign, the prerequisites a course has not met, the slots that
+ * clash. `apiErrorMessage` flattens all of that to one line; this hands the
+ * caller the object so it can show the list instead.
+ */
+export function apiErrorDetail(
+  error: unknown,
+): Record<string, unknown> | null {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    return detail as Record<string, unknown>;
+  }
+  return null;
+}
+
 /** Extracts a human-readable message from a FastAPI error response. */
 export function apiErrorMessage(error: unknown, fallback = "Ocurrió un error"): string {
   const detail = (error as { response?: { data?: { detail?: unknown } } })?.response

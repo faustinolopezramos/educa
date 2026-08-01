@@ -4,21 +4,26 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
+    student_course_ids,
     apply_tenant,
     get_current_user,
     in_tenant,
+    require_permission,
     require_role,
+    require_staff_permission,
     teacher_teaches_course,
 )
 from app.core.http import commit_or_conflict
 from app.models import (
+    COURSE_IS_ARCHIVED,
+    ENROLLMENT_OCCUPIES_SEAT,
     Course,
     CourseTeacher,
     Enrollment,
-    EnrollmentStatus,
     Language,
     Level,
     Nationality,
+    Permission,
     Schedule,
     User,
     UserRole,
@@ -26,6 +31,7 @@ from app.models import (
 from app.schemas.catalog import (
     CourseCreate,
     CourseRead,
+    CourseStatusChange,
     CourseUpdate,
     LanguageCreate,
     LanguageRead,
@@ -40,12 +46,15 @@ from app.schemas.catalog import (
 from app.schemas.teacher import CourseTeacherAssign, CourseTeacherRead
 from app.schemas.user import UserBrief
 from app.services.audit import record, snapshot
+from app.services.courses import attach_course_stats, check_transition
+from app.services.enrollments import seats_taken
 from app.services.scheduling import teacher_qualified_for_course
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
-admin_only = require_role(UserRole.admin)
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+admin_only = require_permission(Permission.manage_catalog)
+teacher_mgmt_only = require_permission(Permission.manage_teachers)
+staff_only = require_staff_permission(Permission.manage_catalog)
 # The nationality list is installation-wide, not one academy's data, so editing
 # it is not an academy admin's call: a rename or a delete there lands on every
 # other academy's student records (`users.nationality_id` is ON DELETE SET NULL).
@@ -332,13 +341,71 @@ def delete_level(
 @router.get("/courses", response_model=list[CourseRead])
 def list_courses(
     level_id: int | None = None,
+    status_in: str | None = None,
+    include_archived: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[Course]:
+) -> list[CourseRead]:
+    """The academy's courses, with the numbers the course list is built from.
+
+    Archived courses are kept out unless asked for: they exist for the record,
+    and leaving them in the default list makes the catalog grow forever with
+    things nobody can act on.
+    """
     stmt = apply_tenant(select(Course), Course.tenant_id, current_user)
     if level_id is not None:
         stmt = stmt.where(Course.level_id == level_id)
-    return list(db.scalars(stmt).all())
+    if status_in:
+        wanted = [s.strip() for s in status_in.split(",") if s.strip()]
+        stmt = stmt.where(Course.status.in_(wanted))
+    elif not include_archived:
+        stmt = stmt.where(Course.status.notin_(COURSE_IS_ARCHIVED))
+    # A student only ever sees courses they can actually reach.
+    if current_user.role == UserRole.student:
+        stmt = stmt.where(Course.id.in_(student_course_ids(db, current_user.id) or [-1]))
+    return attach_course_stats(db, db.scalars(stmt).all())
+
+
+@router.post("/courses/{course_id}/status", response_model=CourseRead)
+def change_course_status(
+    course_id: int,
+    payload: CourseStatusChange,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+) -> CourseRead:
+    """Move a course through its lifecycle, if the move has been earned.
+
+    Deliberately its own endpoint rather than a field on `PATCH /courses/{id}`:
+    every move here has prerequisites, and a generic patch would route around
+    all of them.
+    """
+    course = _course_or_404(db, current_user, course_id)
+    refusal = check_transition(db, course, payload.status)
+    if refusal is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "reason": refusal.reason,
+                "message": refusal.message,
+                "blockers": refusal.blockers,
+                "from": course.status.value,
+                "to": payload.status.value,
+            },
+        )
+    before = snapshot(course)
+    course.status = payload.status
+    record(
+        db,
+        current_user,
+        "status_change",
+        "course",
+        course.id,
+        before=before,
+        after=snapshot(course),
+    )
+    db.commit()
+    db.refresh(course)
+    return attach_course_stats(db, [course])[0]
 
 
 @router.post("/courses", response_model=CourseRead, status_code=status.HTTP_201_CREATED)
@@ -371,17 +438,7 @@ def update_course(
     # Capacity is a promise to the students already in the room: it may grow
     # freely, but it cannot be cut below the seats currently taken.
     if data.get("max_students") is not None:
-        active_count = (
-            db.scalar(
-                select(func.count())
-                .select_from(Enrollment)
-                .where(
-                    Enrollment.course_id == course_id,
-                    Enrollment.status == EnrollmentStatus.active,
-                )
-            )
-            or 0
-        )
+        active_count = seats_taken(db, course_id)
         if data["max_students"] < active_count:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -452,7 +509,11 @@ def list_course_students(
             .join(Enrollment, Enrollment.student_id == User.id)
             .where(
                 Enrollment.course_id == course_id,
-                Enrollment.status == EnrollmentStatus.active,
+                # The register lists whoever holds a seat, which is what the
+                # teacher sees when taking attendance. Counting only `active`
+                # left a student in "Inscrito" off the list of a class they were
+                # nonetheless free to walk into.
+                Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
             )
             .order_by(User.full_name)
         ).all()
@@ -493,7 +554,7 @@ def assign_course_teacher(
     course_id: int,
     payload: CourseTeacherAssign,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(teacher_mgmt_only),
 ) -> CourseTeacherRead:
     _course_or_404(db, current_user, course_id)
     teacher = db.get(User, payload.teacher_id)
@@ -539,7 +600,7 @@ def unassign_course_teacher(
     course_id: int,
     teacher_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(teacher_mgmt_only),
 ) -> None:
     _course_or_404(db, current_user, course_id)
     row = db.scalar(

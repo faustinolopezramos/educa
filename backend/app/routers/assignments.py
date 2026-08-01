@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.deps import (
     course_in_scope_or_404,
     get_current_user,
-    require_role,
+    require_staff_permission,
     student_course_ids,
     teacher_course_ids,
     teacher_teaches_course,
@@ -15,8 +15,9 @@ from app.models import (
     Assignment,
     AssignmentSubmission,
     Course,
+    ENROLLMENT_OCCUPIES_SEAT,
     Enrollment,
-    EnrollmentStatus,
+    Permission,
     User,
     UserRole,
 )
@@ -31,7 +32,7 @@ from app.schemas.assignment import (
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+staff_only = require_staff_permission(Permission.manage_grades)
 
 
 def _staff_course_or_404(db: Session, user: User, course_id: int) -> Course:
@@ -228,9 +229,7 @@ def get_assignment_roster_status(
         db.scalars(
             select(Enrollment).where(
                 Enrollment.course_id == assignment.course_id,
-                Enrollment.status.in_(
-                    [EnrollmentStatus.active, EnrollmentStatus.enrolled]
-                ),
+                Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
             )
         ).all()
     )

@@ -2,7 +2,7 @@ from typing import Annotated, ClassVar
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, model_validator
 
-from app.models.enums import UserRole
+from app.models.enums import Permission, UserRole
 from app.schemas.base import PatchModel
 
 PASSWORD_MIN_LENGTH = 8
@@ -36,10 +36,20 @@ class UserBase(BaseModel):
     address: str | None = None
     cui_passport: str | None = None
     nationality_id: int | None = None
+    # Whether the account may be used. "Baja" is this flag rather than a DELETE:
+    # a teacher's schedules, grades and attendance have to survive them.
+    is_active: bool = True
+    # Deliberately loose on the *read* side. The column is plain JSON, so an
+    # installation that predates the enum may hold a string no longer in it —
+    # and a strict type here would turn that stale row into a 500 on the user
+    # list rather than a permission that simply grants nothing. Writes are
+    # validated against `Permission` below.
+    permissions: list[str] | None = None
 
 
 class UserCreate(UserBase):
     password: Password
+    permissions: list[Permission] | None = None
 
 
 class UserUpdate(PatchModel):
@@ -61,6 +71,8 @@ class UserUpdate(PatchModel):
     address: str | None = None
     cui_passport: str | None = None
     nationality_id: int | None = None
+    is_active: bool | None = None
+    permissions: list[Permission] | None = None
 
 
 class UserSelfUpdate(PatchModel):

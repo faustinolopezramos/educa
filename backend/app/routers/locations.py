@@ -15,13 +15,15 @@ from app.core.deps import (
     get_current_user,
     in_tenant,
     is_admin,
-    require_role,
+    require_permission,
+    require_staff_permission,
     teacher_teaches_course,
 )
 from app.models import (
     Course,
     LocationProposal,
     Modality,
+    Permission,
     ProposalStatus,
     Room,
     Schedule,
@@ -38,8 +40,8 @@ from app.services.scheduling import room_conflicts
 
 router = APIRouter(tags=["locations"])
 
-admin_only = require_role(UserRole.admin)
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+admin_only = require_permission(Permission.manage_schedules)
+staff_only = require_staff_permission(Permission.manage_schedules)
 
 
 def _apply_to_schedule(schedule: Schedule, proposal: LocationProposal) -> None:

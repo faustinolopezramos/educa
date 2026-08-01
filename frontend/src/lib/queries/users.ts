@@ -3,7 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { User } from "../types";
 
-export const useUsers = (role?: string) =>
+/**
+ * `enabled` lets a caller skip the request entirely rather than fire one it
+ * knows will 403 — the directory answers only to `manage_teachers` and
+ * `manage_students`, so an assistant holding neither should not be asking.
+ */
+export const useUsers = (role?: string, enabled = true) =>
   useQuery({
     queryKey: ["users", role ?? "all"],
     queryFn: async () => {
@@ -12,6 +17,7 @@ export const useUsers = (role?: string) =>
       );
       return res.data.items;
     },
+    enabled,
   });
 
 export function useCreateUser() {

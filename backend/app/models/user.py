@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String
+from sqlalchemy import true as sa_true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -32,6 +33,13 @@ class User(Base):
     max_weekly_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Bumped on password change so refresh tokens issued before it stop working.
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Whether the account may be used at all. A teacher who leaves the academy
+    # cannot be deleted — their schedules hold the row, and their past grades and
+    # attendance have to stay — so "baja" is this flag, not a DELETE. An inactive
+    # account cannot log in and is not offered in any picker.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=sa_true(), nullable=False
+    )
     # Contact details — shared by every role (admin/teacher/student are all a
     # User), so a student's and a teacher's phone/address/nationality live in
     # exactly one place rather than a per-role table.
@@ -43,6 +51,7 @@ class User(Base):
     nationality_id: Mapped[int | None] = mapped_column(
         ForeignKey("nationalities.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
 
     nationality: Mapped["Nationality | None"] = relationship()
     # A teacher owns many schedules

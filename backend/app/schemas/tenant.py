@@ -11,6 +11,14 @@ class TenantBase(BaseModel):
     logo_url: str | None = Field(None, max_length=500)
     is_active: bool = True
     max_active_students: int = Field(100, ge=1)
+    timezone: str = Field("America/Guatemala", max_length=50)
+    currency: str = Field("USD", max_length=10)
+    primary_color: str | None = Field(None, max_length=20)
+    secondary_color: str | None = Field(None, max_length=20)
+    custom_domain: str | None = Field(None, max_length=255)
+    tax_id: str | None = Field(None, max_length=50)
+    phone: str | None = Field(None, max_length=50)
+    address: str | None = Field(None, max_length=255)
 
 
 class TenantCreate(TenantBase):
@@ -23,6 +31,15 @@ class TenantUpdate(PatchModel):
     logo_url: str | None = Field(None, max_length=500)
     is_active: bool | None = None
     max_active_students: int | None = Field(None, ge=1)
+    timezone: str | None = Field(None, max_length=50)
+    currency: str | None = Field(None, max_length=10)
+    primary_color: str | None = Field(None, max_length=20)
+    secondary_color: str | None = Field(None, max_length=20)
+    custom_domain: str | None = Field(None, max_length=255)
+    tax_id: str | None = Field(None, max_length=50)
+    phone: str | None = Field(None, max_length=50)
+    address: str | None = Field(None, max_length=255)
+
 
 
 class TenantRead(TenantBase):

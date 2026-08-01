@@ -8,7 +8,7 @@ from app.core.deps import (
     apply_tenant,
     enrollment_in_scope_or_404,
     get_current_user,
-    require_role,
+    require_staff_permission,
     student_is_solvent,
     teacher_course_ids,
     teacher_teaches_course,
@@ -17,9 +17,13 @@ from app.core.http import commit_or_conflict
 from app.models import (
     ClassSession,
     Course,
+    ENROLLMENT_OCCUPIES_SEAT,
+    ENROLLMENT_STATUS_LABELS,
     Enrollment,
     Grade,
+    Permission,
     Schedule,
+    SessionStatus,
     User,
     UserRole,
 )
@@ -28,7 +32,7 @@ from app.services.audit import record, snapshot
 
 router = APIRouter(prefix="/grades", tags=["grades"])
 
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+staff_only = require_staff_permission(Permission.manage_grades)
 
 
 def _ensure_teacher_owns_enrollment(
@@ -53,6 +57,30 @@ def _validate_session(db: Session, session_id: int, enrollment: Enrollment) -> N
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "La sesión no pertenece al curso de esta matrícula",
+        )
+    # A "nota del día" for a day there was no class is a mark with nothing
+    # behind it, and it still lands in the final-grade average.
+    if session.status == SessionStatus.cancelled:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "La clase fue cancelada; no se puede calificar sobre ella",
+        )
+
+
+def _ensure_enrollment_is_live(enrollment: Enrollment) -> None:
+    """Refuse grades against a matrícula that has already been closed out.
+
+    A certificate is issued against the final grade, so regrading a certified
+    enrollment silently disagrees with the certificate already in the student's
+    hands; a withdrawn one has no course left to be graded on.
+    """
+    if enrollment.status not in ENROLLMENT_OCCUPIES_SEAT:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            (
+                f"La matrícula está en «{ENROLLMENT_STATUS_LABELS[enrollment.status]}»; "
+                "no se puede calificar sobre ella"
+            ),
         )
 
 
@@ -112,6 +140,7 @@ def create_grade(
     """
     enrollment = enrollment_in_scope_or_404(db, current_user, payload.enrollment_id)
     _ensure_teacher_owns_enrollment(db, current_user, enrollment)
+    _ensure_enrollment_is_live(enrollment)
     if payload.session_id is not None:
         _validate_session(db, payload.session_id, enrollment)
 

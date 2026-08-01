@@ -43,6 +43,8 @@ class ReportRead(BaseModel):
     sessions_total: int
     sessions_held: int
     sessions_cancelled: int
+    # Defaulted so an older client that does not know the field still parses.
+    sessions_pending: int = 0
     attendance_rate: float | None
     attendance_by_course: list[CourseAttendanceRead]
     grades_recorded: int

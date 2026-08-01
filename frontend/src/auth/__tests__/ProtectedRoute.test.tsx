@@ -30,11 +30,13 @@ describe("ProtectedRoute", () => {
         phone: null,
         address: null,
         nationality_id: null,
+      is_active: true,
       },
       loading: false,
       login: vi.fn(),
       logout: vi.fn(),
       hasRole: vi.fn(),
+      hasPermission: vi.fn(),
       updateUser: vi.fn(),
     });
 
@@ -54,6 +56,7 @@ describe("ProtectedRoute", () => {
       login: vi.fn(),
       logout: vi.fn(),
       hasRole: vi.fn(),
+      hasPermission: vi.fn(),
       updateUser: vi.fn(),
     });
 
@@ -73,6 +76,7 @@ describe("ProtectedRoute", () => {
       login: vi.fn(),
       logout: vi.fn(),
       hasRole: vi.fn(),
+      hasPermission: vi.fn(),
       updateUser: vi.fn(),
     });
 

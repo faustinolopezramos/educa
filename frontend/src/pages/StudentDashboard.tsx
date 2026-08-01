@@ -3,9 +3,13 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import {
-  Badge, Button, Card, EmptyState, InlineAlert, PageHeader, SectionHeading, SkeletonRows,
+  Badge, Button, Card, EmptyState, PageHeader, SectionHeading, SegmentedControl,
+  SkeletonRows,
 } from "../components/ui";
-import { IconBook, IconClock, IconLock } from "../components/icons";
+import { ActionTray } from "../components/ActionTray";
+import {
+  IconBook, IconChevronRight, IconClock, IconLock,
+} from "../components/icons";
 import { StudentGrades } from "../features/grades/StudentGrades";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
@@ -15,8 +19,10 @@ import {
   ENROLLMENT_LABELS,
   PAYMENT_LABELS,
   formatDateTime,
+  formatTime,
   timeZoneLabel,
 } from "../lib/format";
+import { isCurrentEnrollment } from "../lib/enrollment";
 import {
   downloadCertificatePdf,
   useCourses,
@@ -38,6 +44,11 @@ function sessionStartMs(date: string, time: string): number {
   return new Date(`${date}T${time}`).getTime();
 }
 
+/** Today as Monday=0..Sunday=6, the convention `Schedule.day_of_week` uses. */
+function localDow(d = new Date()): number {
+  return (d.getDay() + 6) % 7;
+}
+
 export default function StudentDashboard() {
   const [params] = useSearchParams();
   const section = params.get("m") ?? "inicio";
@@ -48,25 +59,53 @@ export default function StudentDashboard() {
   );
 
   if (section === "tareas") return <AssignmentsPanel />;
-
-  if (section === "calificaciones") {
-    return (
-      <div>
-        <PageHeader title="Mis calificaciones" />
-        {isOverdue ? <PaymentGate what="tus notas" /> : <StudentGrades />}
-      </div>
-    );
-  }
-  if (section === "reportes") {
-    return (
-      <div>
-        <PageHeader title="Mi reporte" />
-        <StudentReport />
-      </div>
-    );
+  // "Calificaciones" and "Reporte" were two menu entries answering the same
+  // question — how am I doing — and a student had to know which one held the
+  // number they wanted. They are one section with two views now.
+  if (section === "progreso" || section === "calificaciones" || section === "reportes") {
+    return <ProgressView isOverdue={isOverdue} initial={section} />;
   }
   if (section === "perfil") return <ProfilePanel />;
   return <WeekView />;
+}
+
+function ProgressView({
+  isOverdue,
+  initial,
+}: {
+  isOverdue: boolean;
+  /** Honours the two old section ids, so a bookmark still lands where it used to. */
+  initial: string;
+}) {
+  const [view, setView] = useState<"notas" | "avance">(
+    initial === "reportes" ? "avance" : "notas",
+  );
+
+  return (
+    <div>
+      <PageHeader
+        title="Mi progreso"
+        description="Tus notas por curso y tu avance del periodo."
+      />
+      <div className="mb-4">
+        <SegmentedControl
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "notas", label: "Notas" },
+            { value: "avance", label: "Avance del periodo" },
+          ]}
+        />
+      </div>
+      {isOverdue ? (
+        <PaymentGate what={view === "notas" ? "tus notas" : "tu avance"} />
+      ) : view === "notas" ? (
+        <StudentGrades />
+      ) : (
+        <StudentReport />
+      )}
+    </div>
+  );
 }
 
 /**
@@ -110,6 +149,7 @@ function WeekView() {
   const { data: grades = [] } = useGrades();
 
   const now = Date.now();
+  const todayDow = localDow();
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
   const teacherName = (id: number) =>
@@ -117,7 +157,13 @@ function WeekView() {
   const roomName = (id: number | null) =>
     id == null ? null : (rooms.find((r) => r.id === id)?.name ?? null);
 
-  const myCourseIds = new Set(enrollments.map((e) => e.course_id));
+  // Courses the student is still in, versus ones they finished or left. The two
+  // used to be one undifferentiated list, so a course dropped two terms ago sat
+  // beside Tuesday's class with the same weight and the same progress ring.
+  const current = enrollments.filter((e) => isCurrentEnrollment(e.status));
+  const history = enrollments.filter((e) => !isCurrentEnrollment(e.status));
+
+  const myCourseIds = new Set(current.map((e) => e.course_id));
   const mySchedules = schedules
     .filter((s) => myCourseIds.has(s.course_id))
     .sort(
@@ -163,20 +209,18 @@ function WeekView() {
     return n ? formatDateTime(new Date(n.start).toISOString(), tz) : null;
   };
 
-  const overdue = enrollments.find((e) => e.payment_status === "overdue");
-
   return (
     <div>
       <PageHeader title={`Hola, ${user?.full_name?.split(" ")[0] ?? ""}`} />
 
-      {overdue && (
-        <div className="mb-5">
-          <InlineAlert type="error" title="Tienes un pago vencido">
-            La cuota de {courseName(overdue.course_id)} está vencida. Mientras siga así no
-            podrás ver tus notas ni descargar certificados.
-          </InlineAlert>
-        </div>
-      )}
+      {/* Overdue fees and unhandled homework arrive here, with the amount and
+          the deadline. This replaced a bare "tienes un pago vencido" that never
+          said how much, and homework that was only discoverable by navigating
+          to the Tareas section and counting. */}
+      <ActionTray
+        title="Pendientes"
+        emptyMessage="No tienes pendientes. Todo al día."
+      />
 
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -204,15 +248,34 @@ function WeekView() {
 
         <Card>
           <SectionHeading>Esta semana</SectionHeading>
+          {/* All seven days. This used to stop at Friday, so a student on the
+              Plan Sabatino or Dominical — jornadas the academy actually sells —
+              opened their week and found it empty. */}
           <div className="flex gap-1.5">
-            {DAYS.slice(0, 5).map((d, i) => {
-              const has = mySchedules.some((s) => s.day_of_week === i);
+            {DAYS.map((d, i) => {
+              const dayClasses = mySchedules.filter((s) => s.day_of_week === i);
+              const has = dayClasses.length > 0;
+              const isToday = i === todayDow;
               return (
                 <div key={i} className="flex-1 text-center">
-                  <div className="text-2xs font-medium text-slate-400">{d.slice(0, 2)}</div>
                   <div
-                    title={has ? `${d}: tienes clase` : `${d}: sin clase`}
-                    className={`mt-1 h-7 rounded-md ${has ? "bg-brand-600" : "bg-slate-100"}`}
+                    className={`text-2xs font-medium ${
+                      isToday ? "text-brand-700" : "text-slate-400"
+                    }`}
+                  >
+                    {d.slice(0, 2)}
+                  </div>
+                  <div
+                    title={
+                      has
+                        ? `${d}: ${dayClasses
+                            .map((s) => `${courseName(s.course_id)} ${formatTime(s.start_time)}`)
+                            .join(", ")}`
+                        : `${d}: sin clase`
+                    }
+                    className={`mt-1 h-7 rounded-md ${
+                      has ? "bg-brand-600" : "bg-slate-100"
+                    } ${isToday ? "ring-2 ring-brand-300 ring-offset-1" : ""}`}
                   />
                 </div>
               );
@@ -222,15 +285,23 @@ function WeekView() {
       </div>
 
       <SectionHeading>Mis cursos</SectionHeading>
-      {enrollments.length === 0 ? (
+      {current.length === 0 ? (
         <EmptyState
           icon={<IconBook className="h-5 w-5" />}
-          title="No estás matriculado en ningún curso"
-          message="Cuando dirección te matricule, tus cursos y tu progreso aparecerán aquí."
+          title={
+            history.length > 0
+              ? "No tienes cursos en marcha"
+              : "No estás matriculado en ningún curso"
+          }
+          message={
+            history.length > 0
+              ? "Tus cursos anteriores siguen abajo, con sus notas y certificados."
+              : "Cuando dirección te matricule, tus cursos y tu progreso aparecerán aquí."
+          }
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {enrollments.map((e) => (
+          {current.map((e) => (
             <CourseCard
               key={e.id}
               enrollment={e}
@@ -240,6 +311,30 @@ function WeekView() {
             />
           ))}
         </div>
+      )}
+
+      {/* Finished and abandoned courses keep their grades and certificates, so
+          they are worth keeping — just not mixed in with the live ones. */}
+      {history.length > 0 && (
+        <details className="mt-6 group">
+          <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 hover:text-slate-900">
+            <span className="inline-flex items-center gap-1.5">
+              <IconChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+              Cursos anteriores ({history.length})
+            </span>
+          </summary>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            {history.map((e) => (
+              <CourseCard
+                key={e.id}
+                enrollment={e}
+                name={courseName(e.course_id)}
+                stats={statsByCourse.get(e.course_id)}
+                nextClass={null}
+              />
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );

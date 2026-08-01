@@ -388,7 +388,7 @@ export function Badge({
   dot = false,
 }: {
   children: ReactNode;
-  color?: "slate" | "green" | "red" | "amber" | "indigo";
+  color?: "slate" | "green" | "red" | "amber" | "indigo" | "sky";
   dot?: boolean;
 }) {
   const colors: Record<string, { box: string; dot: string }> = {
@@ -397,6 +397,7 @@ export function Badge({
     red: { box: "bg-red-50 text-red-800", dot: "bg-red-600" },
     amber: { box: "bg-amber-50 text-amber-800", dot: "bg-amber-600" },
     indigo: { box: "bg-brand-50 text-brand-800", dot: "bg-brand-600" },
+    sky: { box: "bg-sky-50 text-sky-800", dot: "bg-sky-600" },
   };
   const c = colors[color];
   return (

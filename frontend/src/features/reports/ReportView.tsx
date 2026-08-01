@@ -96,9 +96,13 @@ export function ReportView() {
             <strong className="font-semibold text-slate-900">{report.date_to}</strong>
           </p>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Stat label="Sesiones ofertadas" value={report.sessions_total} />
+            {/* "Realizadas" now means a class whose register was taken, so
+                anything still without one shows up beside it instead of being
+                silently counted as taught. */}
             <Stat label="Sesiones realizadas" value={report.sessions_held} />
+            <Stat label="Sin registrar" value={report.sessions_pending} />
             <Stat label="Asistencia" value={pct(report.attendance_rate)} />
             <Stat label="Promedio de notas" value={report.grade_average ?? "—"} />
           </div>

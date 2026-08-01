@@ -1,238 +1,325 @@
 import { useMemo, useState } from "react";
 
-import { Button, Field, Input, Modal, ModalActions, SearchSelect } from "../../components/ui";
+import {
+  Badge, Button, Field, Input, Modal, ModalActions, SearchSelect,
+} from "../../components/ui";
 import type { SearchOption } from "../../components/ui";
 import { apiErrorMessage } from "../../lib/api";
 import { DAYS } from "../../lib/format";
 import {
+  useBulkEnroll,
   useCourses,
-  useCreateEnrollment,
   useCreateUser,
   useEnrollments,
+  usePublicTeachers,
   useSchedules,
   useUsers,
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
+import type { BulkEnrollOutcome } from "../../lib/types";
+import { BulkResultDialog, type BulkOutcome } from "../admin/BulkResultDialog";
 
 interface Props {
   initialCourseId?: number;
   initialStudentId?: number;
+  /** Pre-picked students, e.g. a multi-selection made in the students list. */
+  initialStudentIds?: number[];
   onClose: () => void;
 }
 
 const DEFAULT_PASSWORD = "Educa2026!";
 
-function conflictDetail(
-  e: unknown,
-): { message: string; reason?: string } | null {
-  const err = e as {
-    response?: { status?: number; data?: { detail?: unknown } };
-  };
-  if (err.response?.status !== 409) return null;
-  const detail = err.response.data?.detail;
-  if (typeof detail === "string") return { message: detail };
-  if (detail && typeof detail === "object") {
-    const d = detail as { message?: string; reason?: string };
-    return { message: d.message ?? "Conflicto", reason: d.reason };
-  }
-  return { message: "Conflicto de inscripción" };
-}
-
-// Enrolling is one decision — who, and into what — so it is one screen. The
-// course panel fills in as soon as a course is chosen, which is the same
-// information the old confirmation step used to show a click later.
-export function EnrollWizard({ initialCourseId, initialStudentId, onClose }: Props) {
+/**
+ * Enrolling, as one screen that finishes the job.
+ *
+ * Three things used to make this harder than it is:
+ *
+ * 1. It offered *every* course, including drafts and closed ones, which the API
+ *    now refuses — so the picker led straight into a 409.
+ * 2. It counted free seats client-side over `status === "active"`, while the
+ *    cupo counts anyone holding a seat. It therefore promised seats that were
+ *    already taken, and the submit failed on capacity.
+ * 3. It enrolled exactly one student and left the cuota for a second trip to
+ *    Finanzas, so the common case — seat this group, charge them all the same —
+ *    took one modal per person plus a visit to another screen.
+ *
+ * One student and twenty are now the same flow, and it reports per student
+ * rather than failing the whole batch.
+ */
+export function EnrollWizard({
+  initialCourseId,
+  initialStudentId,
+  initialStudentIds,
+  onClose,
+}: Props) {
   const { data: courses = [] } = useCourses();
   const { data: students = [] } = useUsers("student");
-  const { data: teachers = [] } = useUsers("teacher");
+  const { data: teachers = [] } = usePublicTeachers();
   const { data: enrollments = [] } = useEnrollments();
-  const schedulesRes = useSchedules();
-  const schedules = schedulesRes?.data ?? [];
+  const { data: schedules = [] } = useSchedules();
 
   const createUser = useCreateUser();
-  const createEnrollment = useCreateEnrollment();
+  const bulkEnroll = useBulkEnroll();
 
-  const [studentMode, setStudentMode] = useState<"new" | "existing">(
-    initialStudentId ? "existing" : "existing",
+  const [picked, setPicked] = useState<number[]>(
+    initialStudentIds ?? (initialStudentId ? [initialStudentId] : []),
   );
+  const [courseId, setCourseId] = useState<number>(initialCourseId ?? 0);
+  const [showNewStudent, setShowNewStudent] = useState(false);
+  const [amount, setAmount] = useState("0");
+  const [dueDate, setDueDate] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [clashOverride, setClashOverride] = useState(false);
+  const [result, setResult] = useState<BulkEnrollOutcome[] | null>(null);
 
-  // New student fields
+  // New-student fields
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [cuiPassport, setCuiPassport] = useState("");
   const [password, setPassword] = useState(DEFAULT_PASSWORD);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const [studentId, setStudentId] = useState<number>(initialStudentId ?? 0);
-  const [courseId, setCourseId] = useState<number>(initialCourseId ?? 0);
+  // Only courses that would actually accept somebody. Offering a draft or a
+  // closed one produces a picker whose every choice ends in the same refusal.
+  const enrollable = useMemo(
+    () => courses.filter((c) => c.status === "open" || c.status === "in_progress"),
+    [courses],
+  );
+  const course = enrollable.find((c) => c.id === courseId);
 
-  const [error, setError] = useState<string | null>(null);
-  const [clash, setClash] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const course = courses.find((c) => c.id === courseId);
-  const activeInCourse = enrollments.filter(
-    (e) => e.course_id === courseId && e.status === "active",
-  ).length;
-  const remaining = course ? course.max_students - activeInCourse : 0;
-  const full = course ? remaining <= 0 : false;
+  // Straight from the API, counted the way the cupo is counted.
+  const taken = course?.seats_taken ?? 0;
+  const remaining = course ? course.max_students - taken : 0;
 
   const courseSchedules = schedules.filter((s) => s.course_id === courseId);
-  const teacherName = (id: number) => teachers.find((t) => t.id === id)?.full_name ?? `#${id}`;
-  const selectedStudent = students.find((s) => s.id === studentId);
+  const teacherName = (id: number) =>
+    teachers.find((t) => t.id === id)?.full_name ?? "—";
+
+  const alreadyIn = useMemo(() => {
+    const set = new Set<number>();
+    for (const e of enrollments) {
+      if (e.course_id === courseId && e.status !== "withdrawn") set.add(e.student_id);
+    }
+    return set;
+  }, [enrollments, courseId]);
 
   const studentOptions: SearchOption[] = useMemo(
-    () => students.map((s) => ({ value: s.id, label: s.full_name, hint: s.email })),
-    [students],
+    () =>
+      students
+        .filter((s) => s.is_active && !picked.includes(s.id))
+        .map((s) => ({
+          value: s.id,
+          label: s.full_name,
+          // Says up front who cannot be added, instead of letting the batch
+          // come back with them listed as refused.
+          hint: alreadyIn.has(s.id) ? "Ya está en este curso" : s.email,
+        })),
+    [students, picked, alreadyIn],
   );
+
   const courseOptions: SearchOption[] = useMemo(
     () =>
-      courses.map((c) => {
-        const taken = enrollments.filter(
-          (e) => e.course_id === c.id && e.status === "active",
-        ).length;
-        const free = c.max_students - taken;
+      enrollable.map((c) => {
+        const free = c.max_students - c.seats_taken;
         return {
           value: c.id,
           label: c.name,
-          hint: free > 0 ? `${free} cupos libres` : "Cupo lleno",
+          hint:
+            free > 0
+              ? `${free} cupo${free === 1 ? "" : "s"} libre${free === 1 ? "" : "s"}`
+              : "Cupo lleno",
         };
       }),
-    [courses, enrollments],
+    [enrollable],
   );
 
-  // Already enrolled? Say so before the server has to.
-  const duplicate = enrollments.some(
-    (e) => e.student_id === studentId && e.course_id === courseId && e.status !== "withdrawn",
-  );
+  const duplicates = picked.filter((id) => alreadyIn.has(id));
+  const overCapacity = course ? picked.length > remaining : false;
+  const canSubmit =
+    picked.length > 0 && Boolean(courseId) && duplicates.length === 0 && !overCapacity;
 
-  const studentReady =
-    studentMode === "new" ? Boolean(fullName.trim() && email.trim() && cuiPassport.trim()) : Boolean(studentId);
-  const canSubmit = studentReady && Boolean(courseId) && !full && !duplicate;
+  function addExisting(id: number) {
+    setPicked((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
 
-  async function submit(force = false) {
+  async function createAndAdd() {
+    if (!fullName.trim() || !email.trim()) {
+      setError("El nombre y el correo son obligatorios");
+      return;
+    }
     setError(null);
-    setIsSubmitting(true);
-
     try {
-      let finalStudentId = studentId;
-
-      if (studentMode === "new") {
-        const createdUser = await createUser.mutateAsync({
-          role: "student",
-          full_name: fullName.trim(),
-          email: email.trim().toLowerCase(),
-          cui_passport: cuiPassport.trim(),
-          phone: phone.trim() || undefined,
-          password: password || DEFAULT_PASSWORD,
-        });
-        finalStudentId = createdUser.id;
-      }
-
-      await createEnrollment.mutateAsync({
-        student_id: finalStudentId,
-        course_id: courseId,
-        force,
+      const created = await createUser.mutateAsync({
+        role: "student",
+        full_name: fullName.trim(),
+        email: email.trim().toLowerCase(),
+        // Optional: the API does not require it, and making it mandatory here
+        // blocked an enrolment over a number the front desk often does not have
+        // to hand.
+        cui_passport: cuiPassport.trim() || undefined,
+        phone: phone.trim() || undefined,
+        password: password || DEFAULT_PASSWORD,
       });
-
-      notify(
-        studentMode === "new"
-          ? `Alumno ${fullName} creado e inscrito al curso con éxito`
-          : "Alumno inscrito al curso correctamente",
-        "success",
-      );
-      onClose();
+      addExisting(created.id);
+      notify(`${created.full_name} registrado y añadido a la lista`, "success");
+      setFullName("");
+      setEmail("");
+      setPhone("");
+      setCuiPassport("");
+      setShowNewStudent(false);
     } catch (e) {
-      setIsSubmitting(false);
-      const detail = conflictDetail(e);
-      if (detail?.reason === "student_schedule") {
-        setClash(true);
-        setError(detail.message);
-      } else {
-        setClash(false);
-        setError(detail?.message ?? apiErrorMessage(e, "Error al procesar inscripción"));
-      }
+      setError(apiErrorMessage(e, "No se pudo registrar al alumno"));
     }
   }
 
-  const remainingHint = course
-    ? full
-      ? "Sin cupos disponibles"
-      : `${remaining} ${remaining === 1 ? "cupo libre" : "cupos libres"} en ${course.name}`
-    : undefined;
+  function submit(force = false) {
+    setError(null);
+    bulkEnroll.mutate(
+      {
+        course_id: courseId,
+        student_ids: picked,
+        amount: Number(amount) || 0,
+        due_date: dueDate || null,
+        force,
+      },
+      {
+        onSuccess: (r) => {
+          if (r.failed === 0) {
+            notify(
+              r.created === 1
+                ? "Alumno inscrito correctamente"
+                : `${r.created} alumnos inscritos correctamente`,
+              "success",
+            );
+            onClose();
+            return;
+          }
+          // A timetable clash is the one refusal an admin may legitimately
+          // override, so offer that rather than only reporting it.
+          if (r.outcomes.some((o) => !o.ok && /horario/i.test(o.reason ?? ""))) {
+            setClashOverride(true);
+          }
+          setResult(r.outcomes);
+        },
+        onError: (e) =>
+          setError(apiErrorMessage(e, "No se pudo completar la inscripción")),
+      },
+    );
+  }
+
+  if (result) {
+    return (
+      <BulkResultDialog
+        title="Resultado de la inscripción"
+        successLabel="inscrito(s)"
+        failureLabel="sin inscribir"
+        outcomes={result.map<BulkOutcome>((o) => ({
+          id: o.student_id,
+          name: o.student_name,
+          ok: o.ok,
+          detail: o.enrollment_code,
+          reason: o.reason,
+        }))}
+        onClose={() => {
+          setResult(null);
+          onClose();
+        }}
+      />
+    );
+  }
+
+  const hint = !course
+    ? undefined
+    : overCapacity
+      ? `Sólo quedan ${remaining} cupo(s) y has elegido ${picked.length}`
+      : `${remaining} cupo${remaining === 1 ? "" : "s"} libre${remaining === 1 ? "" : "s"} en ${course.name}`;
 
   return (
     <Modal
-      title="Inscribir Alumno al Curso"
-      description="Elige al alumno y su curso; el cupo y los horarios se comprueban al vuelo."
+      title={picked.length > 1 ? `Inscribir ${picked.length} alumnos` : "Inscribir alumno"}
+      description="Elige a quién y en qué curso. La cuota puede quedar para después."
       onClose={onClose}
       maxWidth="max-w-xl"
-      onSubmit={() => {
-        if (canSubmit && !isSubmitting) submit(false);
-      }}
       footer={
-        <ModalActions hint={remainingHint}>
+        <ModalActions hint={hint}>
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          {clash && (
-            <Button variant="danger" disabled={isSubmitting} onClick={() => submit(true)}>
-              Inscribir de todos modos
+          {clashOverride && (
+            <Button
+              variant="danger"
+              disabled={bulkEnroll.isPending}
+              onClick={() => submit(true)}
+            >
+              Inscribir pese al choque
             </Button>
           )}
-          <Button type="submit" disabled={!canSubmit || isSubmitting}>
-            {isSubmitting ? "Procesando…" : "Inscribir al Curso"}
+          <Button
+            onClick={() => submit(false)}
+            disabled={!canSubmit || bulkEnroll.isPending}
+          >
+            {bulkEnroll.isPending ? "Inscribiendo…" : "Inscribir"}
           </Button>
         </ModalActions>
       }
     >
-      <div className="space-y-5 text-xs">
-
-        {/* ── Step 1: Alumno ── */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white">1</span>
-              <span className="text-xs font-semibold text-slate-800">Alumno</span>
-            </div>
-            <div className="flex items-center rounded-lg bg-slate-100 p-0.5">
-              <button
-                type="button"
-                onClick={() => setStudentMode("existing")}
-                className={`rounded-md px-2.5 py-1 text-[11px] transition ${
-                  studentMode === "existing"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Ya registrado
-              </button>
-              <button
-                type="button"
-                onClick={() => setStudentMode("new")}
-                className={`rounded-md px-2.5 py-1 text-[11px] transition ${
-                  studentMode === "new"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Nuevo alumno
-              </button>
-            </div>
+      <div className="space-y-5">
+        {/* ── Alumnos ── */}
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-slate-800">
+              Alumnos {picked.length > 0 && `(${picked.length})`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowNewStudent((v) => !v)}
+              className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline"
+            >
+              {showNewStudent ? "Cancelar registro" : "Registrar uno nuevo"}
+            </button>
           </div>
 
-          {studentMode === "existing" ? (
-            <SearchSelect
-              options={studentOptions}
-              value={studentId || null}
-              onChange={(v) => setStudentId(Number(v))}
-              placeholder="Buscar por nombre o correo…"
-              emptyLabel="Ningún alumno coincide"
-            />
-          ) : (
-            <div className="space-y-2.5 rounded-xl border border-slate-200/80 bg-slate-50/50 p-3">
-              <Field label="Nombre completo (*)">
+          {picked.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {picked.map((id) => {
+                const s = students.find((x) => x.id === id);
+                const dupe = alreadyIn.has(id);
+                return (
+                  <span
+                    key={id}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                      dupe
+                        ? "border-amber-300 bg-amber-50 text-amber-900"
+                        : "border-slate-200 bg-slate-50 text-slate-800"
+                    }`}
+                  >
+                    {s?.full_name ?? `#${id}`}
+                    {dupe && <span className="text-2xs">ya inscrito</span>}
+                    <button
+                      type="button"
+                      aria-label={`Quitar a ${s?.full_name ?? id}`}
+                      onClick={() => setPicked((p) => p.filter((x) => x !== id))}
+                      className="text-slate-400 hover:text-slate-700"
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <SearchSelect
+            options={studentOptions}
+            value={null}
+            onChange={(v) => addExisting(Number(v))}
+            placeholder="Buscar por nombre o correo y añadir…"
+            emptyLabel="Ningún alumno coincide"
+          />
+
+          {showNewStudent && (
+            <div className="space-y-2.5 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <Field label="Nombre completo">
                 <Input
                   placeholder="Ej. María Fernanda López"
                   value={fullName}
@@ -240,7 +327,7 @@ export function EnrollWizard({ initialCourseId, initialStudentId, onClose }: Pro
                 />
               </Field>
               <div className="grid gap-2.5 sm:grid-cols-2">
-                <Field label="Correo electrónico (*)">
+                <Field label="Correo electrónico">
                   <Input
                     type="email"
                     placeholder="maria@ejemplo.com"
@@ -248,60 +335,43 @@ export function EnrollWizard({ initialCourseId, initialStudentId, onClose }: Pro
                     onChange={(e) => setEmail(e.target.value)}
                   />
                 </Field>
-                <Field label="CUI o Pasaporte (*)">
+                <Field label="Teléfono (opcional)">
+                  <Input
+                    placeholder="+502 5555-5555"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <Field label="CUI o pasaporte (opcional)">
                   <Input
                     placeholder="Ej. 2540 12345 0101"
                     value={cuiPassport}
                     onChange={(e) => setCuiPassport(e.target.value)}
                   />
                 </Field>
-              </div>
-              <Field label="Teléfono (opcional)">
-                <Input
-                  placeholder="+502 5555-5555"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </Field>
-              {showAdvanced ? (
                 <Field label="Contraseña inicial">
-                  <Input
-                    type="text"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <Input value={password} onChange={(e) => setPassword(e.target.value)} />
                 </Field>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced(true)}
-                  className="text-[11px] font-medium text-brand-600 hover:text-brand-700 hover:underline"
-                >
-                  Cambiar contraseña inicial (por defecto {DEFAULT_PASSWORD})
-                </button>
-              )}
+              </div>
+              <Button size="sm" onClick={createAndAdd} disabled={createUser.isPending}>
+                {createUser.isPending ? "Registrando…" : "Registrar y añadir"}
+              </Button>
             </div>
           )}
         </section>
 
-        {/* ── Step 2: Curso ── */}
-        <section className="space-y-3 border-t border-slate-100 pt-4">
-          <div className="flex items-center gap-2">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white">2</span>
-            <span className="text-xs font-semibold text-slate-800">Curso</span>
-          </div>
+        {/* ── Curso ── */}
+        <section className="space-y-2.5 border-t border-slate-100 pt-4">
+          <span className="text-sm font-semibold text-slate-800">Curso</span>
 
-          {initialCourseId && course ? (
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              <span className="font-medium text-slate-900">{course.name}</span>
-              <button
-                type="button"
-                onClick={() => setCourseId(0)}
-                className="text-[11px] text-brand-600 hover:text-brand-700 hover:underline"
-              >
-                Cambiar
-              </button>
-            </div>
+          {enrollable.length === 0 ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+              Ningún curso admite matrícula ahora mismo. Ábrelo desde{" "}
+              <strong>Cursos</strong>: sólo los que están abiertos o en curso pueden
+              recibir alumnos.
+            </p>
           ) : (
             <SearchSelect
               options={courseOptions}
@@ -313,88 +383,104 @@ export function EnrollWizard({ initialCourseId, initialStudentId, onClose }: Pro
           )}
 
           {course && (
-            <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 overflow-hidden">
-              {/* Availability bar */}
-              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200/60">
-                <span className="font-medium text-slate-700">Disponibilidad</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                    full ? "bg-red-100 text-red-700" : "bg-emerald-50 text-emerald-700"
-                  }`}
-                >
-                  {full
-                    ? "Sin cupos disponibles"
-                    : `${remaining} cupo${remaining !== 1 ? "s" : ""} libre${remaining !== 1 ? "s" : ""}`}
-                </span>
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+                <span className="text-xs font-medium text-slate-600">Ocupación</span>
+                <Badge color={remaining <= 0 ? "red" : remaining <= 2 ? "amber" : "green"}>
+                  {remaining <= 0
+                    ? "Cupo lleno"
+                    : `${remaining} de ${course.max_students} libres`}
+                </Badge>
               </div>
-
-              {/* Capacity micro-bar */}
-              <div className="px-3 py-2 border-b border-slate-200/60">
-                <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
-                  <span>Inscritos: {activeInCourse}</span>
-                  <span>Capacidad: {course.max_students}</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-slate-200">
+              <div className="px-3 py-2">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
                   <div
-                    className={`h-1.5 rounded-full transition-all ${full ? "bg-red-500" : "bg-emerald-500"}`}
-                    style={{ width: `${Math.min(100, (activeInCourse / course.max_students) * 100)}%` }}
+                    className={`h-full rounded-full ${remaining <= 0 ? "bg-red-500" : "bg-emerald-500"}`}
+                    style={{
+                      width: `${Math.min(100, (taken / (course.max_students || 1)) * 100)}%`,
+                    }}
                   />
                 </div>
               </div>
-
-              {/* Schedule info */}
-              <div className="px-3 py-2">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Horarios asignados
+              <div className="border-t border-slate-100 px-3 py-2">
+                <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+                  Horario
                 </span>
                 {courseSchedules.length === 0 ? (
-                  <p className="mt-1.5 text-[11px] italic text-slate-400">
-                    Sin horario definido aún.
+                  <p className="mt-1 text-xs italic text-slate-400">
+                    Sin horario definido.
                   </p>
                 ) : (
-                  <div className="mt-1.5 space-y-1">
+                  <ul className="mt-1 space-y-1">
                     {courseSchedules.map((s) => (
-                      <div
+                      <li
                         key={s.id}
-                        className="flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] border border-slate-100"
+                        className="tabular flex items-center justify-between gap-2 text-xs text-slate-700"
                       >
-                        <span className="font-medium text-slate-800">
-                          {DAYS[s.day_of_week]} · {s.start_time.slice(0, 5)} – {s.end_time.slice(0, 5)}
+                        <span>
+                          {DAYS[s.day_of_week]} · {s.start_time.slice(0, 5)}–
+                          {s.end_time.slice(0, 5)}
                         </span>
-                        <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">
-                          {teacherName(s.teacher_id)}
-                        </span>
-                      </div>
+                        <span className="text-slate-500">{teacherName(s.teacher_id)}</span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 )}
               </div>
             </div>
           )}
         </section>
 
-        {/* ── Alerts ── */}
-        {duplicate && (
-          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-amber-800">
-            <span className="text-sm">⚠️</span>
-            <span>{selectedStudent?.full_name ?? "Este alumno"} ya está inscrito en {course?.name}.</span>
+        {/* ── Cuota ── */}
+        <section className="space-y-2.5 border-t border-slate-100 pt-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold text-slate-800">Cuota</span>
+            <span className="text-xs text-slate-500">
+              Igual para todos; ajustable después uno a uno
+            </span>
           </div>
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            <Field label="Monto por alumno">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </Field>
+            <Field label="Vence el (opcional)">
+              <Input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+            </Field>
+          </div>
+          <p className="text-xs text-slate-500">
+            Déjalo en 0 si todavía no hay acuerdo: no se abre ningún cobro y la
+            matrícula queda sin saldo.
+          </p>
+        </section>
+
+        {duplicates.length > 0 && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+            Quita a quien ya está inscrito en este curso antes de continuar.
+          </p>
         )}
 
-        {full && !duplicate && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-red-800">
-            <span className="text-sm">🚫</span>
-            <span>{course?.name} no tiene cupos disponibles.</span>
-          </div>
+        {overCapacity && (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            Has elegido {picked.length} alumnos y sólo quedan {remaining} cupos. Quita a
+            alguien o amplía el cupo del curso.
+          </p>
         )}
 
         {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-amber-800">
-            <span className="text-sm">⚠️</span>
-            <span>{error}</span>
-          </div>
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            {error}
+          </p>
         )}
-
       </div>
     </Modal>
   );

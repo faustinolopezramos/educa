@@ -15,7 +15,7 @@ import {
   Badge, Button, Card, ConfirmDialog, Modal, ModalActions, Select, Table, Td, Th,
 } from "../../components/ui";
 import { apiErrorMessage } from "../../lib/api";
-import { DAYS } from "../../lib/format";
+import { DAYS, modalityColor, modalityLabel, usesRoom } from "../../lib/format";
 import {
   useCheckScheduleConflict,
   useCourses,
@@ -371,8 +371,13 @@ export function SchedulePlanner() {
                         <Td>{courseName(s.course_id)}</Td>
                         <Td>{teacherName(s.teacher_id)}</Td>
                         <Td>
-                          <Badge color={s.modality === "virtual" ? "indigo" : "slate"}>
-                            {s.modality === "virtual" ? "Virtual" : roomName(s.room_id)}
+                          <Badge color={modalityColor(s.modality)}>
+                            {/* A semi presencial class books a room *and*
+                                runs online, so the room name alone no longer
+                                says what kind of class it is. */}
+                            {usesRoom(s.modality)
+                              ? `${modalityLabel(s.modality)} · ${roomName(s.room_id)}`
+                              : modalityLabel(s.modality)}
                           </Badge>
                         </Td>
                         <Td>
@@ -431,8 +436,8 @@ export function SchedulePlanner() {
         >
           <div className="space-y-4 text-xs">
             <div className="flex justify-end">
-              <Badge color={selectedSchedule.modality === "virtual" ? "indigo" : "slate"}>
-                {selectedSchedule.modality === "virtual" ? "Virtual" : "Presencial"}
+              <Badge color={modalityColor(selectedSchedule.modality)}>
+                {modalityLabel(selectedSchedule.modality)}
               </Badge>
             </div>
 
@@ -447,9 +452,11 @@ export function SchedulePlanner() {
               <div>
                 <span className="text-slate-400 font-medium block">Aula / Ubicación</span>
                 <span className="font-bold text-slate-800">
-                  {selectedSchedule.modality === "virtual"
+                  {!usesRoom(selectedSchedule.modality)
                     ? "Enlace Virtual (Lobby)"
-                    : roomName(selectedSchedule.room_id)}
+                    : selectedSchedule.modality === "semi_presencial"
+                      ? `${roomName(selectedSchedule.room_id)} + enlace`
+                      : roomName(selectedSchedule.room_id)}
                 </span>
               </div>
 

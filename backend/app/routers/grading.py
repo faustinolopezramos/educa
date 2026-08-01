@@ -13,7 +13,8 @@ from app.core.deps import (
     course_in_scope_or_404,
     get_current_user,
     in_tenant,
-    require_role,
+    require_permission,
+    require_staff_permission,
     student_is_solvent,
     teacher_teaches_course,
 )
@@ -24,6 +25,7 @@ from app.models import (
     Enrollment,
     Level,
     PaymentStatus,
+    Permission,
     User,
     UserRole,
 )
@@ -40,8 +42,8 @@ from app.services.grading import compute_final_grade
 
 router = APIRouter(tags=["grading"])
 
-admin_only = require_role(UserRole.admin)
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+admin_only = require_permission(Permission.manage_grades)
+staff_only = require_staff_permission(Permission.manage_grades)
 
 
 # ---------------- Evaluation weights (per course) ----------------

@@ -10,8 +10,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import apply_tenant, in_tenant, require_role
-from app.models import Course, Enrollment, Invoice, Payment, PaymentKind, User, UserRole
+from app.core.deps import (
+    apply_tenant,
+    in_tenant,
+    require_permission,
+)
+from app.models import Course, Enrollment, Invoice, Payment, PaymentKind, Permission, User, UserRole
 from app.schemas.base import PaginatedResponse
 from app.schemas.invoice import InvoiceRead
 from app.schemas.payment import (
@@ -27,7 +31,7 @@ from app.services.sequences import next_invoice_code
 
 router = APIRouter(tags=["payments"])
 
-admin_only = require_role(UserRole.admin)
+admin_only = require_permission(Permission.manage_finance)
 
 
 def _get_enrollment(db: Session, actor: User, enrollment_id: int) -> Enrollment:

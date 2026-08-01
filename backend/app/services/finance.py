@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.clock import academy_today
-from app.models import Enrollment, EnrollmentStatus, Payment, PaymentKind, PaymentStatus
+from app.models import ENROLLMENT_OWES, Enrollment, Payment, PaymentKind, PaymentStatus
 
 # Money is stored as a float, so an exact `paid >= charged` comparison can trip
 # on the last binary digit (0.1 + 0.2 owed against 0.3 paid). A hundredth of a
@@ -92,7 +92,7 @@ def refresh_all_payment_statuses(db: Session, *, on: date | None = None) -> int:
     """
     live = db.scalars(
         select(Enrollment).where(
-            Enrollment.status.in_([EnrollmentStatus.active, EnrollmentStatus.enrolled])
+            Enrollment.status.in_(ENROLLMENT_OWES)
         )
     ).all()
     changed = 0

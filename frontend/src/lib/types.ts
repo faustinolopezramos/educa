@@ -1,4 +1,14 @@
-export type Role = "superadmin" | "admin" | "teacher" | "student";
+export type Role = "superadmin" | "admin" | "assistant" | "teacher" | "student";
+
+export type Permission =
+  | "manage_teachers"
+  | "manage_students"
+  | "manage_catalog"
+  | "manage_schedules"
+  | "manage_enrollments"
+  | "manage_finance"
+  | "manage_grades"
+  | "view_reports";
 
 export interface Tenant {
   id: number;
@@ -23,6 +33,10 @@ export interface User {
   address: string | null;
   cui_passport?: string | null;
   nationality_id: number | null;
+  permissions?: Permission[];
+  /** "Baja" is this flag, not a DELETE: a teacher's classes, grades and
+   *  attendance have to survive them. An inactive account cannot log in. */
+  is_active: boolean;
 }
 
 export interface Nationality {
@@ -58,14 +72,27 @@ export interface Level {
   name: string;
 }
 
+export type CourseStatus =
+  | "draft"
+  | "open"
+  | "in_progress"
+  | "closed"
+  | "archived";
+
 export interface Course {
   id: number;
   level_id: number;
   name: string;
+  status: CourseStatus;
   start_date: string | null;
   end_date: string | null;
   max_students: number;
   passing_score: number;
+  /** Seats held, teachers assigned and weekly slots — counted server-side so
+   *  the panel does not fetch every enrolment in the academy to work them out. */
+  seats_taken: number;
+  teacher_count: number;
+  schedule_count: number;
 }
 
 export interface CourseEvaluation {
@@ -176,6 +203,8 @@ export interface Enrollment {
   payment_status: PaymentStatus;
   attendance_blocked: boolean;
   amount: number;
+  /** `charged − paid` from the ledger: positive is owed, negative is credit. */
+  balance: number;
 }
 
 export type PaymentKind = "charge" | "payment";
@@ -342,6 +371,8 @@ export interface Report {
   sessions_total: number;
   sessions_held: number;
   sessions_cancelled: number;
+  /** Neither registered nor cancelled: still upcoming, or past with no register. */
+  sessions_pending: number;
   attendance_rate: number | null;
   attendance_by_course: CourseAttendance[];
   grades_recorded: number;
@@ -392,4 +423,77 @@ export interface LobbyJoinInfo {
   can_join: boolean;
   reason: string | null;
   minutes_remaining: number;
+}
+
+/** One thing waiting on the signed-in user, from `GET /dashboard`. */
+export interface ActionItem {
+  kind: string;
+  label: string;
+  count: number;
+  severity: "critical" | "warning" | "info";
+  /** The `?m=` section that resolves it, so an item is never a dead end. */
+  section: string;
+  detail: string | null;
+  amount: number | null;
+}
+
+export interface DashboardSummary {
+  role: Role;
+  items: ActionItem[];
+  /** Student only: total owed across their live enrollments. */
+  balance_due: number;
+  next_session_id: number | null;
+  /** Staff only; `null` for everyone else. */
+  kpis: AcademyKpis | null;
+}
+
+export interface AcademyKpis {
+  active_courses: number;
+  draft_courses: number;
+  total_courses: number;
+  active_students: number;
+  active_teachers: number;
+  seats_taken: number;
+  seats_offered: number;
+  /** `null` when no seats are offered — not the same as 0% and must not
+   *  render as one. */
+  occupancy_rate: number | null;
+}
+
+/** One student's outcome in a bulk enrolment. */
+export interface BulkEnrollOutcome {
+  student_id: number;
+  student_name: string;
+  ok: boolean;
+  enrollment_id: number | null;
+  enrollment_code: string | null;
+  reason: string | null;
+}
+
+export interface BulkEnrollResult {
+  created: number;
+  failed: number;
+  outcomes: BulkEnrollOutcome[];
+}
+
+/** One course's outcome in a teacher handover. */
+export interface TeacherReassignOutcome {
+  course_id: number;
+  course_name: string;
+  ok: boolean;
+  schedules_moved: number;
+  reason: string | null;
+}
+
+export interface TeacherReassignResult {
+  moved: number;
+  failed: number;
+  outcomes: TeacherReassignOutcome[];
+}
+
+/** A live course still tied to a teacher — what a baja would strand. */
+export interface TeacherLiveAssignment {
+  course_id: number;
+  course_name: string;
+  schedule_count: number;
 }

@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models import (
+    ENROLLMENT_HAS_ACCESS,
+    ENROLLMENT_OWES,
     Course,
     CourseTeacher,
     Enrollment,
-    EnrollmentStatus,
     PaymentStatus,
+    Permission,
     User,
     UserRole,
 )
@@ -44,6 +46,11 @@ def get_current_user(
         raise _credentials_exc
     token_ver = payload.get("ver")
     if token_ver is not None and user.token_version != token_ver:
+        raise _credentials_exc
+    # Deactivating an account has to take effect on the sessions already open,
+    # not just at the next login — otherwise a teacher given their baja keeps
+    # working for up to the lifetime of their access token.
+    if not user.is_active:
         raise _credentials_exc
     return user
 
@@ -142,6 +149,62 @@ def tenant_course_ids(db: Session, user: User) -> list[int]:
     )
 
 
+def has_user_permission(user: User, permission: str | Permission) -> bool:
+    """True if the user is an admin/superadmin or an assistant holding `permission`.
+
+    Accepts the enum or its string value so callers can pass either; the stored
+    list is plain JSON strings.
+    """
+    wanted = permission.value if isinstance(permission, Permission) else permission
+    if user.role in ADMIN_ROLES:
+        return True
+    if user.role == UserRole.assistant:
+        return wanted in (user.permissions or [])
+    return False
+
+
+def require_permission(permission: str | Permission) -> Callable[..., User]:
+    """Admin/superadmin, or an assistant granted `permission`. No teachers."""
+    wanted = permission.value if isinstance(permission, Permission) else permission
+
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if has_user_permission(current_user, wanted):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permiso insuficiente: requiere '{wanted}'",
+        )
+
+    return dependency
+
+
+def require_staff_permission(permission: str | Permission) -> Callable[..., User]:
+    """The teaching-floor equivalent of `require_permission`.
+
+    Admins pass, teachers pass, and an assistant passes only with `permission`.
+    These are the endpoints a teacher genuinely needs — taking attendance,
+    grading, running a class — where the role check is only the outer gate and
+    each endpoint still narrows a teacher to the courses they actually teach.
+
+    It exists because the old `require_role(admin, teacher)` on those endpoints
+    had no idea the `assistant` role existed, so an assistant holding
+    `manage_grades` was shown a gradebook the API then refused to open.
+    """
+    wanted = permission.value if isinstance(permission, Permission) else permission
+
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role == UserRole.teacher or has_user_permission(
+            current_user, wanted
+        ):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permiso insuficiente: requiere '{wanted}'",
+        )
+
+    return dependency
+
+
 def require_role(*roles: UserRole) -> Callable[[User], User]:
     def dependency(current_user: User = Depends(get_current_user)) -> User:
         allowed = set(roles)
@@ -190,16 +253,17 @@ def teacher_course_ids(db: Session, teacher_id: int) -> list[int]:
 
 
 def student_is_solvent(db: Session, student_id: int) -> bool:
-    """False when the student has any active enrollment with an overdue payment.
+    """False when the student has an unsettled enrollment with an overdue payment.
 
     "Solvente" here mirrors the dashboard's payment nudge: an `overdue` cuota is
-    the delinquent state, while `pending` is simply not-yet-due. Cancelled or
-    completed enrollments don't count — they no longer carry a live obligation.
+    the delinquent state, while `pending` is simply not-yet-due. Withdrawn or
+    certified enrollments don't count — they no longer carry a live obligation.
+    A *paused* one still does: pausing a course does not forgive its debt.
     """
     delinquent = db.scalar(
         select(Enrollment.id).where(
             Enrollment.student_id == student_id,
-            Enrollment.status == EnrollmentStatus.active,
+            Enrollment.status.in_(ENROLLMENT_OWES),
             Enrollment.payment_status == PaymentStatus.overdue,
         )
     )
@@ -207,17 +271,17 @@ def student_is_solvent(db: Session, student_id: int) -> bool:
 
 
 def student_course_ids(db: Session, student_id: int) -> list[int]:
-    """Distinct course IDs the student is *actively* enrolled in.
+    """Distinct course IDs whose classroom the student may reach.
 
-    Cancelled/completed enrollments are excluded: they no longer grant access
-    to a live classroom.
+    Paused, certified and withdrawn enrollments are excluded: they no longer
+    grant access to a live classroom.
     """
     return list(
         db.scalars(
             select(Enrollment.course_id)
             .where(
                 Enrollment.student_id == student_id,
-                Enrollment.status == EnrollmentStatus.active,
+                Enrollment.status.in_(ENROLLMENT_HAS_ACCESS),
             )
             .distinct()
         ).all()

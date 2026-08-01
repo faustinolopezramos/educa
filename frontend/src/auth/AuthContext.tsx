@@ -9,7 +9,7 @@ import {
 
 import { api, getRefreshToken, getToken, LOGOUT_EVENT, setToken } from "../lib/api";
 import { queryClient } from "../lib/queryClient";
-import type { LoginResponse, Role, User } from "../lib/types";
+import type { LoginResponse, Permission, Role, User } from "../lib/types";
 
 interface AuthContextValue {
   user: User | null;
@@ -17,6 +17,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   hasRole: (...roles: Role[]) => boolean;
+  hasPermission: (permission: Permission) => boolean;
   /** Applies a fresh user object (e.g. after saving profile changes) without a full reload. */
   updateUser: (user: User) => void;
 }
@@ -88,8 +89,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user !== null && roles.includes(user.role);
   }
 
+  function hasPermission(permission: Permission): boolean {
+    if (!user) return false;
+    if (user.role === "admin" || user.role === "superadmin") return true;
+    if (user.role === "assistant") {
+      return Boolean(user.permissions?.includes(permission));
+    }
+    return false;
+  }
+
   const value = useMemo(
-    () => ({ user, loading, login, logout, hasRole, updateUser: setUser }),
+    () => ({ user, loading, login, logout, hasRole, hasPermission, updateUser: setUser }),
     [user, loading],
   );
 

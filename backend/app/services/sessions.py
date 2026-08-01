@@ -115,6 +115,24 @@ def ensure_session(db: Session, schedule: Schedule, on: date) -> ClassSession:
     return session
 
 
+def mark_held(db: Session, session: ClassSession) -> ClassSession:
+    """Record that a class actually took place.
+
+    `SessionStatus.held` existed from the start but nothing ever wrote it, so
+    reports fell back to `realizadas = total − canceladas` and a class still
+    three days away already counted as taught. Taking attendance is the signal
+    that a class happened — it is the one action nobody performs for a class
+    that did not.
+
+    A cancelled session is left alone: reviving it is `PATCH /sessions/{id}`,
+    an explicit decision, not a side effect of a mark being corrected.
+    """
+    if session.status == SessionStatus.scheduled:
+        session.status = SessionStatus.held
+        db.flush()
+    return session
+
+
 def cancel_session(
     db: Session, session: ClassSession, reason: str | None
 ) -> ClassSession:

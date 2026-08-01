@@ -29,7 +29,7 @@ from app.models import (
     ClassSession,
     Course,
     Enrollment,
-    EnrollmentStatus,
+    ENROLLMENT_OCCUPIES_SEAT,
     Grade,
     Schedule,
     SessionStatus,
@@ -71,9 +71,12 @@ def scoped_course_ids(
 
     Filters can only ever narrow the caller's own scope — never widen it.
     """
-    if is_admin(user):
+    if is_admin(user) or user.role == UserRole.assistant:
         # Every course *of their own academy* — an admin reports on the whole
-        # school, not on the whole installation.
+        # school, not on the whole installation. An assistant who got this far
+        # holds `view_reports`, which is the same school-wide view: they had no
+        # branch of their own before and fell through to the student one, so the
+        # report came back empty with nothing to explain why.
         allowed = tenant_course_ids(db, user)
     elif user.role == UserRole.teacher:
         allowed = teacher_course_ids(db, user.id)
@@ -131,6 +134,8 @@ class Report:
     sessions_total: int = 0
     sessions_held: int = 0
     sessions_cancelled: int = 0
+    # Neither taught nor called off: still upcoming, or past with no register.
+    sessions_pending: int = 0
     attendance_rate: float | None = None
     attendance_by_course: list[CourseAttendance] = field(default_factory=list)
     grades_recorded: int = 0
@@ -175,10 +180,17 @@ def build_report(
     report.sessions_cancelled = sum(
         1 for s in sessions if s.status == SessionStatus.cancelled
     )
-    # "Held" = the classes that actually took place, i.e. everything not
-    # cancelled. Nothing flips a session to an explicit "held" status, so a
-    # cancelled class is the only thing that reduces the count.
-    report.sessions_held = report.sessions_total - report.sessions_cancelled
+    # "Held" now means a class the register says took place, not merely one
+    # nobody cancelled. It used to be `total − cancelled`, which counted every
+    # class still in the future: a weekly report pulled on Monday already
+    # reported Friday's class as taught. `mark_held` writes the status when
+    # attendance is taken, which is the only evidence the system has.
+    report.sessions_held = sum(1 for s in sessions if s.status == SessionStatus.held)
+    # What is left is neither taught nor called off: still to come if the date
+    # has not passed, and never registered if it has.
+    report.sessions_pending = (
+        report.sessions_total - report.sessions_held - report.sessions_cancelled
+    )
 
     # --- Attendance in range ---
     att_rows = db.execute(
@@ -321,9 +333,7 @@ def build_report(
         db.scalars(
             select(Enrollment).where(
                 Enrollment.course_id.in_(course_ids or [-1]),
-                Enrollment.status.in_(
-                    [EnrollmentStatus.active, EnrollmentStatus.enrolled]
-                ),
+                Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
                 *([Enrollment.student_id == own_student_id] if own_student_id else []),
             )
         ).all()

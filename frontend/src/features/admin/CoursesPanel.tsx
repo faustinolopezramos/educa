@@ -21,30 +21,29 @@ import {
   Toolbar,
 } from "../../components/ui";
 import { IconBook } from "../../components/icons";
-import { DAYS } from "../../lib/format";
+import { DAYS, modalityLabel } from "../../lib/format";
 import {
   useCourses,
   useCreateCourse,
   useUpdateCourse,
   useDeleteCourse,
-  useEnrollments,
   useLevels,
   useRooms,
   useSchedules,
   useUsers,
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
-import type { Course } from "../../lib/types";
+import type { Course, CourseStatus } from "../../lib/types";
+import { CourseStatusBadge, CourseStatusControl } from "./CourseStatusControl";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
 import { CreateScheduleModal } from "../schedules/CreateScheduleModal";
-import { RegisterTeacherWizard } from "./RegisterTeacherWizard";
+import { AssignTeacherModal } from "./AssignTeacherModal";
 import { UnifiedCourseWizardModal } from "./UnifiedCourseWizardModal";
 import { onMutationError } from "./shared";
 
 export function CoursesPanel() {
   const { data: courses = [] } = useCourses();
   const { data: levels = [] } = useLevels();
-  const { data: enrollments = [] } = useEnrollments();
   const { data: schedules = [] } = useSchedules();
   const { data: teachers = [] } = useUsers("teacher");
   const { data: rooms = [] } = useRooms();
@@ -55,6 +54,7 @@ export function CoursesPanel() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLevelId, setSelectedLevelId] = useState<number>(0);
   const [selectedTeacherId, setSelectedTeacherId] = useState<number>(0);
+  const [selectedStatus, setSelectedStatus] = useState<CourseStatus | "all">("all");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -78,6 +78,7 @@ export function CoursesPanel() {
   const totalCapacity = courses.reduce((acc, c) => acc + (c.max_students || 0), 0);
 
   const filteredCourses = courses.filter((c) => {
+    if (selectedStatus !== "all" && c.status !== selectedStatus) return false;
     if (selectedLevelId > 0 && c.level_id !== selectedLevelId) return false;
     
     // Check teacher filter
@@ -121,7 +122,10 @@ export function CoursesPanel() {
   }
 
   const filtersActive =
-    selectedLevelId > 0 || selectedTeacherId > 0 || searchTerm.trim() !== "";
+    selectedLevelId > 0 ||
+    selectedTeacherId > 0 ||
+    selectedStatus !== "all" ||
+    searchTerm.trim() !== "";
 
   return (
     <div>
@@ -129,7 +133,14 @@ export function CoursesPanel() {
         title="Cursos"
         meta={
           <>
-            <MetaItem value={courses.length} label="cursos" />
+            <MetaItem
+              value={courses.filter((c) => c.status === "open" || c.status === "in_progress").length}
+              label="activos"
+            />
+            <MetaItem
+              value={courses.filter((c) => c.status === "draft").length}
+              label="en borrador"
+            />
             <MetaItem value={totalCapacity} label="cupos totales" />
             <MetaItem value={levels.length} label="niveles" />
           </>
@@ -188,6 +199,7 @@ export function CoursesPanel() {
               setSearchTerm("");
               setSelectedLevelId(0);
               setSelectedTeacherId(0);
+              setSelectedStatus("all");
             }}
           >
             Limpiar
@@ -228,9 +240,10 @@ export function CoursesPanel() {
             </div>
           ) : (
             filteredCourses.map((c) => {
-              const activeCount = enrollments.filter(
-                (e) => e.course_id === c.id && e.status === "active"
-              ).length;
+              // Counted server-side, and counted the way the cupo is: an
+              // "Inscrito" student holds a seat too. This used to count only
+              // `active`, so a course could look half empty while being full.
+              const activeCount = c.seats_taken;
               const capacityPct = Math.min(
                 100,
                 Math.round((activeCount / (c.max_students || 1)) * 100)
@@ -249,7 +262,10 @@ export function CoursesPanel() {
                       sección. */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <Badge color="indigo">{levelCode(c.level_id)}</Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge color="indigo">{levelCode(c.level_id)}</Badge>
+                        <CourseStatusBadge status={c.status} />
+                      </div>
                       <h3 className="mt-1.5 truncate text-sm font-bold text-slate-900">
                         {c.name}
                       </h3>
@@ -271,6 +287,14 @@ export function CoursesPanel() {
                         },
                       ]}
                     />
+                  </div>
+
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    {/* The next move in the course's life, offered where the
+                        course is — not buried in an edit form. Only the legal
+                        moves appear; a refused one explains what it still
+                        needs. */}
+                    <CourseStatusControl course={c} />
                   </div>
 
                   <dl className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
@@ -296,7 +320,7 @@ export function CoursesPanel() {
                               {DAYS[s.day_of_week]} {s.start_time.slice(0, 5)}–
                               {s.end_time.slice(0, 5)}
                               <span className="ml-1.5 font-normal text-slate-500">
-                                {s.modality === "virtual" ? "Virtual" : "Presencial"}
+                                {modalityLabel(s.modality)}
                               </span>
                             </div>
                           ))
@@ -483,10 +507,16 @@ export function CoursesPanel() {
         />
       )}
 
-      {/* Teacher Assignment Wizard Modal for existing course */}
+      {/* Assigning is one step. Building the timetable is offered right
+          afterwards when the course has none, because a course with no slots
+          cannot be opened for enrolment. */}
       {teacherWizardCourseId && (
-        <RegisterTeacherWizard
+        <AssignTeacherModal
           initialCourseId={teacherWizardCourseId}
+          onCreateSchedule={(cId) => {
+            setTeacherWizardCourseId(null);
+            setScheduleCourseId(cId);
+          }}
           onClose={() => setTeacherWizardCourseId(null)}
         />
       )}

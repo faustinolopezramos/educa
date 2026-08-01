@@ -30,6 +30,7 @@ import type {
   PaymentKind,
 } from "../../lib/types";
 import { onMutationError } from "./shared";
+import { allowedTransitions, formatBalance, isTerminalStatus } from "../../lib/enrollment";
 
 const STATUS_LABELS = ENROLLMENT_LABELS as Record<EnrollmentStatus, string>;
 
@@ -205,6 +206,7 @@ export function EnrollmentsPanel() {
                       <Th>Alumno</Th>
                       <Th>Estado</Th>
                       <Th>Pago</Th>
+                      <Th align="right">Saldo</Th>
                       <Th>Asistencia</Th>
                       <Th align="right">Acciones</Th>
                     </tr>
@@ -244,6 +246,20 @@ export function EnrollmentsPanel() {
                                   ? "En mora"
                                   : "Pendiente"}
                             </Badge>
+                          </Td>
+                          <Td align="right">
+                            {/* The badge says whether money is late; this says
+                                how much, which is the question actually asked
+                                at the desk. */}
+                            <span
+                              className={
+                                e.balance > 0.005
+                                  ? "tabular text-sm font-medium text-slate-900"
+                                  : "tabular text-sm text-slate-500"
+                              }
+                            >
+                              {formatBalance(e.balance)}
+                            </span>
                           </Td>
                           <Td>
                             <AttendanceToggle enrollment={e} />
@@ -299,7 +315,21 @@ export function EnrollmentsPanel() {
                 {students.find((s) => s.id === deleting.student_id)?.full_name ??
                   `#${deleting.student_id}`}
               </strong>
-              . Esta acción no se puede deshacer.
+              {/* Deleting an enrollment cascades to everything hanging off it.
+                  Saying "no se puede deshacer" without naming what goes leaves
+                  the destructive part invisible until it has happened. */}
+              , y con ella <strong>su asistencia, sus notas y todo su historial de
+              pagos y comprobantes</strong>. Esta acción no se puede deshacer.
+              {deleting.balance > 0.005 && (
+                <>
+                  {" "}
+                  Esta matrícula tiene un saldo pendiente de{" "}
+                  <strong>{deleting.balance.toFixed(2)}</strong>: al eliminarla, esa
+                  deuda deja de aparecer en el sistema.
+                </>
+              )}
+              {" "}Si el alumno simplemente abandonó el curso, márcalo como{" "}
+              <strong>Desistió</strong> en vez de borrarlo: conserva el historial.
             </>
           }
           busy={deleteEnrollment.isPending}
@@ -323,12 +353,21 @@ const STATUS_SELECT_STYLES: Record<EnrollmentStatus, string> = {
 
 function StatusSelect({ enrollment }: { enrollment: Enrollment }) {
   const update = useUpdateEnrollment();
+  // A finished matrícula has nowhere left to go, so the control stops being a
+  // control — offering moves the API refuses only teaches people to expect
+  // errors.
+  const terminal = isTerminalStatus(enrollment.status);
   return (
     <Select
       aria-label="Estado de la matrícula"
+      title={
+        terminal
+          ? `«${STATUS_LABELS[enrollment.status]}» es un estado final. Para readmitir al alumno, crea una matrícula nueva.`
+          : undefined
+      }
       className={`min-w-[8rem] !py-1 text-xs font-semibold ${STATUS_SELECT_STYLES[enrollment.status]}`}
       value={enrollment.status}
-      disabled={update.isPending}
+      disabled={update.isPending || terminal}
       onChange={(e) =>
         update.mutate(
           { id: enrollment.id, status: e.target.value as EnrollmentStatus },
@@ -336,7 +375,7 @@ function StatusSelect({ enrollment }: { enrollment: Enrollment }) {
         )
       }
     >
-      {(Object.keys(STATUS_LABELS) as EnrollmentStatus[]).map((s) => (
+      {allowedTransitions(enrollment.status).map((s) => (
         <option key={s} value={s}>
           {STATUS_LABELS[s]}
         </option>

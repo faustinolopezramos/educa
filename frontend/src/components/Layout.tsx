@@ -3,7 +3,7 @@ import type { ComponentType, SVGProps } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
-import { defaultSection, NAV, type NavItem } from "../lib/nav";
+import { defaultSection, getNavForUser, type NavItem } from "../lib/nav";
 import { useLocationProposals } from "../lib/queries";
 import { CommandPalette, openCommandPalette } from "./CommandPalette";
 import {
@@ -33,6 +33,7 @@ import { Toaster } from "./Toaster";
 const roleLabels: Record<string, string> = {
   superadmin: "Superadministrador",
   admin: "Administrador",
+  assistant: "Asistente / Secretaría",
   teacher: "Profesor",
   student: "Alumno",
 };
@@ -45,6 +46,8 @@ const ITEM_ICONS: Record<string, IconComponent> = {
   courses: IconBook,
   enrollments: IconClipboard,
   users: IconUsers,
+  teachers: IconCap,
+  students: IconUsers,
   reports: IconChart,
   reportes: IconChart,
   catalog: IconLayers,
@@ -55,6 +58,7 @@ const ITEM_ICONS: Record<string, IconComponent> = {
   tenants: IconBuilding,
   tareas: IconClipboard,
   calificaciones: IconCap,
+  progreso: IconChart,
   perfil: IconUser,
 };
 
@@ -77,7 +81,7 @@ export function Layout() {
     });
   }
 
-  const groups = NAV[user.role] ?? [];
+  const groups = getNavForUser(user);
   const onHome = location.pathname === "/";
   const activeId = onHome ? (params.get("m") ?? defaultSection(user.role)) : "";
 

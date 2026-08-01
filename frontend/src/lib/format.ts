@@ -1,3 +1,5 @@
+import type { Modality } from "./types";
+
 export const DAYS = [
   "Lunes",
   "Martes",
@@ -63,3 +65,36 @@ export const ENROLLMENT_LABELS: Record<string, string> = {
   certified: "Certificado",
   withdrawn: "Desistió",
 };
+
+/**
+ * The three ways a class can be held.
+ *
+ * Every screen used to write this out as `modality === "virtual" ? "Virtual" :
+ * "Presencial"`, which silently folded **Semi presencial** into "Presencial" —
+ * so the third modality the academy actually offers was invisible everywhere it
+ * mattered: the teacher's class list, the planner, the course sheet and the
+ * approval queue all called a hybrid class presencial.
+ */
+export const MODALITY_LABELS: Record<Modality, string> = {
+  presencial: "Presencial",
+  semi_presencial: "Semi presencial",
+  virtual: "Virtual",
+};
+
+export function modalityLabel(modality: Modality): string {
+  return MODALITY_LABELS[modality] ?? modality;
+}
+
+/** Badge colour per modality, so the three are told apart at a glance. */
+export function modalityColor(modality: Modality): "indigo" | "sky" | "slate" {
+  if (modality === "virtual") return "indigo";
+  if (modality === "semi_presencial") return "sky";
+  return "slate";
+}
+
+/** True when the class puts people in a room — presencial *and* semi
+ *  presencial both reserve one, which is why a room check must not test for
+ *  `=== "presencial"`. */
+export function usesRoom(modality: Modality): boolean {
+  return modality !== "virtual";
+}

@@ -110,6 +110,12 @@ def login(
     password_ok = verify_password(form_data.password, password_hash)
     if user is None or not password_ok:
         raise _credentials_exc
+    # A deactivated account keeps its rows — its grades, its classes, its trail
+    # — but stops being a way in. Same generic error as a wrong password: which
+    # accounts have been switched off is not something a stranger gets to probe.
+    if not user.is_active:
+        logger.info("Refused login for deactivated account %s", user.id)
+        raise _credentials_exc
     _purge_old_revoked_sessions(db, user.id)
     token = _issue_tokens(db, user)
     db.commit()

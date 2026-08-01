@@ -32,7 +32,8 @@ function RoleHome() {
   // A superadmin is an admin with tenant management on top, so they get the
   // admin dashboard (which carries the extra "tenants" section). Without this
   // they fell through to the student dashboard.
-  if (user.role === "admin" || user.role === "superadmin") return <AdminDashboard />;
+  if (user.role === "admin" || user.role === "superadmin" || user.role === "assistant")
+    return <AdminDashboard />;
   if (user.role === "teacher") return <TeacherDashboard />;
   return <StudentDashboard />;
 }

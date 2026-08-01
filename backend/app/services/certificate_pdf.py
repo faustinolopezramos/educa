@@ -79,7 +79,7 @@ def build_certificate_pdf(
     c.setFillColor(MUTED)
     c.setFont("Helvetica", 9)
     c.drawString(28 * mm, 26 * mm, f"Emitido el {issued_at.strftime('%d/%m/%Y')}")
-    c.drawRightString(width - 28 * mm, 26 * mm, f"Código de verificación: {code}")
+    c.drawRightString(width - 28 * mm, 26 * mm, f"Código: {code} (Verificación pública /public/certificates/verify/{code})")
 
     c.showPage()
     c.save()

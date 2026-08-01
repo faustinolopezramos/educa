@@ -7,13 +7,28 @@ import {
 } from "../../components/ui";
 import { IconUsers } from "../../components/icons";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
+import { AssignTeacherModal } from "./AssignTeacherModal";
 import { RegisterTeacherWizard } from "./RegisterTeacherWizard";
 import {
   useCreateUser, useDeleteUser, useLanguages, useNationalities, useSetTeacherLanguages, useTeacherLanguages, useUpdateUser, useUsers,
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
-import type { Nationality, User } from "../../lib/types";
+import type { Nationality, Role, User } from "../../lib/types";
 import { EMAIL_RE, PASSWORD_MIN_LENGTH, onMutationError } from "./shared";
+import { useAuth } from "../../auth/AuthContext";
+
+import type { Permission } from "../../lib/types";
+
+const ALL_PERMISSIONS: { id: Permission; label: string; description: string }[] = [
+  { id: "manage_teachers", label: "Gestionar Profesores", description: "Crear, editar y cualificar profesores" },
+  { id: "manage_students", label: "Gestionar Alumnos", description: "Crear y editar información de alumnos" },
+  { id: "manage_catalog", label: "Gestionar Catálogo", description: "Idiomas, tracks, niveles, cursos y aulas" },
+  { id: "manage_schedules", label: "Gestionar Horarios", description: "Crear, editar y reasignar franjas horarias" },
+  { id: "manage_enrollments", label: "Gestionar Matrículas", description: "Inscribir, congelar o certificar alumnos" },
+  { id: "manage_finance", label: "Gestionar Finanzas", description: "Cargos, cobros y emisión de comprobantes" },
+  { id: "manage_grades", label: "Gestionar Calificaciones", description: "Libro de notas y asistencia general" },
+  { id: "view_reports", label: "Ver Reportes", description: "Acceso a reportes académicos y financieros" },
+];
 
 const EMPTY_USER = {
   email: "",
@@ -25,16 +40,35 @@ const EMPTY_USER = {
   address: "",
   cui_passport: "",
   nationality_id: 0,
+  permissions: [] as Permission[],
 };
 
 import { StudentAccountStatementModal } from "./StudentAccountStatementModal";
 
-type RoleTab = "student" | "teacher" | "admin" | "all";
+type RoleTab = "student" | "teacher" | "assistant" | "admin" | "all";
+
+/** Which permission puts a user in charge of a given role — the same table the
+ *  API enforces (`users._MANAGEABLE_ROLES`). Kept in step with it deliberately:
+ *  offering an action the API will refuse is worse than not offering it. */
+function useManageableRoles(): (role: Role) => boolean {
+  const { user, hasPermission } = useAuth();
+  return (role: Role) => {
+    if (!user) return false;
+    if (user.role === "admin" || user.role === "superadmin") return true;
+    if (user.role !== "assistant") return false;
+    if (role === "teacher") return hasPermission("manage_teachers");
+    if (role === "student") return hasPermission("manage_students");
+    // An assistant never manages another staff account, whatever they hold.
+    return false;
+  };
+}
 
 export function UsersPanel() {
   const { data: users = [] } = useUsers();
   const { data: nationalities = [] } = useNationalities();
   const del = useDeleteUser();
+  const canManage = useManageableRoles();
+  const { hasPermission } = useAuth();
 
   const [activeTab, setActiveTab] = useState<RoleTab>("student");
   const [searchTerm, setSearchTerm] = useState("");
@@ -52,6 +86,7 @@ export function UsersPanel() {
     let roleMatch = true;
     if (activeTab === "student") roleMatch = u.role === "student";
     else if (activeTab === "teacher") roleMatch = u.role === "teacher";
+    else if (activeTab === "assistant") roleMatch = u.role === "assistant";
     else if (activeTab === "admin") roleMatch = u.role === "admin" || u.role === "superadmin";
 
     if (!roleMatch) return false;
@@ -69,6 +104,7 @@ export function UsersPanel() {
 
   const countStudents = users.filter((u) => u.role === "student").length;
   const countTeachers = users.filter((u) => u.role === "teacher").length;
+  const countAssistants = users.filter((u) => u.role === "assistant").length;
   const countAdmins = users.filter((u) => u.role === "admin" || u.role === "superadmin").length;
 
   const createLabel =
@@ -76,7 +112,32 @@ export function UsersPanel() {
       ? "Nuevo profesor"
       : activeTab === "student"
         ? "Nuevo alumno"
-        : "Nuevo usuario";
+        : activeTab === "assistant"
+          ? "Nuevo asistente"
+          : "Nuevo usuario";
+
+  // Only offer the tabs whose population this account actually manages, and only
+  // offer to create into a tab that would accept the new user.
+  const TABS: { value: RoleTab; label: string; count: number; role: Role | null }[] = [
+    { value: "student", label: "Alumnos", count: countStudents, role: "student" },
+    { value: "teacher", label: "Profesores", count: countTeachers, role: "teacher" },
+    { value: "assistant", label: "Asistentes", count: countAssistants, role: "assistant" },
+    { value: "admin", label: "Administradores", count: countAdmins, role: "admin" },
+    { value: "all", label: "Todos", count: users.length, role: null },
+  ];
+  const visibleTabs = TABS.filter((t) => t.role === null || canManage(t.role));
+  const canCreateHere =
+    activeTab === "all"
+      ? visibleTabs.some((t) => t.role !== null)
+      : canManage(activeTab as Role);
+
+  // An assistant landing on a tab they cannot see would stare at an empty table
+  // with no way to tell why, so move them to the first one that is theirs.
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.value === activeTab) && visibleTabs.length > 0) {
+      setActiveTab(visibleTabs[0].value);
+    }
+  }, [activeTab, visibleTabs.length]);
 
   return (
     <div>
@@ -86,19 +147,24 @@ export function UsersPanel() {
           <>
             <MetaItem value={countStudents} label="alumnos" />
             <MetaItem value={countTeachers} label="profesores" />
+            <MetaItem value={countAssistants} label="asistentes" />
             <MetaItem value={countAdmins} label="administradores" />
           </>
         }
         actions={
           <>
-            <Button variant="secondary" onClick={() => setIsCreateOpen(true)}>
-              {createLabel}
-            </Button>
-            {activeTab === "student" && (
+            {canCreateHere && (
+              <Button variant="secondary" onClick={() => setIsCreateOpen(true)}>
+                {createLabel}
+              </Button>
+            )}
+            {activeTab === "student" && hasPermission("manage_enrollments") && (
               <Button onClick={() => setEnrollStudentId(0)}>Inscribir en curso</Button>
             )}
-            {activeTab === "teacher" && (
-              <Button onClick={() => setTeacherWizardId("new")}>Asignar a curso</Button>
+            {activeTab === "teacher" && hasPermission("manage_teachers") && (
+              <Button onClick={() => setTeacherWizardId("new")}>
+                Registrar profesor y asignarlo
+              </Button>
             )}
           </>
         }
@@ -108,12 +174,7 @@ export function UsersPanel() {
         <SegmentedControl
           value={activeTab}
           onChange={setActiveTab}
-          options={[
-            { value: "student", label: "Alumnos", count: countStudents },
-            { value: "teacher", label: "Profesores", count: countTeachers },
-            { value: "admin", label: "Administradores", count: countAdmins },
-            { value: "all", label: "Todos", count: users.length },
-          ]}
+          options={visibleTabs.map(({ value, label, count }) => ({ value, label, count }))}
         />
         <SearchInput
           className="w-full sm:ml-auto sm:w-72"
@@ -139,9 +200,9 @@ export function UsersPanel() {
                   <Button variant="secondary" onClick={() => setSearchTerm("")}>
                     Limpiar búsqueda
                   </Button>
-                ) : (
+                ) : canCreateHere ? (
                   <Button onClick={() => setIsCreateOpen(true)}>{createLabel}</Button>
-                )
+                ) : null
               }
             />
           </div>
@@ -187,16 +248,20 @@ export function UsersPanel() {
                             ? "indigo"
                             : u.role === "teacher"
                               ? "amber"
-                              : "slate"
+                              : u.role === "assistant"
+                                ? "sky"
+                                : "slate"
                         }
                       >
                         {u.role === "student"
                           ? "Alumno"
                           : u.role === "teacher"
                             ? "Profesor"
-                            : u.role === "superadmin"
-                              ? "Superadmin"
-                              : "Admin"}
+                            : u.role === "assistant"
+                              ? "Asistente"
+                              : u.role === "superadmin"
+                                ? "Superadmin"
+                                : "Admin"}
                       </Badge>
                       {u.role === "teacher" && (
                         <div className="mt-1">
@@ -223,17 +288,24 @@ export function UsersPanel() {
                           ...(u.role === "teacher"
                             ? [
                                 {
-                                  label: "Asignar curso y tarifas",
+                                  label: "Asignar a un curso",
                                   onClick: () => setTeacherWizardId(u.id),
                                 },
                               ]
                             : []),
-                          { label: "Editar usuario", onClick: () => setEditing(u) },
-                          {
-                            label: "Eliminar usuario",
-                            onClick: () => setToDelete(u),
-                            danger: true,
-                          },
+                          ...(canManage(u.role)
+                            ? [
+                                {
+                                  label: "Editar usuario",
+                                  onClick: () => setEditing(u),
+                                },
+                                {
+                                  label: "Eliminar usuario",
+                                  onClick: () => setToDelete(u),
+                                  danger: true,
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </Td>
@@ -267,9 +339,15 @@ export function UsersPanel() {
         />
       )}
 
-      {teacherWizardId !== null && (
-        <RegisterTeacherWizard
-          initialTeacherId={teacherWizardId === "new" ? undefined : teacherWizardId}
+      {/* "new" is onboarding — account, qualifications, course and timetable —
+          and stays the full wizard. Assigning somebody who already exists to
+          another course is one step. */}
+      {teacherWizardId === "new" && (
+        <RegisterTeacherWizard onClose={() => setTeacherWizardId(null)} />
+      )}
+      {teacherWizardId !== null && teacherWizardId !== "new" && (
+        <AssignTeacherModal
+          initialTeacherId={teacherWizardId}
           onClose={() => setTeacherWizardId(null)}
         />
       )}
@@ -397,9 +475,44 @@ function CreateUserModal({
           <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
             <option value="student">Alumno</option>
             <option value="teacher">Profesor</option>
+            <option value="assistant">Asistente / Secretaría</option>
             <option value="admin">Administrador</option>
           </Select>
         </Field>
+
+        {form.role === "assistant" && (
+          <Field label="Permisos asignados" hint="Selecciona los módulos a los que el asistente tendrá acceso">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {ALL_PERMISSIONS.map((perm) => {
+                const checked = form.permissions.includes(perm.id);
+                return (
+                  <label
+                    key={perm.id}
+                    className={`flex items-start gap-2.5 rounded-lg border p-2.5 cursor-pointer text-xs transition-colors ${
+                      checked ? "border-brand-500 bg-brand-50/50" : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...form.permissions, perm.id]
+                          : form.permissions.filter((p) => p !== perm.id);
+                        setForm({ ...form, permissions: next });
+                      }}
+                    />
+                    <div>
+                      <div className="font-medium text-slate-800">{perm.label}</div>
+                      <div className="text-slate-500 text-2xs">{perm.description}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </Field>
+        )}
 
         <Field
           label="Contraseña inicial"
@@ -491,6 +604,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
     phone: user.phone ?? "",
     address: user.address ?? "",
     nationality_id: user.nationality_id ?? 0,
+    permissions: user.permissions || [],
   });
 
   const [selectedLangIds, setSelectedLangIds] = useState<number[]>([]);
@@ -527,6 +641,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
       phone: form.phone.trim() || null,
       address: form.address.trim() || null,
       nationality_id: form.nationality_id || null,
+      permissions: form.role === "assistant" ? form.permissions : [],
     };
     if (form.password) patch.password = form.password;
 
@@ -586,9 +701,44 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
           <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
             <option value="student">Alumno</option>
             <option value="teacher">Profesor</option>
+            <option value="assistant">Asistente / Secretaría</option>
             <option value="admin">Administrador</option>
           </Select>
         </Field>
+
+        {form.role === "assistant" && (
+          <Field label="Permisos asignados" hint="Selecciona los módulos a los que el asistente tendrá acceso">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {ALL_PERMISSIONS.map((perm) => {
+                const checked = form.permissions.includes(perm.id);
+                return (
+                  <label
+                    key={perm.id}
+                    className={`flex items-start gap-2.5 rounded-lg border p-2.5 cursor-pointer text-xs transition-colors ${
+                      checked ? "border-brand-500 bg-brand-50/50" : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...form.permissions, perm.id]
+                          : form.permissions.filter((p) => p !== perm.id);
+                        setForm({ ...form, permissions: next });
+                      }}
+                    />
+                    <div>
+                      <div className="font-medium text-slate-800">{perm.label}</div>
+                      <div className="text-slate-500 text-2xs">{perm.description}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </Field>
+        )}
 
         {form.role === "teacher" && (
           <>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
+import { ActionTray } from "../components/ActionTray";
 import { PromptModal } from "../components/PromptModal";
 import {
   Badge,
@@ -22,7 +23,14 @@ import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
 import { apiErrorMessage } from "../lib/api";
 import { SCORE_MAX, SCORE_MIN, DAILY_EVALUATION } from "../lib/constants";
-import { dayName, formatTime, todayLocal } from "../lib/format";
+import {
+  MODALITY_LABELS,
+  dayName,
+  formatTime,
+  modalityColor,
+  modalityLabel,
+  todayLocal,
+} from "../lib/format";
 import { notify } from "../lib/toast";
 import {
   useCancelSession,
@@ -50,12 +58,6 @@ import type {
   Modality,
   Schedule,
 } from "../lib/types";
-
-const MODALITY_LABELS: Record<Modality, string> = {
-  presencial: "Presencial",
-  semi_presencial: "Semi presencial",
-  virtual: "Virtual",
-};
 
 function onMutationError(fallback: string) {
   return (e: unknown) => notify(apiErrorMessage(e, fallback), "error");
@@ -154,16 +156,35 @@ function ClassesView() {
     if (!selected && featured) setSelected(featured.s);
   }, [featured, selected]);
 
+  // A course with a Nocturna jornada is two weekly slots, so counting rows here
+  // told a teacher they had twice the courses they teach. Group by course: the
+  // heading counts courses, the rows stay the slots you actually stand up for.
+  const byCourse = useMemo(() => {
+    const groups = new Map<number, Schedule[]>();
+    for (const s of orderedSchedules) {
+      const list = groups.get(s.course_id) ?? [];
+      list.push(s);
+      groups.set(s.course_id, list);
+    }
+    return [...groups.entries()];
+  }, [orderedSchedules]);
+
   return (
     <div>
       <PageHeader title="Mis clases" />
+
+      {/* Classes whose register was never taken, and proposals still waiting on
+          dirección. Both were invisible until a teacher went looking. */}
+      <ActionTray emptyMessage="No tienes clases pendientes de registrar." />
 
       <NowBar featured={featured} courseName={courseName} onGo={(s) => setSelected(s)} />
 
       <div className="grid gap-5 lg:grid-cols-3">
         {/* Left: Schedule Selector List */}
         <Card className="lg:col-span-1">
-          <SectionHeading>Cursos asignados ({schedules.length})</SectionHeading>
+          <SectionHeading>
+            {byCourse.length === 1 ? "1 curso asignado" : `${byCourse.length} cursos asignados`}
+          </SectionHeading>
           {schedules.length === 0 ? (
             <EmptyState
               icon={<IconClock className="h-5 w-5" />}
@@ -171,41 +192,52 @@ function ClassesView() {
               message="Cuando dirección te asigne un curso, tus clases aparecerán aquí."
             />
           ) : (
-            <div className="space-y-1.5">
-              {orderedSchedules.map((s) => {
-                const isActive = selected?.id === s.id;
-                const isToday = s.day_of_week === todayDow;
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => setSelected(s)}
-                    aria-current={isActive ? "true" : undefined}
-                    className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                      isActive
-                        ? "border-brand-500 bg-brand-50"
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
-                        {courseName(s.course_id)}
+            <div className="space-y-4">
+              {byCourse.map(([courseId, slots]) => (
+                <div key={courseId}>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                      {courseName(courseId)}
+                    </span>
+                    {slots.length > 1 && (
+                      <span className="flex-none text-2xs text-slate-400">
+                        {slots.length} franjas
                       </span>
-                      <Badge color={s.modality === "virtual" ? "indigo" : "slate"}>
-                        {s.modality === "virtual" ? "Virtual" : "Presencial"}
-                      </Badge>
-                    </div>
-                    <div className="tabular mt-1 text-xs text-slate-500">
-                      {isToday ? (
-                        <span className="font-semibold text-brand-700">Hoy</span>
-                      ) : (
-                        dayName(s.day_of_week)
-                      )}
-                      {" · "}
-                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                    </div>
-                  </button>
-                );
-              })}
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {slots.map((s) => {
+                      const isActive = selected?.id === s.id;
+                      const isToday = s.day_of_week === todayDow;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => setSelected(s)}
+                          aria-current={isActive ? "true" : undefined}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg border p-2.5 text-left transition-colors ${
+                            isActive
+                              ? "border-brand-500 bg-brand-50"
+                              : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="tabular min-w-0 truncate text-xs text-slate-600">
+                            {isToday ? (
+                              <span className="font-semibold text-brand-700">Hoy</span>
+                            ) : (
+                              dayName(s.day_of_week)
+                            )}
+                            {" · "}
+                            {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                          </span>
+                          <Badge color={modalityColor(s.modality)}>
+                            {modalityLabel(s.modality)}
+                          </Badge>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </Card>
@@ -277,7 +309,7 @@ function NowBar({
         </div>
         <div className="tabular mt-0.5 text-xs text-slate-400">
           {formatTime(s.start_time)}–{formatTime(s.end_time)} ·{" "}
-          {s.modality === "virtual" ? "Virtual" : "Presencial"}
+          {modalityLabel(s.modality)}
           {!todayOrNow && ` · ${when}`}
         </div>
       </div>
@@ -355,9 +387,7 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
         <Stat
           label="Modalidad"
           value={
-            <span className="text-lg">
-              {schedule.modality === "virtual" ? "Virtual" : "Presencial"}
-            </span>
+            <span className="text-lg">{modalityLabel(schedule.modality)}</span>
           }
         />
       </div>

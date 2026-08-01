@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { TeacherAvailability, TeacherLanguage } from "../types";
+import type {
+  TeacherAvailability,
+  TeacherLanguage,
+  TeacherLiveAssignment,
+  TeacherReassignResult,
+} from "../types";
 
 export const useTeacherLanguages = (teacherId?: number) =>
   useQuery({
@@ -65,5 +70,45 @@ export function useDeleteAvailability() {
     }) => api.delete(`/teachers/${teacherId}/availability/${id}`),
     onSuccess: (_d, v) =>
       qc.invalidateQueries({ queryKey: ["teacher-availability", v.teacherId] }),
+  });
+}
+
+/** The live courses a teacher still holds — what a baja would strand. */
+export const useTeacherAssignments = (teacherId: number | null) =>
+  useQuery({
+    queryKey: ["teacher-assignments", teacherId],
+    queryFn: async () =>
+      (await api.get<TeacherLiveAssignment[]>(`/teachers/${teacherId}/assignments`))
+        .data,
+    enabled: teacherId != null,
+  });
+
+/**
+ * Hand a teacher's courses to another.
+ *
+ * Per-course outcomes, like the bulk enrolment: six courses moving and one
+ * clashing should leave five moved and one explained, not seven untouched.
+ */
+export function useReassignTeacher() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      teacherId,
+      ...payload
+    }: {
+      teacherId: number;
+      to_teacher_id: number;
+      course_ids?: number[];
+      force?: boolean;
+    }) =>
+      (await api.post<TeacherReassignResult>(`/teachers/${teacherId}/reassign`, payload))
+        .data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["teacher-assignments"] });
+      qc.invalidateQueries({ queryKey: ["schedules"] });
+      qc.invalidateQueries({ queryKey: ["course-teachers"] });
+      qc.invalidateQueries({ queryKey: ["courses"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }

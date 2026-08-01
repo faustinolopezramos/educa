@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func as sa_func
 from sqlalchemy import select
@@ -5,16 +7,110 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import apply_tenant, in_tenant, require_role
+from app.core.deps import apply_tenant, get_current_user, in_tenant
 from app.core.security import hash_password
-from app.models import User, UserRole
+from app.models import Permission, User, UserRole
+from app.models.refresh_session import RefreshSession
+from app.services.staff import live_assignments
 from app.schemas.base import PaginatedResponse
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.audit import record, snapshot
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-admin_only = require_role(UserRole.admin)
+
+# Which roles each permission puts an assistant in charge of. The user
+# directory is the one place where "what may I do?" is a question about *whose*
+# record it is, not just which endpoint was called.
+_MANAGEABLE_ROLES: dict[Permission, UserRole] = {
+    Permission.manage_teachers: UserRole.teacher,
+    Permission.manage_students: UserRole.student,
+}
+
+
+def _manageable_roles(actor: User) -> set[UserRole]:
+    """The roles `actor` may create, edit or delete.
+
+    An admin manages everyone in their academy. An assistant manages only the
+    populations they were handed, and never another staff account: handing out
+    `manage_teachers` is not meant to hand out the ability to edit an admin.
+    """
+    if actor.role in (UserRole.admin, UserRole.superadmin):
+        return set(UserRole)
+    if actor.role != UserRole.assistant:
+        return set()
+    held = set(actor.permissions or [])
+    return {role for perm, role in _MANAGEABLE_ROLES.items() if perm.value in held}
+
+
+def _get_staff_actor(current_user: User = Depends(get_current_user)) -> User:
+    """Anyone who may see the user directory at all.
+
+    This used to admit an assistant holding *any* permission whatsoever, so one
+    granted only `manage_finance` could read every account in the academy —
+    names, emails and roles included. The directory now answers only to the two
+    permissions that are actually about people.
+    """
+    if _manageable_roles(current_user):
+        return current_user
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient permissions")
+
+
+def _revoke_sessions(db: Session, user: User) -> None:
+    """End every open session of `user`, server-side."""
+    db.query(RefreshSession).filter(
+        RefreshSession.user_id == user.id,
+        RefreshSession.revoked_at.is_(None),
+    ).update(
+        {RefreshSession.revoked_at: datetime.now(timezone.utc)},
+        synchronize_session=False,
+    )
+
+
+def _guard_deactivation(db: Session, user: User, actor: User) -> None:
+    """Refuse a baja that would strand a live class, and say what to move.
+
+    A deactivated teacher cannot log in, so leaving them on an open course would
+    leave that course with nobody able to take its register. The refusal carries
+    the courses to reassign, which is what `POST /teachers/{id}/reassign` takes
+    — the error is the entry point to the fix, not a dead end.
+    """
+    if user.id == actor.id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "No puedes desactivar tu propia cuenta; pide a otro administrador que lo haga.",
+        )
+    if user.role != UserRole.teacher:
+        return
+    pending = live_assignments(db, user.id)
+    if pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    "Este profesor todavía imparte cursos activos. Reasígnalos a "
+                    "otro profesor antes de darle de baja."
+                ),
+                "reason": "has_live_assignments",
+                "courses": [
+                    {
+                        "course_id": a.course_id,
+                        "course_name": a.course_name,
+                        "schedule_count": len(a.schedule_ids),
+                    }
+                    for a in pending
+                ],
+            },
+        )
+
+
+def _assert_may_manage(actor: User, target_role: UserRole) -> None:
+    """Guard a write against the roles the actor was actually handed."""
+    if target_role not in _manageable_roles(actor):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"No tienes permiso para gestionar usuarios con rol '{target_role.value}'",
+        )
 
 
 def _guard_role_assignment(actor: User, role: UserRole | None) -> None:
@@ -62,9 +158,15 @@ def list_users(
     offset: int = 0,
     limit: int = Query(default=200, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(_get_staff_actor),
 ) -> PaginatedResponse[UserRead]:
     filters = [User.role == role] if role is not None else []
+    # An assistant sees the populations they manage and no others. Without this
+    # the directory handed a student-desk assistant the full staff list.
+    if current_user.role == UserRole.assistant:
+        # Non-empty by construction: `_get_staff_actor` turned away any
+        # assistant holding neither people permission.
+        filters.append(User.role.in_(_manageable_roles(current_user)))
     count_stmt = apply_tenant(
         select(sa_func.count(User.id)).where(*filters), User.tenant_id, current_user
     )
@@ -83,9 +185,10 @@ def list_users(
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(_get_staff_actor),
 ) -> User:
     _guard_role_assignment(current_user, payload.role)
+    _assert_may_manage(current_user, payload.role)
     tenant_id = _resolve_tenant_id(current_user, payload.tenant_id)
     # Emails are unique *per tenant* (`uq_users_tenant_email`), so the
     # duplicate check has to be scoped the same way — a global check would
@@ -104,6 +207,7 @@ def create_user(
         phone=payload.phone,
         address=payload.address,
         nationality_id=payload.nationality_id,
+        permissions=[p.value for p in payload.permissions or []],
         password_hash=hash_password(payload.password),
     )
     db.add(user)
@@ -121,9 +225,11 @@ def create_user(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(_get_staff_actor),
 ) -> User:
-    return _in_scope_or_404(db, current_user, user_id)
+    user = _in_scope_or_404(db, current_user, user_id)
+    _assert_may_manage(current_user, user.role)
+    return user
 
 
 @router.patch("/{user_id}", response_model=UserRead)
@@ -131,9 +237,13 @@ def update_user(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(_get_staff_actor),
 ) -> User:
     user = _in_scope_or_404(db, current_user, user_id)
+    # Both ends of the edit are guarded: the account being touched, and the role
+    # it is being moved to. Checking only the first would let an assistant
+    # promote a student they manage into an admin they do not.
+    _assert_may_manage(current_user, user.role)
     before = snapshot(user)
     data = payload.model_dump(exclude_unset=True)
     if "role" in data:
@@ -145,11 +255,22 @@ def update_user(
                 "No puedes cambiar tu propio rol; pide a otro administrador que lo haga.",
             )
         _guard_role_assignment(current_user, data["role"])
+        _assert_may_manage(current_user, data["role"])
         # Demoting a superadmin is equally a superadmin-only act, otherwise an
         # admin could strip the only account that can manage tenants.
         _guard_role_assignment(current_user, user.role)
     if "password" in data:
         user.password_hash = hash_password(data.pop("password"))
+        user.token_version += 1
+    if "permissions" in data:
+        # The column is plain JSON; the schema hands over Permission members.
+        data["permissions"] = [p.value for p in data["permissions"] or []]
+    if data.get("is_active") is False:
+        _guard_deactivation(db, user, current_user)
+    if "is_active" in data and data["is_active"] != user.is_active:
+        # Switching an account off has to end the sessions it already has, not
+        # just refuse the next login.
+        _revoke_sessions(db, user)
         user.token_version += 1
     for field, value in data.items():
         setattr(user, field, value)
@@ -160,30 +281,22 @@ def update_user(
     return user
 
 
-from datetime import datetime, timezone
-from app.models.refresh_session import RefreshSession
-
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(_get_staff_actor),
 ) -> None:
     user = _in_scope_or_404(db, current_user, user_id)
+    _assert_may_manage(current_user, user.role)
     if user.id == current_user.id:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "No puedes eliminar tu propia cuenta; pide a otro administrador que lo haga.",
         )
     # Revoke all active refresh tokens for the deleted user
-    db.query(RefreshSession).filter(
-        RefreshSession.user_id == user.id,
-        RefreshSession.revoked_at.is_(None),
-    ).update(
-        {RefreshSession.revoked_at: datetime.now(timezone.utc)},
-        synchronize_session=False,
-    )
+    _revoke_sessions(db, user)
 
     record(db, current_user, "delete", "user", user.id, before=snapshot(user))
     db.delete(user)

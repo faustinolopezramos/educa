@@ -8,15 +8,18 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import academy_today
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role
-from app.models import Notification, User, UserRole
+from app.core.deps import (
+    get_current_user,
+    require_staff_permission,
+)
+from app.models import Notification, Permission, User, UserRole
 from app.schemas.notification import NotificationRead
 from app.services.notifications import notify_teacher_of_at_risk
 from app.services.reports import build_report
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-staff_only = require_role(UserRole.admin, UserRole.teacher)
+staff_only = require_staff_permission(Permission.view_reports)
 
 
 @router.get("", response_model=list[NotificationRead])

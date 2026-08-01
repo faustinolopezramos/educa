@@ -13,6 +13,7 @@ from app.routers import (
     audit,
     auth,
     catalog,
+    dashboard,
     enrollments,
     grades,
     grading,
@@ -21,6 +22,7 @@ from app.routers import (
     meetings,
     notifications,
     payments,
+    public,
     reports,
     rooms,
     schedules,
@@ -166,5 +168,7 @@ app.include_router(meetings.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
 app.include_router(payments.router)
+app.include_router(public.router)
 app.include_router(audit.router)
+app.include_router(dashboard.router)
 app.include_router(webhooks.router)

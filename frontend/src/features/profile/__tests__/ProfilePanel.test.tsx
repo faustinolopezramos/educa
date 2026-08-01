@@ -31,6 +31,7 @@ describe("ProfilePanel", () => {
       login: vi.fn(),
       logout: vi.fn(),
       hasRole: vi.fn(),
+      hasPermission: vi.fn(),
       updateUser: mockUpdateUser,
     });
 
