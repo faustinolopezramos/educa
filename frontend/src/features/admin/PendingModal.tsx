@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Badge, Button, EmptyState, Modal, ModalActions, Table, Td, Th } from "../../components/ui";
 import { PromptModal } from "../../components/PromptModal";
+import { ClassLocation } from "../../components/ClassLocation";
 import { useLocationProposals, useReviewProposal, useRooms, useUsers } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import { onMutationError } from "./shared";
@@ -84,18 +85,12 @@ export function PendingModal({ onClose }: Props) {
                         </Badge>
                       </Td>
                       <Td>
-                        {p.modality === "virtual" ? (
-                          <a
-                            href={p.join_url ?? "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-brand-600 hover:underline font-mono truncate max-w-[180px] inline-block"
-                          >
-                            {p.join_url || "Enlace no indicado"}
-                          </a>
-                        ) : (
-                          <span className="font-medium text-slate-700">{roomName(p.room_id)}</span>
-                        )}
+                        <ClassLocation
+                          modality={p.modality}
+                          roomName={roomName(p.room_id)}
+                          joinUrl={p.join_url}
+                          compact
+                        />
                       </Td>
                       <Td>
                         <div className="flex items-center gap-1.5">

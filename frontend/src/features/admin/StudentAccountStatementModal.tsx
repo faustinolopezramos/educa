@@ -39,6 +39,7 @@ export function StudentAccountStatementModal({
   const [paymentKind, setPaymentKind] = useState<PaymentKind>("payment");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("transfer");
+  const [receiptNumber, setReceiptNumber] = useState("");
   const [notes, setNotes] = useState("");
 
   function handleRegisterPayment() {
@@ -55,11 +56,13 @@ export function StudentAccountStatementModal({
         kind: paymentKind,
         amount: numAmount,
         method: paymentKind === "payment" ? method : undefined,
+        receipt_number: receiptNumber.trim() || undefined,
         notes: notes.trim() || undefined,
       },
       {
         onSuccess: () => {
           setAmount("");
+          setReceiptNumber("");
           setNotes("");
           setShowPaymentForm(false);
           notify("Movimiento financiero registrado correctamente", "success");
@@ -198,7 +201,7 @@ export function StudentAccountStatementModal({
                 <div className="font-bold text-slate-900 text-xs border-b border-brand-200/60 pb-2">
                   Registrar Nuevo Movimiento Financiero
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-4 gap-3">
                   <Field label="Tipo de Movimiento">
                     <Select
                       value={paymentKind}
@@ -221,19 +224,29 @@ export function StudentAccountStatementModal({
                   </Field>
 
                   {paymentKind === "payment" && (
-                    <Field label="Método de Pago">
-                      <Select value={method} onChange={(e) => setMethod(e.target.value)}>
-                        <option value="transfer">Transferencia Bancaria</option>
-                        <option value="cash">Efectivo</option>
-                        <option value="card">Tarjeta de Crédito/Débito</option>
-                      </Select>
-                    </Field>
+                    <>
+                      <Field label="Método de Pago">
+                        <Select value={method} onChange={(e) => setMethod(e.target.value)}>
+                          <option value="transfer">Transferencia Bancaria</option>
+                          <option value="cash">Efectivo</option>
+                          <option value="card">Tarjeta de Crédito/Débito</option>
+                        </Select>
+                      </Field>
+
+                      <Field label="No. de Boleta / Ref.">
+                        <Input
+                          placeholder="Ej. 987654"
+                          value={receiptNumber}
+                          onChange={(e) => setReceiptNumber(e.target.value)}
+                        />
+                      </Field>
+                    </>
                   )}
                 </div>
 
-                <Field label="Notas o Referencia (opcional)">
+                <Field label="Notas adicionales (opcional)">
                   <Input
-                    placeholder="Ej. Depósito #123456 en Banco Industrial"
+                    placeholder="Ej. Depósito realizado en Banco Industrial"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                   />
@@ -273,7 +286,8 @@ export function StudentAccountStatementModal({
                       <tr>
                         <Th>Fecha</Th>
                         <Th>Tipo</Th>
-                        <Th>Método / Referencia</Th>
+                        <Th>Método</Th>
+                        <Th>No. Boleta / Ref.</Th>
                         <Th>Notas</Th>
                         <Th>Monto</Th>
                       </tr>
@@ -303,6 +317,11 @@ export function StudentAccountStatementModal({
                                   : m.method === "card"
                                   ? "Tarjeta"
                                   : "—"}
+                              </span>
+                            </Td>
+                            <Td>
+                              <span className="font-mono font-semibold text-slate-800">
+                                {m.receipt_number ? `#${m.receipt_number}` : "—"}
                               </span>
                             </Td>
                             <Td>

@@ -66,8 +66,13 @@ def _writes(world):
 def test_a_granted_permission_opens_the_section_it_advertises(
     client, assistant, world
 ):
-    for permission, method, path, body, expected in _writes(world):
-        user = assistant(permission, email=f"grant_{permission.value}@test.com")
+    # El correo lleva el índice, no sólo el permiso: `_writes` tiene dos
+    # entradas con `manage_catalog`, así que la variante anterior creaba dos
+    # veces la misma dirección. Ninguna de las dos cuentas tiene academia, y en
+    # Postgres `NULL != NULL`, así que `uq_users_tenant_email` no lo impedía —
+    # y el login, que se niega a resolver un correo ambiguo, respondía 401.
+    for i, (permission, method, path, body, expected) in enumerate(_writes(world)):
+        user = assistant(permission, email=f"grant_{i}_{permission.value}@test.com")
         res = getattr(client, method)(
             path, headers=_login(client, user.email), json=body
         )
@@ -76,14 +81,16 @@ def test_a_granted_permission_opens_the_section_it_advertises(
 
 def test_an_assistant_without_the_permission_is_still_refused(client, assistant, world):
     """The other half of the deal: the sections stay shut without the grant."""
-    for permission, method, path, body, _ in _writes(world):
+    for i, (permission, method, path, body, _) in enumerate(_writes(world)):
         # Hold a *different* permission, so the refusal is about this one.
         other = (
             Permission.manage_students
             if permission is not Permission.manage_students
             else Permission.manage_teachers
         )
-        user = assistant(other, email=f"deny_{permission.value}@test.com")
+        # Índice en el correo por la misma razón que arriba: dos entradas de
+        # `_writes` comparten permiso y repetían la dirección.
+        user = assistant(other, email=f"deny_{i}_{permission.value}@test.com")
         res = getattr(client, method)(
             path, headers=_login(client, user.email), json=body
         )

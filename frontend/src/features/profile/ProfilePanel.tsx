@@ -8,6 +8,7 @@ import { apiErrorMessage } from "../../lib/api";
 import { PASSWORD_MIN_LENGTH } from "../../lib/constants";
 import { useNationalities, useUpdateMe } from "../../lib/queries";
 import { notify } from "../../lib/toast";
+import { formatCuiPassport, formatPhoneNumber, validateCuiPassport } from "../../lib/validation";
 import type { User } from "../../lib/types";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -59,6 +60,13 @@ function DetailsForm({ user }: { user: User }) {
       notify("El nombre no puede estar vacío", "error");
       return;
     }
+    if (cuiPassport.trim()) {
+      const cuiVal = validateCuiPassport(cuiPassport);
+      if (!cuiVal.isValid && cuiVal.error) {
+        notify(cuiVal.error, "error");
+        return;
+      }
+    }
     update.mutate(
       {
         full_name: fullName.trim(),
@@ -92,14 +100,18 @@ function DetailsForm({ user }: { user: User }) {
             </Badge>
           </div>
         </Field>
-        <Field label="Nombre completo">
+        <Field label="Nombre completo" required={true}>
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
         </Field>
-        <Field label="CUI / Pasaporte">
-          <Input value={cuiPassport} onChange={(e) => setCuiPassport(e.target.value)} placeholder="Ej. 2540 12345 0101" />
+        <Field label="CUI / DPI o Pasaporte" required={true} hint="Identificación personal principal (DPI o Pasaporte)">
+          <Input
+            value={cuiPassport}
+            onChange={(e) => setCuiPassport(formatCuiPassport(e.target.value))}
+            placeholder="Ej. 2450 12345 0101"
+          />
         </Field>
         <Field label="Teléfono">
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <Input value={phone} onChange={(e) => setPhone(formatPhoneNumber(e.target.value))} placeholder="+502 5555-5555" />
         </Field>
         <Field label="Dirección">
           <Input value={address} onChange={(e) => setAddress(e.target.value)} />

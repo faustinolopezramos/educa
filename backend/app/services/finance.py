@@ -22,12 +22,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.clock import academy_today
-from app.models import ENROLLMENT_OWES, Enrollment, Payment, PaymentKind, PaymentStatus
+from app.core.deps import apply_tenant
+from app.models import (
+    ENROLLMENT_OWES,
+    Course,
+    Enrollment,
+    Payment,
+    PaymentKind,
+    PaymentStatus,
+    User,
+)
 
 # Money is stored as a float, so an exact `paid >= charged` comparison can trip
 # on the last binary digit (0.1 + 0.2 owed against 0.3 paid). A hundredth of a
 # currency unit is below anything the academy can actually collect.
-_EPSILON = 0.005
+MONEY_EPSILON = 0.005
 
 
 def enrollment_balance(db: Session, enrollment_id: int) -> tuple[float, float]:
@@ -50,7 +59,7 @@ def derive_payment_status(
     # An enrollment whose ledger was never opened falls back to the agreed
     # cuota, so a fee recorded only on the enrollment still counts as owed.
     owed = (charged if charged > 0 else enrollment.amount) - paid
-    if owed <= _EPSILON:
+    if owed <= MONEY_EPSILON:
         return PaymentStatus.paid
 
     # Delinquent as soon as the charges already due exceed what has been paid:
@@ -67,7 +76,7 @@ def derive_payment_status(
             )
         ).all()
     )
-    if due_charges - paid > _EPSILON:
+    if due_charges - paid > MONEY_EPSILON:
         return PaymentStatus.overdue
 
     return PaymentStatus.pending
@@ -81,22 +90,33 @@ def refresh_payment_status(
     return enrollment.payment_status
 
 
-def refresh_all_payment_statuses(db: Session, *, on: date | None = None) -> int:
-    """Re-derive every live enrollment's status; returns how many changed.
+def refresh_all_payment_statuses(
+    db: Session, actor: User, *, on: date | None = None
+) -> int:
+    """Re-derive the caller's academy's live enrollments; returns how many changed.
 
     Delinquency is the one status that arrives by the calendar rather than by
     someone touching the record, so without a periodic sweep an enrollment that
     quietly went past due would keep reporting itself as `pending`. Exposed as
     an admin endpoint (`POST /payments/refresh-statuses`) so it can be driven
     by cron until there is a real scheduler.
+
+    Scoped to `actor`'s academy, like every other read and write in the system.
+    Unscoped, an admin of one academy rewrote the payment status of every
+    enrollment in the installation and got back a count of how many rows changed
+    in academies that are none of their business. A superadmin has no tenant of
+    their own, so for them the sweep stays installation-wide by design — that is
+    the same convention `apply_tenant` uses everywhere else.
     """
-    live = db.scalars(
-        select(Enrollment).where(
-            Enrollment.status.in_(ENROLLMENT_OWES)
-        )
-    ).all()
+    stmt = apply_tenant(
+        select(Enrollment)
+        .join(Course, Enrollment.course_id == Course.id)
+        .where(Enrollment.status.in_(ENROLLMENT_OWES)),
+        Course.tenant_id,
+        actor,
+    )
     changed = 0
-    for enrollment in live:
+    for enrollment in db.scalars(stmt).all():
         previous = enrollment.payment_status
         if refresh_payment_status(db, enrollment, on=on) is not previous:
             changed += 1

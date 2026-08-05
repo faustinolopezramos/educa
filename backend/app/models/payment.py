@@ -27,6 +27,8 @@ class Payment(Base):
     kind: Mapped[PaymentKind] = mapped_column(SqlEnum(PaymentKind, name="payment_kind"))
     amount: Mapped[float] = mapped_column(Float)
     method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Número de boleta de pago, depósito o transferencia bancaria
+    receipt_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # When a `charge` falls due. NULL means open-ended — an amount owed with no
     # agreed date, which can never become delinquent on its own. Ignored on
     # `payment` rows, which record money already received.

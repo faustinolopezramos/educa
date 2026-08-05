@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.core.clock import academy_today
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.main import app
@@ -43,6 +44,26 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+psycopg://educa:educa@localhost:5432/educa_test",
 )
+
+# El "hoy" de toda la suite, congelado una sola vez al arrancar.
+#
+# Las fixtures llamaban a `date.today()` cada vez que las necesitaban, y la
+# suite tarda unos ocho minutos: una ejecución que cruza la medianoche monta el
+# término de un horario con la fecha de ayer y evalúa la aserción con la de hoy.
+# El resultado es un fallo que no se reproduce jamás — sólo aparece una vez y en
+# la pasada que cruzó las 00:00.
+#
+# Se lee con `academy_today()`, el mismo reloj que usa la aplicación (la zona de
+# la academia, no la del servidor), para que la fecha de las pruebas y la de la
+# lógica bajo prueba no puedan discrepar. Lo que se congela es el momento de
+# leerlo, no de dónde se lee.
+TODAY = academy_today()
+
+
+@pytest.fixture(scope="session")
+def today() -> date:
+    """La fecha de referencia de la suite. Constante durante toda la ejecución."""
+    return TODAY
 
 
 @pytest.fixture(scope="session")
@@ -129,7 +150,7 @@ def world(db: Session):
     db.add(level)
     db.flush()
 
-    term_start, term_end = date.today(), date.today() + timedelta(days=90)
+    term_start, term_end = TODAY, TODAY + timedelta(days=90)
     course_a = Course(
         level_id=level.id,
         name="Curso A",
@@ -180,7 +201,7 @@ def world(db: Session):
     enrollment = Enrollment(
         student_id=student.id,
         course_id=course_a.id,
-        enrollment_code=next_enrollment_code(db, year=date.today().year),
+        enrollment_code=next_enrollment_code(db, year=TODAY.year),
     )
     db.add(enrollment)
     db.flush()

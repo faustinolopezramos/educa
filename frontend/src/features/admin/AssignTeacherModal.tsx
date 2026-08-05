@@ -108,6 +108,18 @@ export function AssignTeacherModal({
     );
   }
 
+  const teacherOtherSchedules = schedules.filter(
+    (s) => s.teacher_id === teacherId && s.course_id !== courseId,
+  );
+  const hasCollision = courseSchedules.some((cs) =>
+    teacherOtherSchedules.some(
+      (os) =>
+        os.day_of_week === cs.day_of_week &&
+        os.start_time < cs.end_time &&
+        os.end_time > cs.start_time,
+    ),
+  );
+
   const canSubmit = Boolean(courseId && teacherId) && !alreadyAssigned;
 
   return (
@@ -134,7 +146,7 @@ export function AssignTeacherModal({
       }
     >
       <div className="space-y-4">
-        <Field label="Curso">
+        <Field label="Curso" required={true}>
           <SearchSelect
             options={courseOptions}
             value={courseId || null}
@@ -144,7 +156,7 @@ export function AssignTeacherModal({
           />
         </Field>
 
-        <Field label="Profesor">
+        <Field label="Profesor" required={true}>
           <SearchSelect
             options={teacherOptions}
             value={teacherId || null}
@@ -204,6 +216,12 @@ export function AssignTeacherModal({
               )}
             </div>
           </div>
+        )}
+
+        {hasCollision && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+            <strong>Advertencia de Traslape:</strong> {teacher?.full_name} ya imparte otro curso en este mismo horario semanal.
+          </p>
         )}
 
         {alreadyAssigned && (

@@ -25,7 +25,11 @@ from app.schemas.payment import (
     PaymentStatusRefresh,
 )
 from app.services.audit import record, snapshot
-from app.services.finance import refresh_all_payment_statuses, refresh_payment_status
+from app.services.finance import (
+    MONEY_EPSILON,
+    refresh_all_payment_statuses,
+    refresh_payment_status,
+)
 from app.services.invoice_pdf import build_invoice_pdf
 from app.services.sequences import next_invoice_code
 
@@ -115,7 +119,7 @@ def refresh_payment_statuses(
     a charge that quietly went past its due date needs a sweep to be noticed.
     Safe to run as often as you like — it only ever recomputes.
     """
-    changed = refresh_all_payment_statuses(db)
+    changed = refresh_all_payment_statuses(db, current_user)
     # A sweep touches many enrollments at once and belongs to no single one, so
     # it records one summary row (`entity_id` 0 — there is no one record this is
     # "about") rather than flooding the trail with a line per enrollment.
@@ -167,7 +171,13 @@ def issue_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only),
 ) -> Invoice:
-    """Issue a receipt for everything paid so far on this enrollment."""
+    """Issue a receipt for whatever has been paid and not yet invoiced.
+
+    Por el importe *pendiente de facturar*, no por el total pagado. Emitía
+    siempre el acumulado, así que llamarlo dos veces producía dos comprobantes
+    por el mismo dinero: sumados, la academia aparecía cobrando el doble de lo
+    que entró en caja.
+    """
     enrollment = _get_enrollment(db, current_user, enrollment_id)
     total_paid = sum(
         p.amount
@@ -178,14 +188,30 @@ def issue_invoice(
             )
         ).all()
     )
+    already_invoiced = (
+        db.scalar(
+            select(func.coalesce(func.sum(Invoice.total_amount), 0.0)).where(
+                Invoice.enrollment_id == enrollment_id
+            )
+        )
+        or 0.0
+    )
+    pending = total_paid - already_invoiced
     if total_paid <= 0:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "No hay pagos registrados para facturar"
         )
+    # El mismo epsilon que usa finanzas: el importe es un float y la diferencia
+    # de dos sumas puede quedarse en una milésima que nadie puede cobrar.
+    if pending <= MONEY_EPSILON:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Todos los pagos de esta matrícula ya están facturados",
+        )
     invoice = Invoice(
         enrollment_id=enrollment.id,
         code=next_invoice_code(db, year=datetime.now(timezone.utc).year),
-        total_amount=total_paid,
+        total_amount=pending,
         issued_by=current_user.id,
     )
     db.add(invoice)

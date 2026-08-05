@@ -86,6 +86,7 @@ export interface Course {
   status: CourseStatus;
   start_date: string | null;
   end_date: string | null;
+  periodicity?: string | null;
   max_students: number;
   passing_score: number;
   /** Seats held, teachers assigned and weekly slots — counted server-side so
@@ -215,6 +216,7 @@ export interface Payment {
   kind: PaymentKind;
   amount: number;
   method: string | null;
+  receipt_number?: string | null;
   /** Only meaningful on a `charge`: when it falls due (YYYY-MM-DD). */
   due_date: string | null;
   paid_at: string;
@@ -250,6 +252,10 @@ export interface ClassSession {
   cancel_reason: string | null;
   origin_session_id: number | null;
   recording_url?: string | null;
+  /** Cuándo el profesor dio la lista por terminada. `null` = todavía abierta.
+   *  `status` sólo dice si la clase ocurrió; esto dice si quedó registrada. */
+  register_closed_at?: string | null;
+  register_closed_by?: number | null;
 }
 
 export interface Assignment {

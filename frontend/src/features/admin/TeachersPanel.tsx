@@ -7,8 +7,10 @@ import {
 import { IconUsers } from "../../components/icons";
 import {
   useCourses,
+  useLanguages,
   useReassignTeacher,
   useTeacherAssignments,
+  useTeacherLanguages,
   useUpdateUser,
   useUsers,
 } from "../../lib/queries";
@@ -136,6 +138,7 @@ export function TeachersPanel() {
             <thead>
               <tr>
                 <Th>Profesor</Th>
+                <Th>Áreas Académicas</Th>
                 <Th>Estado</Th>
                 <Th>Carga</Th>
                 <Th align="right">Acciones</Th>
@@ -198,6 +201,8 @@ function TeacherRow({
   onReactivate: () => void;
 }) {
   const { data: assignments = [] } = useTeacherAssignments(teacher.id);
+  const { data: qualLangs = [] } = useTeacherLanguages(teacher.id);
+  const { data: languages = [] } = useLanguages();
   const slots = assignments.reduce((n, a) => n + a.schedule_count, 0);
 
   return (
@@ -205,6 +210,22 @@ function TeacherRow({
       <Td>
         <div className="font-medium text-slate-900">{teacher.full_name}</div>
         <div className="mt-0.5 font-mono text-xs text-slate-500">{teacher.email}</div>
+      </Td>
+      <Td>
+        {qualLangs.length === 0 ? (
+          <span className="text-xs text-slate-400">Todas las áreas</span>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {qualLangs.map((ql) => {
+              const lang = languages.find((g) => g.id === ql.language_id);
+              return (
+                <Badge key={ql.language_id} color="indigo">
+                  {lang ? lang.name : `#${ql.language_id}`}
+                </Badge>
+              );
+            })}
+          </div>
+        )}
       </Td>
       <Td>
         <Badge color={teacher.is_active ? "green" : "slate"}>

@@ -19,6 +19,7 @@ export function useCreatePayment() {
       kind: PaymentKind;
       amount: number;
       method?: string;
+      receipt_number?: string;
       /** Only read for a `charge`: the date it falls due. */
       due_date?: string;
       notes?: string;

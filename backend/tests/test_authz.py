@@ -174,6 +174,9 @@ def _new_user(password: str) -> dict:
         "full_name": "Password Probe",
         "role": "student",
         "password": password,
+        # Obligatoria al dar de alta; aquí es sólo relleno válido, lo que se
+        # está probando es la contraseña.
+        "cui_passport": "2450123450101",
     }
 
 
@@ -226,3 +229,58 @@ def test_webhook_without_a_signature_is_rejected(client, world):
 def test_manual_provider_has_no_webhook_endpoint(client, world):
     res = client.post("/webhooks/manual", json={"event": "meeting.ended"})
     assert res.status_code == 404
+
+
+# ---------------- Writing someone else's slot ----------------
+#
+# Two notions of "teaches this" coexist on purpose: grading and taking the
+# register follow the *course* assignment, while generating, cancelling or
+# rescheduling a franja is the titular's alone — calling off a colleague's class
+# is not the same as grading in it.
+#
+# What the refusal says depends on who is asking. A teacher assigned to the
+# course already sees the slot in their session list, so a mute 404 only reads
+# as a broken system; one who is not assigned learns nothing either way.
+def test_a_co_teacher_is_told_why_they_cannot_write_a_colleagues_slot(
+    client, db, world
+):
+    from app.models import CourseTeacher
+
+    db.add(
+        CourseTeacher(
+            course_id=world["course_a"].id,
+            teacher_id=world["teacher_b"].id,
+            is_lead=False,
+        )
+    )
+    db.flush()
+
+    headers = auth(client, "teacher_b@test.com")
+    res = client.post(
+        "/sessions/generate",
+        json={"schedule_id": world["schedule_a"].id},
+        headers=headers,
+    )
+    assert res.status_code == 403
+    assert "titular" in res.json()["detail"]
+
+
+def test_a_teacher_outside_the_course_still_gets_a_flat_404(client, world):
+    # teacher_b is not assigned to course_a here, so the slot must stay invisible.
+    headers = auth(client, "teacher_b@test.com")
+    res = client.post(
+        "/sessions/generate",
+        json={"schedule_id": world["schedule_a"].id},
+        headers=headers,
+    )
+    assert res.status_code == 404
+
+
+def test_the_titular_still_writes_their_own_slot(client, world):
+    headers = auth(client, "teacher_a@test.com")
+    res = client.post(
+        "/sessions/generate",
+        json={"schedule_id": world["schedule_a"].id},
+        headers=headers,
+    )
+    assert res.status_code == 200

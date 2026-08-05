@@ -55,6 +55,16 @@ Reglas que acotan el rol:
 
 > Este rol se había quedado a medio cablear: sólo cuatro endpoints consultaban la lista de permisos y el resto seguía exigiendo rol de admin, así que **el menú ofrecía secciones que la API rechazaba con 403** (Aulas, Festivos, Horarios, Finanzas, editar usuarios), y Reportes devolvía un informe vacío sin explicar por qué. Ya no.
 
+### Identificación personal (DPI / CUI, Pasaporte o DNI)
+
+Toda cuenta que se da de alta lleva un documento de identidad **obligatorio**, y es **único dentro de la academia**: dos personas de la misma academia no pueden compartirlo, y la misma persona sí puede estar registrada en dos academias distintas.
+
+Para que "el mismo documento" tenga una sola respuesta, se guarda siempre en **forma canónica**: sólo caracteres alfanuméricos, en mayúsculas. Da igual cómo se teclee — `2450 12345 0101`, `2450-12345-0101` y `2450123450101` son la misma identidad, igual que `AB123456` y `ab123456`. Sin esa normalización la unicidad no servía de nada: bastaba cambiar la puntuación para registrar dos veces a la misma persona.
+
+La validación es **deliberadamente amplia**: entre 4 y 25 caracteres alfanuméricos. El documento puede ser un DPI/CUI guatemalteco, un pasaporte, un DNI o uno extranjero, y atarlo al formato de un solo país dejaría fuera a alumnos reales. Lo que se comprueba es que haya un identificador plausible, no que cumpla un patrón nacional concreto.
+
+Las cuentas anteriores a este requisito pueden seguir sin documento; lo que no se admite es dar de alta una nueva sin él.
+
 ### Datos de contacto y nacionalidad
 
 Todo usuario (admin, profesor o alumno es, técnicamente, la misma tabla con un rol distinto) puede tener registrado: **teléfono**, **dirección** y **nacionalidad**. Los tres campos son opcionales — un usuario puede quedar sin ninguno de los tres sin que nada se lo impida.
@@ -133,6 +143,19 @@ El Catálogo Académico (pantalla de administración) agrupa la lista de idiomas
 Un profesor debe ser **asignado explícitamente** a un curso (tabla de asignaciones profesor–curso) para poder impartirlo. La asignación **rechaza de forma dura (409, no overridable)** si el profesor no está cualificado en el idioma del curso.
 
 No se puede desasignar a un profesor de un curso mientras tenga horarios activos en él (evita horarios huérfanos).
+
+### Asignado al curso ≠ titular de la franja
+
+Un profesor tiene **dos alcances distintos**, y conviene no confundirlos porque no dan los mismos permisos:
+
+| Alcance | Qué es | Qué habilita |
+|---|---|---|
+| **Asignado al curso** | Tiene fila en la tabla profesor–curso | Calificar, pasar lista, poner y calificar tareas, ver el roster y las sesiones del curso, reportar sobre él |
+| **Titular de la franja** | Es el `teacher_id` de ese horario semanal | Además: **generar, cancelar y reprogramar** las sesiones de esa franja, y entrar al aula virtual como anfitrión |
+
+La diferencia es deliberada: cancelar la clase de un colega no es lo mismo que calificar en ella. Un curso con dos profesores asignados y una franja de cada uno mantiene a cada quien dueño de su propia clase, mientras ambos comparten libreta y lista.
+
+**La negativa distingue a quién se la da.** A un profesor asignado al curso se le responde **403 con motivo** ("no eres el titular de esta franja"): ya ve esa franja en su listado de sesiones y califica sobre ella, así que un 404 mudo sólo se leería como un fallo del sistema. A quien no está asignado al curso se le responde **404**, que es lo que corresponde a algo que no debe saber que existe.
 
 ### Cualificación
 - Se configura qué idiomas puede enseñar cada profesor
@@ -276,7 +299,9 @@ Cada matrícula puede llevar una **cuota** (el monto acordado). A partir de esa 
 
 El **saldo** de una matrícula (`cargado − pagado`) siempre se calcula al vuelo a partir de esos movimientos — nunca se guarda como un número aparte, así que no puede quedar desincronizado.
 
-Sobre ese ledger, un admin puede emitir una **factura** (comprobante interno, no una factura fiscal/electrónica): un recibo numerado con código correlativo propio y PDF descargable, por el total pagado hasta ese momento. Solo se puede emitir si hay al menos un pago registrado.
+Sobre ese ledger, un admin puede emitir una **factura** (comprobante interno, no una factura fiscal/electrónica): un recibo numerado con código correlativo propio y PDF descargable. Se emite **por el dinero recibido que todavía no se ha facturado**, no por el total pagado: si ya hay un comprobante por 100 y luego entran 40, la siguiente factura es de 40. Sin pagos nuevos que cubrir, se rechaza (409) en vez de emitir un duplicado — de lo contrario dos comprobantes sumados harían aparecer a la academia cobrando el doble de lo que entró en caja.
+
+La **morosidad** se recalcula con un barrido (`POST /payments/refresh-statuses`), pensado para dispararse por cron: el estado "en mora" llega por el calendario y no porque nadie toque el registro. El barrido alcanza **sólo a la academia de quien lo ejecuta**.
 
 **⚠️ Puntos pendientes de confirmar:**
 - Los **métodos de pago** ofrecidos hoy (efectivo, tarjeta, transferencia, otro) son un punto de partida razonable, no una lista confirmada por negocio.
@@ -286,7 +311,10 @@ Sobre ese ledger, un admin puede emitir una **factura** (comprobante interno, no
 El **saldo pendiente** de cada matrícula (`cargado − pagado`) se muestra ahora en el propio listado de matrículas, junto al estado de pago: el badge dice si el dinero está en mora, la columna dice cuánto. Se calcula para toda la lista en una sola consulta agregada, no una por fila.
 
 ### Borrado vs. baja
-Eliminar una matrícula arrastra en cascada su asistencia, sus notas y todo su historial de pagos y comprobantes. La confirmación lo dice explícitamente, advierte si queda saldo pendiente, y sugiere marcar **Desistió** en su lugar — que conserva el historial. Borrar un **curso** con matrículas está directamente bloqueado (409): hay que vaciarlo antes.
+
+**Una matrícula con expediente académico no se puede borrar** (409 `has_academic_record`). Si tiene notas, asistencia registrada o un certificado emitido, el DELETE se rechaza y el error dice cuánto hay de cada cosa; la vía para darla de baja es marcarla **Desistió**, que conserva todo. El borrado arrastraba ese expediente en cascada y la fila de auditoría sólo guardaba la matrícula — no las notas que desaparecían con ella, de modo que era la única operación del sistema capaz de destruir historial sin dejar rastro de qué había.
+
+El DELETE sigue existiendo para lo que sí es un error de captura: una matrícula recién creada sobre la que todavía nadie escribió nada. Borrar un **curso** con matrículas está directamente bloqueado (409): hay que vaciarlo antes.
 
 ---
 
@@ -295,12 +323,20 @@ Eliminar una matrícula arrastra en cascada su asistencia, sus notas y todo su h
 ### Marcación
 El profesor marca asistencia para cada matrícula en cada sesión:
 
-| Estado | Significado |
-|--------|-------------|
-| **Presente** | Asistió |
-| **Tarde** | Llegó tarde |
-| **Ausente** | No asistió |
-| **Justificado** | Falta justificada |
+| Estado | Atajo | Significado | Cómo cuenta en la tasa |
+|--------|-------|-------------|------------------------|
+| **Presente** | `P` | Asistió | A favor |
+| **Tarde** | `T` | Llegó tarde | A favor — llegar tarde es haber venido |
+| **Ausente** | `A` | No asistió | En contra |
+| **Justificada** | `J` | Falta con constancia | **Ni a favor ni en contra** |
+
+### Cómo se calcula la tasa de asistencia
+
+Son dos preguntas distintas —quién vino y qué clases cuentan— y hay **una sola respuesta para todo el sistema** (`ATTENDANCE_IS_PRESENT` y `ATTENDANCE_COUNTS_TOWARD_RATE`).
+
+La **falta justificada sale del cálculo por completo**: no es una asistencia que el alumno no tuvo, pero tampoco una falta que deba pesarle. De diez clases con una justificada, su tasa se calcula sobre nueve. Si todas sus marcas son justificadas no hay tasa que dar (`null`), en lugar de un 0% que castigaría a quien avisó y presentó constancia.
+
+> Esto era antes tres reglas distintas conviviendo: el reporte contaba la justificada como ausencia, el kardex la contaba como asistencia y el panel del alumno como ausencia otra vez. El mismo alumno tenía tres tasas según la pantalla que abriera. La opción «Justificada», además, existía en el modelo desde el principio y **la interfaz nunca la ofreció**, así que una incapacidad médica sólo podía registrarse como ausencia.
 
 ### Reglas
 - **Upsert idempotente y atómico**: volver a marcar reemplaza la marca anterior (no acumula), protegido contra condiciones de carrera por una restricción única en base de datos
@@ -312,8 +348,20 @@ El profesor marca asistencia para cada matrícula en cada sesión:
 - **No se puede pasar lista sobre una sesión cancelada**: nadie asistió a una clase que no se dio. Responde 409.
 - Ambas reglas valen igual para las **calificaciones** (sección 8).
 
-### La sesión registra que ocurrió
-Pasar lista marca la sesión como **realizada** (`held`). Es la única evidencia que tiene el sistema de que una clase se dio — nadie pasa lista de una clase que no ocurrió. Corregir una marca no cambia eso, y **nunca revive una sesión cancelada**: eso es una decisión explícita (`PATCH /sessions/{id}`), no un efecto secundario.
+### La clase ocurrió vs. la lista está registrada
+
+Son dos hechos distintos y el sistema los guarda por separado.
+
+**Que la clase ocurrió** (`status = held`) lo escribe la primera marca de asistencia: nadie pasa lista de una clase que no se dio. Corregir una marca no lo cambia, y **nunca revive una sesión cancelada** — eso es una decisión explícita (`PATCH /sessions/{id}`), no un efecto secundario.
+
+**Que la lista quedó registrada** lo afirma el profesor cerrándola (`POST /sessions/{id}/close-register`). Es lo que el reporte cuenta como sesión realizada y lo que saca la clase de sus pendientes.
+
+La distinción importa porque antes no existía: bastaba marcar a un alumno para que la sesión figurara como registrada, de modo que **una lista con 3 de 30 contaba igual que una con 30 de 30**, y desaparecía de los pendientes del profesor con el trabajo a medias.
+
+- Cerrar **exige que todos los que ocupan plaza tengan marca**. Si faltan, responde 409 con cuántos son, y la interfaz ofrece cerrar igualmente (`?force=true`) — el caso real del alumno que no apareció y a quien el profesor no quiere marcar.
+- Cerrar es también afirmar que la clase se dio: arrastra el `held`.
+- **Se puede reabrir** (`POST /sessions/{id}/reopen-register`) para corregir. Reabrir no deshace el `held`: lo que se reabre es el registro, no el hecho.
+- Cerrar y reabrir son del **profesor titular de la franja**, como generar, cancelar y reprogramar (sección 4), y **ambos quedan en la auditoría**.
 
 ---
 
@@ -353,24 +401,58 @@ Pasar lista marca la sesión como **realizada** (`held`). Es la única evidencia
 
 ## 10. Ubicación de Clases (Propuesta/Aprobación)
 
+### Qué necesita cada modalidad
+
+Son **dos preguntas independientes** —¿ocupa un aula? ¿hace falta un enlace?— y cada modalidad las responde por su cuenta. La respuesta vive en un solo sitio (`MODALITY_USES_ROOM` y `MODALITY_NEEDS_LINK`), no en un `if virtual … else …`.
+
+| Modalidad | Aula | Enlace | Qué es |
+|---|:---:|:---:|---|
+| **Presencial** | ✅ obligatoria | ❌ | La clase ocurre en el centro y sólo ahí |
+| **Semi presencial** | ✅ obligatoria | ✅ obligatorio | La clase ocurre **en el aula y en línea a la vez** |
+| **Virtual** | ❌ | ✅ obligatorio | La clase ocurre sólo en línea |
+
+Lo que una modalidad no usa **no se guarda**: un aula reservada por una clase virtual la bloquearía para quien sí la necesita, y un enlace colgando de una presencial es una puerta que nadie vigila.
+
+> Antes, «semi presencial» se trataba como «todo lo que no es virtual»: pedía aula y **borraba el enlace en silencio**. La mitad en línea de una clase híbrida no existía en ninguna parte, y el alumno que no podía asistir no tenía adónde conectarse. El formulario del asistente de cursos, además, enviaba un enlace que su propio formulario nunca dejaba escribir.
+
+### Dónde se define, y quién la ve
+
+La modalidad vive en el **horario**, no en el curso: es la franja la que ocupa un aula concreta a una hora concreta, y un curso puede tener franjas distintas.
+
+- **Dirección la elige al crear el horario**, en el asistente de cursos, y se aplica a todas las franjas que ese asistente crea. Hasta ahora el campo existía en el formulario pero **el API no lo aceptaba** —`ScheduleCreate` no lo declaraba y Pydantic descarta lo que no declara—, así que toda franja nacía presencial sin enlace dijera lo que dijera la pantalla, y la única forma de corregirlo era después, una por una, con el flujo de propuesta.
+- Crear un horario **no exige** aula ni enlace todavía: se puede montar el calendario antes de saber dónde se dará, y para eso está la propuesta. Lo que sí se rechaza es lo **incoherente** (un enlace en una presencial, un aula en una virtual), porque eso no es información incompleta sino equivocada.
+- **La modalidad del curso se deduce de sus franjas**, no se guarda aparte: si todas coinciden, esa es; si no, es **«Modalidad mixta»**. Un campo propio en el curso podría decir "virtual" mientras una de sus franjas reserva aula, que es exactamente la doble verdad que este sistema evita en todo lo demás.
+
+Se muestra así:
+
+| Rol | Dónde lo ve |
+|---|---|
+| **Dirección** | La elige en el asistente; la cola de aprobación muestra las dos mitades de cada propuesta |
+| **Profesor** | Etiqueta de la modalidad del curso en la cabecera de cada grupo, y la de cada franja en su fila; el panel de ubicación pide lo que esa modalidad necesita |
+| **Alumno** | En la tarjeta de cada curso, y en la próxima clase de su portada — que además le dice el aula en vez de ofrecerle un botón de conexión si es presencial |
+
 ### Flujo
-1. El **profesor** propone dónde dará la clase, en una de tres modalidades:
-   - **Virtual**: pega un enlace (Zoom, Meet, Teams)
-   - **Presencial**: selecciona un aula
-   - **Semi presencial**: selecciona un aula, igual que presencial (la clase combina asistencia física y virtual, pero el sistema solo necesita reservar el aula)
+1. El **profesor** propone dónde dará la clase, con las piezas que su modalidad exige
 2. El **admin** aprueba o rechaza la propuesta
 3. Si el **admin** mismo propone, se auto-aprueba inmediatamente
 
 ### Reglas
 - Una vez aprobada, la ubicación queda fijada en el horario (campo `join_url` del horario, en texto plano — ver sección 11 sobre implicaciones)
-- Si es presencial o semi presencial, se verifica que el aula no esté doblemente reservada
+- **Toda modalidad que reserve aula** (presencial y semi presencial) se verifica contra doble reserva, tanto al proponer como al aprobar — el aula pudo ocuparse entremedias. Un choque responde 409, incluso si lo detecta la restricción del esquema en lugar de la comprobación previa
 - Las propuestas ya revisadas no pueden re-revisarse
+- La cola de aprobación muestra **las dos mitades** de lo que se está aprobando; antes enseñaba sólo una, así que quien aprobaba una híbrida no veía el enlace que aprobaba
 
 ---
 
 ## 11. Aula Virtual (Lobby)
 
 > Esta sección cambió sustancialmente respecto a la versión anterior del documento tras verificar el comportamiento real: **existen dos sistemas paralelos y desconectados entre sí.**
+
+### Una clase presencial no tiene lobby
+
+El lobby existe para **virtual y semi presencial**, que son las modalidades donde hay una sala que abrir. Quien tiene una clase **presencial** ve en su lugar dónde y a qué hora: el aula, su capacidad, y un aviso si dirección todavía no la ha asignado.
+
+Antes el lobby era el mismo para las tres. A un alumno que tiene que cruzar la ciudad hasta el centro se le ponían delante una prueba de cámara y micrófono, una cuenta regresiva y un botón de «Entrar a la clase en vivo» — no una pantalla neutra, sino una instrucción equivocada.
 
 ### El sistema realmente en uso
 El flujo que efectivamente usan profesores y alumnos hoy es el enlace guardado en el **horario** (`Schedule.join_url`, texto plano) mediante el flujo de propuesta/aprobación de la sección 10:
@@ -430,9 +512,11 @@ El módulo de proveedores de reunión (Manual/Zoom/Google/Teams, credenciales ci
 - Solo accesible para **admin**
 
 ### Cobertura
-La auditoría cubre hoy: asistencia, calificaciones, usuarios (incluida el alta), **matrículas — incluida su creación**, certificados (sin valor anterior/nuevo), propuestas de ubicación, **el catálogo completo**, **cancelar/reprogramar/editar sesiones**, **el borrado de horarios**, **el módulo de Finanzas** (cobros, pagos y emisión de facturas), **aulas**, **festivos**, y **las cualificaciones y la disponibilidad de los profesores**.
+La auditoría cubre hoy: asistencia, calificaciones, usuarios (incluida el alta), **matrículas — incluida su creación**, certificados (sin valor anterior/nuevo), propuestas de ubicación, **el catálogo completo**, **cancelar/reprogramar/editar sesiones**, **el borrado de horarios**, **el módulo de Finanzas** (cobros, pagos y emisión de facturas), **aulas**, **festivos**, **las academias mismas (alta y edición)**, y **las cualificaciones y la disponibilidad de los profesores**.
 
 Crear una matrícula era el hueco más notorio: es la puerta de entrada académica *y* financiera del sistema — sienta a un alumno, abre un libro de movimientos y emite un código — y editarla y borrarla ya se auditaban, pero crearla no dejaba rastro.
+
+Las **academias** eran el otro: dar de alta una institución o cambiarle el `max_active_students` —el cupo contratado de su plan, es decir su límite comercial— eran los únicos writes del sistema que no dejaban traza, mientras una nota de un examen sí la dejaba.
 
 **⚠️ Lo que sigue sin auditarse**: proveedores de video, tareas y notificaciones.
 
@@ -476,7 +560,7 @@ El **estado del alumno no se almacena**: se deriva de sus matrículas (Cursando 
 | Leer sus notas/asistencia | ✅ | ✅ (de sus cursos) | ✅ (solo propias) |
 | Proponer ubicación | ✅ (auto-aprueba) | ✅ (solo sus cursos) | ❌ |
 | Aprobar/rechazar propuestas | ✅ | ❌ | ❌ |
-| Acceder al Lobby | ✅ | ✅ (mismo enlace, sin distinción de host) | ✅ |
+| Acceder al Lobby | ✅ (como anfitrión) | ✅ (anfitrión sólo de las franjas que imparte) | ✅ (como asistente) |
 | Ver reportes | ✅ (global) | ✅ (sus cursos) | ✅ (solo propio, si solvente) |
 | Auditoría | ✅ | ❌ | ❌ |
 | Certificados | ✅ (emite) | ✅ (ver) | ✅ (descargar propio; verificar código requiere sesión iniciada) |
@@ -490,6 +574,8 @@ El sistema soporta **varias academias sobre una misma instalación**. Cada usuar
 - El **superadministrador** es deliberadamente *sin academia* (`tenant_id` nulo) y sí ve todas — es la cuenta que administra el conjunto.
 - El **catálogo es propio de cada academia**: dos academias pueden tener su propio "Inglés" y su propio calendario de festivos.
 - Las **nacionalidades** son la única lista deliberadamente **global** (es un listado de países, no un dato de academia).
+- El aislamiento vale también para los **procesos por lotes**, no sólo para las consultas: el barrido de morosidad recalcula únicamente las matrículas de la academia de quien lo ejecuta, y el número de filas afectadas que devuelve cuenta sólo las suyas.
+- La **identificación personal es única por academia**, no globalmente: una misma persona puede estudiar en dos academias de la misma instalación.
 
 ### Principios clave
 - **404 en vez de 403 (parcialmente aplicado)**: en algunos endpoints (por ejemplo, reuniones y horarios individuales fuera del alcance del usuario) el sistema responde "no encontrado" para no confirmar la existencia del recurso. **No es un principio universal**: en el roster de un curso y en el directorio de usuarios, el sistema sí responde 403 (revela que el recurso existe pero el acceso está prohibido). Conviene no presentarlo como una garantía consistente en toda la API.
@@ -563,6 +649,15 @@ Cuatro incoherencias estructurales, encontradas contrastando el código contra e
 32. ~~**Crear una matrícula no dejaba traza.**~~ — **RESUELTO**. También se auditan ahora aulas, festivos, cualificaciones y disponibilidad de profesores.
 33. ~~**Se podía pasar lista y calificar sobre sesiones canceladas y matrículas cerradas.**~~ — **RESUELTO** (409 en ambos casos).
 34. ~~**Las ventanas de disponibilidad no se validaban entre sí.**~~ — **RESUELTO**: se rechazan las solapadas (409); las que se tocan en el extremo (09–13 y 13–17) siguen siendo dos turnos válidos.
+
+### Revisión de agosto 2026 (3ª pasada) — resueltos ✅
+
+Desfases de esquema encontrados al contrastar los modelos contra una base migrada (dev y test), y tres bugs de una línea:
+
+35. ~~**`courses.periodicity` y las columnas de `tenants` no existían en la base.**~~ — **RESUELTO**: el modelo declaraba `Course.periodicity` y ocho columnas de `Tenant` (`timezone`, `currency`, `primary_color`, `secondary_color`, `custom_domain`, `tax_id`, `phone`, `address` + índice único de `custom_domain`) que ninguna migración había creado. Crear un curso o una academia crasheaba con `UndefinedColumn` en cualquier base ya migrada (24 errores en la batería de aislamiento). Migración `d4e5f6a7b8c9`; `alembic` queda con 0 desfases en dev y test.
+36. ~~**Autogenerate podía volver a borrar los índices únicos de `grades`.**~~ — **RESUELTO (preventivo)**: los índices parciales `uq_grade_session`/`uq_grade_course` ahora están declarados en el modelo (`Index(..., postgresql_where=...)`), de modo que `alembic check` no los ve como deriva.
+37. ~~**Auditar disponibilidad de profesor o borrar un horario daba 500.**~~ — **RESUELTO**: `_jsonable()` no serializaba `datetime.time`, y la disponibilidad y los horarios guardan horas. Ahora `time` se serializa con `isoformat()` como `date` y `datetime`.
+38. ~~**Crear un festivo duplicado daba 500 en vez de 409.**~~ — **RESUELTO**: el `db.flush()` estaba fuera del `try/except IntegrityError`; el conflicto estalla en el flush y la excepción quedaba sin capturar.
 
 ### Medio impacto — pendientes de confirmar con negocio
 15. Un profesor recién creado, sin cualificaciones ni disponibilidad configuradas, puede ser asignado a cualquier curso y horario sin advertencia (postura "optimista" por diseño).

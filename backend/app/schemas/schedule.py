@@ -3,7 +3,13 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.models.enums import Modality, ProviderName
+from app.models.enums import (
+    MODALITY_LABELS,
+    MODALITY_NEEDS_LINK,
+    MODALITY_USES_ROOM,
+    Modality,
+    ProviderName,
+)
 from app.schemas.base import PatchModel
 
 
@@ -14,6 +20,16 @@ class ScheduleCreate(BaseModel):
     day_of_week: int  # 0=Monday .. 6=Sunday
     start_time: time
     end_time: time
+    # Cómo se imparte la clase, decidido por dirección al crearla.
+    #
+    # No estaba aquí, y Pydantic descarta lo que no declara: el asistente de
+    # cursos enviaba `modality` y `join_url` en cada horario y ambos se perdían
+    # en el camino, así que **toda** franja nacía presencial sin enlace, dijera
+    # lo que dijera el formulario. La modalidad sólo podía arreglarse después,
+    # una por una, por el flujo de propuesta de ubicación.
+    modality: Modality = Modality.presencial
+    join_url: str | None = None
+    provider: ProviderName | None = None
 
     @model_validator(mode="after")
     def _check_times(self) -> "ScheduleCreate":
@@ -21,6 +37,29 @@ class ScheduleCreate(BaseModel):
             raise ValueError("start_time must be before end_time")
         if not 0 <= self.day_of_week <= 6:
             raise ValueError("day_of_week must be between 0 (Mon) and 6 (Sun)")
+        return self
+
+    @model_validator(mode="after")
+    def _coherent_location(self) -> "ScheduleCreate":
+        """Que la ubicación no se contradiga con la modalidad.
+
+        Deliberadamente **no exige** aula ni enlace: un horario puede crearse
+        antes de saber dónde se dará, y para eso existe el flujo de propuesta.
+        Lo que sí se rechaza es lo incoherente — un enlace colgando de una clase
+        presencial, o un aula reservada por una virtual que nadie va a pisar —
+        porque eso no es información incompleta, es información equivocada.
+        """
+        if self.modality not in MODALITY_NEEDS_LINK and self.join_url:
+            raise ValueError(
+                f"Una clase {MODALITY_LABELS[self.modality].lower()} no lleva "
+                "enlace de conexión"
+            )
+        if self.modality not in MODALITY_USES_ROOM and self.room_id is not None:
+            raise ValueError(
+                f"Una clase {MODALITY_LABELS[self.modality].lower()} no reserva aula"
+            )
+        if self.join_url and self.provider is None:
+            self.provider = ProviderName.manual
         return self
 
 

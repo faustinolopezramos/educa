@@ -25,6 +25,33 @@ def _validate_password(value: str) -> str:
 Password = Annotated[str, AfterValidator(_validate_password)]
 
 
+# --- Identificación personal (DPI/CUI, pasaporte, DNI o documento extranjero) ---
+IDENTITY_MIN_LENGTH = 4
+IDENTITY_MAX_LENGTH = 25
+
+
+def normalize_cui_passport(value: str) -> str:
+    """La forma canónica: sólo alfanuméricos, en mayúsculas."""
+    return "".join(ch for ch in value if ch.isalnum()).upper()
+
+
+def _validate_cui_passport(value: str) -> str:
+    canonical = normalize_cui_passport(value)
+    if not canonical:
+        raise ValueError(
+            "La identificación personal (CUI / DPI, Pasaporte o DNI) es obligatoria"
+        )
+    if not (IDENTITY_MIN_LENGTH <= len(canonical) <= IDENTITY_MAX_LENGTH):
+        raise ValueError(
+            f"El documento de identificación debe contener entre {IDENTITY_MIN_LENGTH} y "
+            f"{IDENTITY_MAX_LENGTH} caracteres alfanuméricos"
+        )
+    return canonical
+
+
+CuiPassport = Annotated[str, AfterValidator(_validate_cui_passport)]
+
+
 class UserBase(BaseModel):
     tenant_id: int | None = None
     email: EmailStr
@@ -48,6 +75,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
+    cui_passport: CuiPassport
     password: Password
     permissions: list[Permission] | None = None
 
@@ -69,7 +97,7 @@ class UserUpdate(PatchModel):
     max_weekly_hours: int | None = None
     phone: str | None = None
     address: str | None = None
-    cui_passport: str | None = None
+    cui_passport: CuiPassport | None = None
     nationality_id: int | None = None
     is_active: bool | None = None
     permissions: list[Permission] | None = None
@@ -91,7 +119,7 @@ class UserSelfUpdate(PatchModel):
     current_password: str | None = None
     phone: str | None = None
     address: str | None = None
-    cui_passport: str | None = None
+    cui_passport: CuiPassport | None = None
     nationality_id: int | None = None
 
     @model_validator(mode="after")

@@ -2,7 +2,7 @@
 
 from datetime import date, timedelta
 from app.models import ClassSession
-from tests.conftest import auth
+from tests.conftest import TODAY, auth
 
 
 def test_re_enrollment_after_withdrawn(client, world):
@@ -71,7 +71,7 @@ def test_session_cancel_and_reschedule_are_audited(client, db, world):
     schedule_a = world["schedule_a"]
 
     # Create a test session
-    session = ClassSession(schedule_id=schedule_a.id, date=date.today())
+    session = ClassSession(schedule_id=schedule_a.id, date=TODAY)
     db.add(session)
     db.commit()
 
@@ -99,7 +99,7 @@ def test_secure_lobby_info_endpoint(client, db, world):
     schedule_a = world["schedule_a"]
 
     # Create a test session
-    session = ClassSession(schedule_id=schedule_a.id, date=date.today())
+    session = ClassSession(schedule_id=schedule_a.id, date=TODAY)
     db.add(session)
     db.commit()
 

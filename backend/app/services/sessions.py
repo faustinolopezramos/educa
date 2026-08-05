@@ -10,13 +10,22 @@ schedule uses, so no remapping is needed.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import academy_today
-from app.models import AcademicHoliday, ClassSession, Course, SessionStatus, Schedule
+from app.models import (
+    ENROLLMENT_OCCUPIES_SEAT,
+    AcademicHoliday,
+    Attendance,
+    ClassSession,
+    Course,
+    Enrollment,
+    Schedule,
+    SessionStatus,
+)
 
 
 def _tenant_of(db: Session, schedule: Schedule | None) -> int | None:
@@ -130,6 +139,67 @@ def mark_held(db: Session, session: ClassSession) -> ClassSession:
     if session.status == SessionStatus.scheduled:
         session.status = SessionStatus.held
         db.flush()
+    return session
+
+
+def roster_coverage(db: Session, session: ClassSession) -> tuple[int, int]:
+    """`(marcados, total)` de la lista de una sesión.
+
+    El total son las matrículas que ocupan plaza en el curso de la sesión — la
+    misma respuesta que da el roster del profesor, para que la barra de progreso
+    y la validación del cierre no puedan discrepar.
+    """
+    course_id = db.scalar(
+        select(Schedule.course_id).where(Schedule.id == session.schedule_id)
+    )
+    if course_id is None:
+        return 0, 0
+    seat_holders = list(
+        db.scalars(
+            select(Enrollment.id).where(
+                Enrollment.course_id == course_id,
+                Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
+            )
+        ).all()
+    )
+    if not seat_holders:
+        return 0, 0
+    marked = (
+        db.scalar(
+            select(func.count(Attendance.id)).where(
+                Attendance.session_id == session.id,
+                Attendance.enrollment_id.in_(seat_holders),
+            )
+        )
+        or 0
+    )
+    return marked, len(seat_holders)
+
+
+def close_register(
+    db: Session, session: ClassSession, actor_id: int
+) -> ClassSession:
+    """Dar la lista por terminada. No hace commit — lo lleva quien llama.
+
+    Cerrar es también afirmar que la clase se dio, así que arrastra el `held`:
+    de otro modo una sesión podría quedar registrada y a la vez sin ocurrir.
+    """
+    session.register_closed_at = datetime.now(timezone.utc)
+    session.register_closed_by = actor_id
+    mark_held(db, session)
+    db.flush()
+    return session
+
+
+def reopen_register(db: Session, session: ClassSession) -> ClassSession:
+    """Volver a abrir una lista cerrada, para corregirla.
+
+    Deja `status` como está: la clase ocurrió igualmente, y lo que se reabre es
+    el registro, no el hecho.
+    """
+    session.register_closed_at = None
+    session.register_closed_by = None
+    db.flush()
     return session
 
 

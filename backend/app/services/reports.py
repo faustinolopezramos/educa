@@ -25,7 +25,8 @@ from app.models import (
     Assignment,
     AssignmentSubmission,
     Attendance,
-    AttendanceStatus,
+    ATTENDANCE_COUNTS_TOWARD_RATE,
+    ATTENDANCE_IS_PRESENT,
     ClassSession,
     Course,
     Enrollment,
@@ -180,12 +181,14 @@ def build_report(
     report.sessions_cancelled = sum(
         1 for s in sessions if s.status == SessionStatus.cancelled
     )
-    # "Held" now means a class the register says took place, not merely one
-    # nobody cancelled. It used to be `total − cancelled`, which counted every
-    # class still in the future: a weekly report pulled on Monday already
-    # reported Friday's class as taught. `mark_held` writes the status when
-    # attendance is taken, which is the only evidence the system has.
-    report.sessions_held = sum(1 for s in sessions if s.status == SessionStatus.held)
+    # "Realizada" es la sesión cuya lista el profesor dio por cerrada.
+    #
+    # Antes era `total − canceladas`, que contaba como impartida la clase del
+    # viernes en un reporte sacado el lunes. Luego pasó a ser `status = held`,
+    # que lo escribe el primer marcaje — mejor, pero una lista con 3 de 30
+    # alumnos seguía figurando como registrada. El cierre explícito es la única
+    # de las tres señales que alguien afirma a propósito.
+    report.sessions_held = sum(1 for s in sessions if s.register_closed_at is not None)
     # What is left is neither taught nor called off: still to come if the date
     # has not passed, and never registered if it has.
     report.sessions_pending = (
@@ -207,13 +210,18 @@ def build_report(
     ).all()
 
     present_total = 0
-    per_course: dict[int, list[int]] = {}  # course_id -> [present, total]
-    # (student, course) -> [present, total] for the at-risk pass
+    counted_total = 0
+    per_course: dict[int, list[int]] = {}  # course_id -> [present, counted]
+    # (student, course) -> [present, counted] for the at-risk pass
     per_student: dict[tuple[int, int], list[int]] = {}
-    attended = {AttendanceStatus.present, AttendanceStatus.late}
     for att, cid, sid in att_rows:
-        is_present = att.status in attended
+        # La justificada no entra por ningún lado: ni suma asistencia ni resta.
+        # Ver `ATTENDANCE_COUNTS_TOWARD_RATE`.
+        if att.status not in ATTENDANCE_COUNTS_TOWARD_RATE:
+            continue
+        is_present = att.status in ATTENDANCE_IS_PRESENT
         present_total += 1 if is_present else 0
+        counted_total += 1
         pc = per_course.setdefault(cid, [0, 0])
         pc[0] += 1 if is_present else 0
         pc[1] += 1
@@ -221,9 +229,8 @@ def build_report(
         ps[0] += 1 if is_present else 0
         ps[1] += 1
 
-    total_marks = len(att_rows)
     report.attendance_rate = (
-        round(present_total / total_marks, 3) if total_marks else None
+        round(present_total / counted_total, 3) if counted_total else None
     )
     report.attendance_by_course = [
         CourseAttendance(

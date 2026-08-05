@@ -110,21 +110,26 @@ export function SearchInput({
   );
 }
 
-// Labeled field with an optional inline error message.
+// Labeled field with an optional inline error message and required indicator.
 export function Field({
   label,
   hint,
   error,
+  required,
   children,
 }: {
   label: string;
   hint?: ReactNode;
   error?: string | null;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-semibold text-slate-700">{label}</label>
+      <label className="block text-xs font-semibold text-slate-700">
+        {label}
+        {required && <span className="ml-1 text-slate-400 font-normal">*</span>}
+      </label>
       {children}
       {hint && !error && <p className="text-xs leading-snug text-slate-500">{hint}</p>}
       {error && <p className="text-xs font-medium text-red-600">{error}</p>}

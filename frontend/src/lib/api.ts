@@ -3,7 +3,7 @@ import axios from "axios";
 const TOKEN_KEY = "educa_token";
 const REFRESH_KEY = "educa_refresh_token";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 export const api = axios.create({
   baseURL: API_URL,

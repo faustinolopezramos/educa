@@ -13,6 +13,7 @@ from app.core.deps import (
     require_staff_permission,
     student_course_ids,
     teacher_course_ids,
+    teacher_teaches_course,
 )
 from app.models import (
     ClassSession,
@@ -21,6 +22,7 @@ from app.models import (
     Enrollment,
     Permission,
     Schedule,
+    SessionStatus,
     User,
     UserRole,
 )
@@ -35,9 +37,12 @@ from app.schemas.session import (
 from app.services.notifications import notify_session_cancelled
 from app.services.sessions import (
     cancel_session,
+    close_register,
     ensure_session,
     generate_sessions,
+    reopen_register,
     reschedule_session,
+    roster_coverage,
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -69,13 +74,31 @@ def _visible_sessions(db: Session, user: User) -> Select:
 
 
 def _owned_schedule_or_404(db: Session, user: User, schedule_id: int) -> Schedule:
-    """A schedule the caller is staff for, or 404 (never confirm it exists)."""
+    """A schedule the caller may act on, or 404 (never confirm it exists).
+
+    Writing a franja — generarla, cancelarla, reprogramarla — es del profesor
+    titular, no de todo el que imparte el curso: cancelar la clase de un colega
+    no es lo mismo que calificar en ella.
+
+    Pero la negativa tiene dos públicos distintos. Un profesor asignado al curso
+    ya sabe que la franja existe: la ve en su lista de sesiones y califica sobre
+    ella, así que un 404 mudo sólo se lee como un fallo del sistema. Uno que no
+    está asignado no debe enterarse de nada, y sigue recibiendo 404.
+    """
     schedule = db.get(Schedule, schedule_id)
     if schedule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
     if not in_tenant(user, db.get(Course, schedule.course_id)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
     if user.role == UserRole.teacher and schedule.teacher_id != user.id:
+        if teacher_teaches_course(db, user.id, schedule.course_id):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                (
+                    "No eres el profesor titular de esta franja; sólo quien la "
+                    "imparte puede generar, cancelar o reprogramar sus sesiones."
+                ),
+            )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
     return schedule
 
@@ -224,6 +247,100 @@ def reschedule(
     db.commit()
     db.refresh(makeup)
     return makeup
+
+
+@router.post("/{session_id}/close-register", response_model=ClassSessionRead)
+def close_session_register(
+    session_id: int,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(staff_only),
+) -> ClassSession:
+    """Dar la lista de una sesión por terminada.
+
+    Exige que todos los que ocupan plaza tengan marca: una lista a medias no es
+    una lista cerrada, y ese era justamente el hueco — `status = held` lo
+    escribía el primer marcaje, así que 3 de 30 ya contaba como registrada.
+
+    `?force=true` la cierra igualmente, para el caso real de un alumno que no
+    aparece ni aparecerá y a quien el profesor no quiere marcar. La cifra de
+    cobertura viaja en el error para que la interfaz pueda decir cuántos faltan.
+    """
+    session = db.get(ClassSession, session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    _owned_schedule_or_404(db, current_user, session.schedule_id)
+    if session.status == SessionStatus.cancelled:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "La clase fue cancelada; no hay lista que cerrar",
+        )
+
+    marked, total = roster_coverage(db, session)
+    if not force and marked < total:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "message": (
+                    f"Faltan {total - marked} de {total} alumnos por marcar."
+                ),
+                "reason": "incomplete_register",
+                "marked": marked,
+                "total": total,
+            },
+        )
+
+    before = snapshot(session)
+    close_register(db, session, current_user.id)
+    record(
+        db,
+        current_user,
+        "close_register",
+        "class_session",
+        session.id,
+        before=before,
+        after=snapshot(session),
+    )
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@router.post("/{session_id}/reopen-register", response_model=ClassSessionRead)
+def reopen_session_register(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(staff_only),
+) -> ClassSession:
+    """Reabrir una lista cerrada para corregirla.
+
+    Existe porque cerrar es un gesto humano y equivocarse en él también. Queda
+    en la auditoría: una lista que se cierra, se reabre y se vuelve a cerrar es
+    exactamente la clase de cambio que hay que poder explicar después.
+    """
+    session = db.get(ClassSession, session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    _owned_schedule_or_404(db, current_user, session.schedule_id)
+    if session.register_closed_at is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Esta lista no está cerrada"
+        )
+
+    before = snapshot(session)
+    reopen_register(db, session)
+    record(
+        db,
+        current_user,
+        "reopen_register",
+        "class_session",
+        session.id,
+        before=before,
+        after=snapshot(session),
+    )
+    db.commit()
+    db.refresh(session)
+    return session
 
 
 @router.patch("/{session_id}", response_model=ClassSessionRead)

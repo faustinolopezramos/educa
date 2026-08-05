@@ -43,6 +43,41 @@ export function isCurrentEnrollment(status: EnrollmentStatus): boolean {
   return status === "enrolled" || status === "active";
 }
 
+/**
+ * Whether this enrollment holds a seat in the course.
+ *
+ * Mirrors `ENROLLMENT_OCCUPIES_SEAT` on the API — the set the register and the
+ * gradebook are built from, and the only one the API accepts marks and scores
+ * against. Deliberately its own function rather than an alias of
+ * `isCurrentEnrollment`, for the same reason the backend keeps the two sets
+ * apart: "sits in this class" and "may reach this class" are different
+ * questions that the business may well want to move independently.
+ */
+export function holdsSeat(status: EnrollmentStatus): boolean {
+  return status === "enrolled" || status === "active";
+}
+
+/**
+ * Whether this enrollment is what makes a student delinquent.
+ *
+ * Mirrors `student_is_solvent` on the API: an *overdue* fee on an enrollment
+ * that still carries a live obligation (`ENROLLMENT_OWES` — inscrito, activo or
+ * pausado). Checking only `active`, as the student dashboard used to, missed
+ * the other two and let the UI believe a student was solvent while the API
+ * refused them their grades.
+ */
+export function isDelinquent(enrollment: {
+  status: EnrollmentStatus;
+  payment_status: string;
+}): boolean {
+  return (
+    enrollment.payment_status === "overdue" &&
+    (enrollment.status === "enrolled" ||
+      enrollment.status === "active" ||
+      enrollment.status === "inactive")
+  );
+}
+
 /** How money owed reads in the UI: positive is a debt, negative is credit. */
 export function formatBalance(balance: number): string {
   if (Math.abs(balance) < 0.005) return "Sin saldo";

@@ -5,13 +5,14 @@ import {
   SegmentedControl, Table, Td, Th, Toolbar,
 } from "../../components/ui";
 import { IconUsers } from "../../components/icons";
-import { useEnrollments, useUpdateUser, useUsers } from "../../lib/queries";
+import { useEnrollments, useNationalities, useUpdateUser, useUsers } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import { formatBalance, isCurrentEnrollment } from "../../lib/enrollment";
 import type { Enrollment, User } from "../../lib/types";
 import { onMutationError } from "./shared";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
-import { StudentAccountStatementModal } from "./StudentAccountStatementModal";
+import { Student360Drawer } from "./Student360Drawer";
+import { CreateUserModal } from "./UsersPanel";
 
 type Tab = "activos" | "sin_curso" | "morosos" | "baja" | "todos";
 
@@ -57,11 +58,13 @@ function deriveStatus(student: User, enrolments: Enrollment[]): DerivedStatus {
 export function StudentsPanel() {
   const { data: students = [] } = useUsers("student");
   const { data: enrolments = [] } = useEnrollments();
+  const { data: nationalities = [] } = useNationalities();
   const [tab, setTab] = useState<Tab>("activos");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
   const [enrolling, setEnrolling] = useState(false);
-  const [statementFor, setStatementFor] = useState<User | null>(null);
+  const [showCreateStudent, setShowCreateStudent] = useState(false);
+  const [drawerStudent, setDrawerStudent] = useState<User | null>(null);
   const [deactivating, setDeactivating] = useState<User | null>(null);
 
   const update = useUpdateUser();
@@ -116,19 +119,25 @@ export function StudentsPanel() {
     <div>
       <PageHeader
         title="Alumnos"
-        description="Quién está cursando, quién no tiene curso y quién debe dinero."
+        description="Gestión integral de estudiantes, inscripciones y estado académico."
         actions={
-          <Button
-            onClick={() => setEnrolling(true)}
-            disabled={selected.length === 0}
-            title={
-              selected.length === 0
-                ? "Marca al menos un alumno para matricular en lote"
-                : undefined
-            }
-          >
-            Matricular {selected.length > 0 ? `(${selected.length})` : "en curso"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setEnrolling(true)}
+              disabled={selected.length === 0}
+              title={
+                selected.length === 0
+                  ? "Marca al menos un alumno para matricular en lote"
+                  : undefined
+              }
+            >
+              Matricular {selected.length > 0 ? `(${selected.length})` : "en curso"}
+            </Button>
+            <Button onClick={() => setShowCreateStudent(true)}>
+              + Nuevo Alumno
+            </Button>
+          </div>
         }
       />
 
@@ -269,15 +278,15 @@ export function StudentsPanel() {
                     <Td align="right">
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <Button
-                          variant="ghost"
+                          variant="secondary"
                           size="sm"
-                          onClick={() => setStatementFor(student)}
+                          onClick={() => setDrawerStudent(student)}
                         >
-                          Estado de cuenta
+                          Ver Ficha 360°
                         </Button>
                         {student.is_active ? (
                           <Button
-                            variant="secondary"
+                            variant="ghost"
                             size="sm"
                             onClick={() => setDeactivating(student)}
                           >
@@ -314,8 +323,7 @@ export function StudentsPanel() {
         )}
       </Card>
 
-      {/* One enrolment flow for every entry point: the same modal serves a
-          single student from a row and a multi-selection from this list. */}
+      {/* Enroll Wizard */}
       {enrolling && (
         <EnrollWizard
           initialStudentIds={selected}
@@ -325,10 +333,26 @@ export function StudentsPanel() {
           }}
         />
       )}
-      {statementFor && (
-        <StudentAccountStatementModal
-          student={statementFor}
-          onClose={() => setStatementFor(null)}
+
+      {/* Quick Create Student Modal */}
+      {showCreateStudent && (
+        <CreateUserModal
+          defaultRole="student"
+          hideRoleSelect={true}
+          nationalities={nationalities}
+          onClose={() => setShowCreateStudent(false)}
+        />
+      )}
+
+      {/* Unified 360 Drawer */}
+      {drawerStudent && (
+        <Student360Drawer
+          student={drawerStudent}
+          onClose={() => setDrawerStudent(null)}
+          onMatricular={(studentId) => {
+            setSelected([studentId]);
+            setEnrolling(true);
+          }}
         />
       )}
       {deactivating && (

@@ -21,12 +21,13 @@ import {
   Toolbar,
 } from "../../components/ui";
 import { IconBook } from "../../components/icons";
-import { DAYS, modalityLabel } from "../../lib/format";
+import { DAYS, calculateEndDate, modalityLabel } from "../../lib/format";
 import {
   useCourses,
   useCreateCourse,
   useUpdateCourse,
   useDeleteCourse,
+  useLanguages,
   useLevels,
   useRooms,
   useSchedules,
@@ -43,6 +44,7 @@ import { onMutationError } from "./shared";
 
 export function CoursesPanel() {
   const { data: courses = [] } = useCourses();
+  const { data: languages = [] } = useLanguages();
   const { data: levels = [] } = useLevels();
   const { data: schedules = [] } = useSchedules();
   const { data: teachers = [] } = useUsers("teacher");
@@ -52,6 +54,7 @@ export function CoursesPanel() {
   const del = useDeleteCourse();
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedLanguageId, setSelectedLanguageId] = useState<number>(0);
   const [selectedLevelId, setSelectedLevelId] = useState<number>(0);
   const [selectedTeacherId, setSelectedTeacherId] = useState<number>(0);
   const [selectedStatus, setSelectedStatus] = useState<CourseStatus | "all">("all");
@@ -75,10 +78,23 @@ export function CoursesPanel() {
   const levelCode = (id: number) => levels.find((l) => l.id === id)?.code ?? id;
   const levelName = (id: number) => levels.find((l) => l.id === id)?.name ?? `#${id}`;
 
+  const languageNameForLevel = (levelId: number) => {
+    const lvl = levels.find((l) => l.id === levelId);
+    if (!lvl) return "";
+    const lang = languages.find((g) => g.id === lvl.language_id);
+    return lang ? lang.name : "";
+  };
+
   const totalCapacity = courses.reduce((acc, c) => acc + (c.max_students || 0), 0);
 
   const filteredCourses = courses.filter((c) => {
     if (selectedStatus !== "all" && c.status !== selectedStatus) return false;
+
+    if (selectedLanguageId > 0) {
+      const lvl = levels.find((l) => l.id === c.level_id);
+      if (!lvl || lvl.language_id !== selectedLanguageId) return false;
+    }
+
     if (selectedLevelId > 0 && c.level_id !== selectedLevelId) return false;
     
     // Check teacher filter
@@ -91,7 +107,11 @@ export function CoursesPanel() {
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       const code = String(levelCode(c.level_id)).toLowerCase();
-      const matchSearch = c.name.toLowerCase().includes(term) || code.includes(term);
+      const area = languageNameForLevel(c.level_id).toLowerCase();
+      const matchSearch =
+        c.name.toLowerCase().includes(term) ||
+        code.includes(term) ||
+        area.includes(term);
       if (!matchSearch) return false;
     }
     return true;
@@ -122,6 +142,7 @@ export function CoursesPanel() {
   }
 
   const filtersActive =
+    selectedLanguageId > 0 ||
     selectedLevelId > 0 ||
     selectedTeacherId > 0 ||
     selectedStatus !== "all" ||
@@ -163,21 +184,47 @@ export function CoursesPanel() {
       <Toolbar>
         <SearchInput
           className="w-full sm:w-72"
-          placeholder="Buscar por nombre o nivel"
+          placeholder="Buscar por nombre, área o nivel"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
+        <Select
+          className="w-full sm:w-52"
+          value={selectedLanguageId}
+          onChange={(e) => {
+            const langId = Number(e.target.value);
+            setSelectedLanguageId(langId);
+            if (langId > 0 && selectedLevelId > 0) {
+              const lvl = levels.find((l) => l.id === selectedLevelId);
+              if (!lvl || lvl.language_id !== langId) {
+                setSelectedLevelId(0);
+              }
+            }
+          }}
+        >
+          <option value={0}>Todas las áreas académicas</option>
+          {languages.map((lang) => (
+            <option key={lang.id} value={lang.id}>
+              {lang.name}
+            </option>
+          ))}
+        </Select>
         <Select
           className="w-full sm:w-52"
           value={selectedLevelId}
           onChange={(e) => setSelectedLevelId(Number(e.target.value))}
         >
           <option value={0}>Todos los niveles</option>
-          {levels.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.code} · {l.name}
-            </option>
-          ))}
+          {levels
+            .filter((l) => selectedLanguageId === 0 || l.language_id === selectedLanguageId)
+            .map((l) => {
+              const lang = languages.find((g) => g.id === l.language_id);
+              return (
+                <option key={l.id} value={l.id}>
+                  {lang ? `${lang.name} · ` : ""}{l.code} ({l.name})
+                </option>
+              );
+            })}
         </Select>
         <Select
           className="w-full sm:w-52"
@@ -197,6 +244,7 @@ export function CoursesPanel() {
             size="sm"
             onClick={() => {
               setSearchTerm("");
+              setSelectedLanguageId(0);
               setSelectedLevelId(0);
               setSelectedTeacherId(0);
               setSelectedStatus("all");
@@ -263,13 +311,31 @@ export function CoursesPanel() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge color="indigo">{levelCode(c.level_id)}</Badge>
+                        {languageNameForLevel(c.level_id) && (
+                          <Badge color="indigo">{languageNameForLevel(c.level_id)}</Badge>
+                        )}
+                        <Badge color="sky">{levelCode(c.level_id)}</Badge>
+                        <Badge color="slate">
+                          {c.periodicity === "bimensual"
+                            ? "Bimensual"
+                            : c.periodicity === "trimestral"
+                              ? "Trimestral"
+                              : c.periodicity === "cuatrimestral"
+                                ? "Cuatrimestral"
+                                : c.periodicity === "semestral"
+                                  ? "Semestral"
+                                  : c.periodicity === "anual"
+                                    ? "Anual"
+                                    : "Mensual"}
+                        </Badge>
                         <CourseStatusBadge status={c.status} />
                       </div>
                       <h3 className="mt-1.5 truncate text-sm font-bold text-slate-900">
                         {c.name}
                       </h3>
-                      <p className="truncate text-xs text-slate-500">{levelName(c.level_id)}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {languageNameForLevel(c.level_id) ? `Área Académica: ${languageNameForLevel(c.level_id)} • ` : ""}Nivel: {levelName(c.level_id)}
+                      </p>
                     </div>
                     <ActionMenu
                       items={[
@@ -280,11 +346,15 @@ export function CoursesPanel() {
                         },
                         { label: "Añadir horario", onClick: () => setScheduleCourseId(c.id) },
                         { label: "Editar curso", onClick: () => setEditingCourse(c) },
-                        {
-                          label: "Eliminar curso",
-                          onClick: () => setToDelete(c),
-                          danger: true,
-                        },
+                        ...(c.status !== "in_progress" && c.seats_taken === 0
+                          ? [
+                              {
+                                label: "Eliminar curso",
+                                onClick: () => setToDelete(c),
+                                danger: true,
+                              },
+                            ]
+                          : []),
                       ]}
                     />
                   </div>
@@ -428,8 +498,10 @@ export function CoursesPanel() {
             <Table>
               <thead>
                 <tr>
+                  <Th>Área Académica</Th>
                   <Th>Nivel</Th>
                   <Th>Curso</Th>
+                  <Th>Periodicidad</Th>
                   <Th>Profesor</Th>
                   <Th align="right">Cupo</Th>
                   <Th align="right">Acciones</Th>
@@ -446,11 +518,31 @@ export function CoursesPanel() {
                   return (
                     <tr key={c.id} className="hover:bg-slate-50">
                       <Td>
+                        <span className="font-semibold text-indigo-700">
+                          {languageNameForLevel(c.level_id) || "—"}
+                        </span>
+                      </Td>
+                      <Td>
                         <span className="font-semibold text-slate-900">
                           {levelCode(c.level_id)}
                         </span>
                       </Td>
                       <Td>{c.name}</Td>
+                      <Td>
+                        <Badge color="slate">
+                          {c.periodicity === "bimensual"
+                            ? "Bimensual"
+                            : c.periodicity === "trimestral"
+                              ? "Trimestral"
+                              : c.periodicity === "cuatrimestral"
+                                ? "Cuatrimestral"
+                                : c.periodicity === "semestral"
+                                  ? "Semestral"
+                                  : c.periodicity === "anual"
+                                    ? "Anual"
+                                    : "Mensual"}
+                        </Badge>
+                      </Td>
                       <Td>
                         {assignedTeacher ? (
                           assignedTeacher.full_name
@@ -477,11 +569,15 @@ export function CoursesPanel() {
                               onClick: () => setScheduleCourseId(c.id),
                             },
                             { label: "Editar curso", onClick: () => setEditingCourse(c) },
-                            {
-                              label: "Eliminar curso",
-                              onClick: () => setToDelete(c),
-                              danger: true,
-                            },
+                            ...(c.status !== "in_progress" && c.seats_taken === 0
+                              ? [
+                                  {
+                                    label: "Eliminar curso",
+                                    onClick: () => setToDelete(c),
+                                    danger: true,
+                                  },
+                                ]
+                              : []),
                           ]}
                         />
                       </Td>
@@ -539,43 +635,91 @@ export function CoursesPanel() {
         />
       )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation / Protection Dialog */}
       {toDelete && (
-        <ConfirmDialog
-          title="Eliminar curso"
-          confirmLabel="Eliminar curso"
-          busy={del.isPending}
-          message={
-            <>
-              Se eliminará <strong>{toDelete.name}</strong> junto con sus matrículas,
-              calificaciones e historial. No se puede deshacer.
-            </>
-          }
-          onClose={() => setToDelete(null)}
-          onConfirm={() => {
-            del.mutate(toDelete.id, {
-              onSuccess: () => {
-                setToDelete(null);
-                notify("Curso eliminado correctamente", "success");
-              },
-              onError: onMutationError("No se pudo eliminar el curso"),
-            });
-          }}
-        />
+        toDelete.status === "in_progress" || toDelete.seats_taken > 0 ? (
+          <Modal
+            title="Curso protegido contra eliminación"
+            description="El sistema protege la integridad de notas, asistencias y cobros de los alumnos."
+            onClose={() => setToDelete(null)}
+            maxWidth="max-w-md"
+            footer={
+              <ModalActions>
+                <Button variant="secondary" onClick={() => setToDelete(null)}>
+                  Entendido
+                </Button>
+                <Button
+                  onClick={() => {
+                    const c = toDelete;
+                    setToDelete(null);
+                    setEditingCourse(c);
+                  }}
+                >
+                  Editar o Cambiar Estado
+                </Button>
+              </ModalActions>
+            }
+          >
+            <div className="space-y-3 text-sm text-slate-600">
+              <p>
+                El curso <strong>{toDelete.name}</strong>{" "}
+                {toDelete.status === "in_progress"
+                  ? "se encuentra en desarrollo actualmente"
+                  : `cuenta con ${toDelete.seats_taken} alumno(s) matriculado(s)`}.
+              </p>
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs leading-relaxed text-amber-900">
+                <strong>¿Por qué no se puede eliminar?</strong>
+                <br />
+                Eliminar un curso activo borraría el historial de notas, asistencias y comprobantes financieros de sus estudiantes. Para cerrar el curso de forma segura, cámbialo a estado <strong>Concluido</strong> o <strong>Archivado</strong>.
+              </div>
+            </div>
+          </Modal>
+        ) : (
+          <ConfirmDialog
+            title="Eliminar borrador de curso"
+            confirmLabel="Eliminar borrador"
+            busy={del.isPending}
+            message={
+              <>
+                Se eliminará el borrador sin alumnos del curso <strong>{toDelete.name}</strong>. Esta acción no se puede deshacer.
+              </>
+            }
+            onClose={() => setToDelete(null)}
+            onConfirm={() => {
+              del.mutate(toDelete.id, {
+                onSuccess: () => {
+                  setToDelete(null);
+                  notify("Borrador de curso eliminado correctamente", "success");
+                },
+                onError: onMutationError("No se pudo eliminar el curso"),
+              });
+            }}
+          />
+        )
       )}
     </div>
   );
 }
 
 function EditCourseModal({ course, onClose }: { course: Course; onClose: () => void }) {
+  const { data: languages = [] } = useLanguages();
   const { data: levels = [] } = useLevels();
   const update = useUpdateCourse();
 
   const [levelId, setLevelId] = useState(course.level_id);
   const [name, setName] = useState(course.name);
   const [maxStudents, setMaxStudents] = useState(course.max_students);
+  const [periodicity, setPeriodicity] = useState<string>(course.periodicity || "mensual");
   const [startDate, setStartDate] = useState(course.start_date || "");
   const [endDate, setEndDate] = useState(course.end_date || "");
+
+  function handlePeriodicityOrDateChange(p: string, start: string) {
+    setPeriodicity(p);
+    setStartDate(start);
+    if (!start) return;
+    const calcEnd = calculateEndDate(start, p);
+    if (calcEnd) setEndDate(calcEnd);
+  }
 
   function submit() {
     if (!name.trim() || !levelId) return;
@@ -585,6 +729,7 @@ function EditCourseModal({ course, onClose }: { course: Course; onClose: () => v
         level_id: levelId,
         name: name.trim(),
         max_students: maxStudents,
+        periodicity: periodicity || null,
         start_date: startDate || null,
         end_date: endDate || null,
       },
@@ -604,6 +749,7 @@ function EditCourseModal({ course, onClose }: { course: Course; onClose: () => v
       description={course.name}
       onClose={onClose}
       onSubmit={submit}
+      maxWidth="max-w-xl"
       footer={
         <ModalActions>
           <Button variant="secondary" onClick={onClose}>
@@ -616,34 +762,59 @@ function EditCourseModal({ course, onClose }: { course: Course; onClose: () => v
       }
     >
       <div className="space-y-4">
-        <Field label="Nivel académico">
-          <Select value={levelId} onChange={(e) => setLevelId(Number(e.target.value))}>
-            {levels.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.code} · {l.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-
-        <Field label="Nombre del curso">
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-
-        <Field label="Cupo máximo">
-          <Input
-            type="number"
-            min={1}
-            value={maxStudents}
-            onChange={(e) => setMaxStudents(Number(e.target.value))}
-          />
-        </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Fecha de inicio">
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Nivel académico" required={true}>
+            <Select value={levelId} onChange={(e) => setLevelId(Number(e.target.value))}>
+              {levels.map((l) => {
+                const lang = languages.find((g) => g.id === l.language_id);
+                return (
+                  <option key={l.id} value={l.id}>
+                    {lang ? `${lang.name} · ` : ""}{l.code} ({l.name})
+                  </option>
+                );
+              })}
+            </Select>
           </Field>
-          <Field label="Fecha de fin">
+
+          <Field label="Cupo máximo" required={true}>
+            <Input
+              type="number"
+              min={1}
+              value={maxStudents}
+              onChange={(e) => setMaxStudents(Number(e.target.value))}
+            />
+          </Field>
+        </div>
+
+        <Field label="Nombre del curso" required={true}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Inglés Intensivo A1" />
+        </Field>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Field label="Periodicidad del Curso" required={true}>
+            <Select
+              value={periodicity}
+              onChange={(e) => handlePeriodicityOrDateChange(e.target.value, startDate)}
+            >
+              <option value="mensual">Mensual (1 mes)</option>
+              <option value="bimensual">Bimensual (2 meses)</option>
+              <option value="trimestral">Trimestral (3 meses)</option>
+              <option value="cuatrimestral">Cuatrimestral (4 meses)</option>
+              <option value="semestral">Semestral (6 meses)</option>
+              <option value="anual">Anual (1 año)</option>
+              <option value="custom">Personalizado</option>
+            </Select>
+          </Field>
+
+          <Field label="Fecha de inicio">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => handlePeriodicityOrDateChange(periodicity, e.target.value)}
+            />
+          </Field>
+
+          <Field label="Fecha de fin (Sugerida)">
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </Field>
         </div>

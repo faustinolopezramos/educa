@@ -4,8 +4,21 @@ import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button, Card, Input, PageTitle } from "../components/ui";
 import { apiErrorMessage } from "../lib/api";
-import { formatDateTime } from "../lib/format";
-import { useEnrollments, useLobbyJoinInfo, useSchedules, useSession, useUpdateSession } from "../lib/queries";
+import {
+  formatDateTime,
+  formatTime,
+  modalityColor,
+  modalityLabel,
+  needsLink,
+} from "../lib/format";
+import {
+  useEnrollments,
+  useLobbyJoinInfo,
+  useRooms,
+  useSchedules,
+  useSession,
+  useUpdateSession,
+} from "../lib/queries";
 import { notify } from "../lib/toast";
 import type { ClassSession, Schedule } from "../lib/types";
 
@@ -83,10 +96,26 @@ export default function Lobby() {
     );
   }
 
-  // The teacher who owns this schedule is the host: they open the room, not wait.
-  const isHost = !!user && !!schedule && schedule.teacher_id === user.id;
+  // Quién abre la sala en vez de esperar en ella. Tiene que decir lo mismo que
+  // `meetings.py:get_session_lobby_info`, que concede anfitrión al profesor
+  // titular de la franja **y a dirección**: preguntando sólo por el titular,
+  // un admin recibía del servidor su `host_url` y la interfaz le ponía delante
+  // la pantalla de espera del alumno, sin forma de entrar.
+  const isHost =
+    !!user &&
+    (user.role === "admin" ||
+      user.role === "superadmin" ||
+      (!!schedule && schedule.teacher_id === user.id));
   const isSavedAvOk = typeof window !== "undefined" && sessionStorage.getItem("educa_av_ok") === "true";
   const avReady = av === "ok" || isSavedAvOk;
+
+  // Una clase presencial no tiene lobby, porque no hay adónde entrar. Poner una
+  // prueba de cámara y una cuenta regresiva para "entrar a la clase en vivo"
+  // delante de alguien que tiene que cruzar la ciudad hasta un aula no es una
+  // pantalla neutra: es una instrucción equivocada.
+  if (schedule && schedule.modality === "presencial") {
+    return <InPersonClass session={session} schedule={schedule} />;
+  }
 
   return (
     <div>
@@ -120,6 +149,73 @@ export default function Lobby() {
 
 import type { LobbyJoinInfo } from "../lib/types";
 
+/**
+ * Lo que ve quien tiene una clase **presencial**.
+ *
+ * Ni prueba de dispositivos ni botón de entrar: la información útil es dónde y
+ * a qué hora. El lobby completo se reserva para virtual y semi presencial, que
+ * son las modalidades donde efectivamente hay una sala que abrir.
+ */
+function InPersonClass({
+  session,
+  schedule,
+}: {
+  session: ClassSession;
+  schedule: Schedule;
+}) {
+  const { data: rooms = [] } = useRooms();
+  const room = rooms.find((r) => r.id === schedule.room_id);
+  const startIso = new Date(
+    sessionStart(session.date, schedule.start_time),
+  ).toISOString();
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <PageTitle subtitle="Clase presencial">Tu clase de hoy</PageTitle>
+        <Link
+          to="/"
+          className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700 hover:underline"
+        >
+          ← Volver a mis clases
+        </Link>
+      </div>
+
+      <Card className="max-w-xl">
+        <div className="text-sm text-slate-500">
+          {formatDateTime(startIso)} · {formatTime(schedule.start_time)}–
+          {formatTime(schedule.end_time)}
+        </div>
+
+        <div className="my-5">
+          <div className="text-xs uppercase tracking-wide text-slate-400">
+            Dónde
+          </div>
+          <div className="mt-1 font-serif text-3xl font-medium text-slate-900">
+            {room?.name ?? "Aula por asignar"}
+          </div>
+          {room?.capacity != null && (
+            <div className="mt-1 text-sm text-slate-500">
+              Capacidad {room.capacity}
+            </div>
+          )}
+        </div>
+
+        {!room && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            Dirección todavía no ha asignado el aula. Consulta con recepción
+            antes de la clase.
+          </p>
+        )}
+
+        <p className="mt-4 text-xs text-slate-400">
+          Esta clase se imparte en el centro. No necesitas conectarte a nada.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
 // The host (teacher) opens the room and starts the class — enabled early so they
 // can prep, and it records the session as held plus the day's topic.
 function HostPanel({
@@ -142,9 +238,15 @@ function HostPanel({
   const startIso = schedule
     ? new Date(sessionStart(session.date, schedule.start_time)).toISOString()
     : session.date;
-  const isVirtual = schedule?.modality === "virtual";
-  const joinUrl = lobbyInfo?.host_url ?? lobbyInfo?.join_url ?? (isVirtual ? (schedule?.join_url ?? null) : null);
-  const missingLink = isVirtual && !joinUrl;
+  // `needsLink`, no `=== "virtual"`: una clase semi presencial también tiene
+  // sala, y preguntando sólo por virtual el anfitrión de una híbrida se quedaba
+  // sin enlace al que entrar — y sin el aviso de que faltaba.
+  const wantsLink = schedule ? needsLink(schedule.modality) : false;
+  const joinUrl =
+    lobbyInfo?.host_url ??
+    lobbyInfo?.join_url ??
+    (wantsLink ? (schedule?.join_url ?? null) : null);
+  const missingLink = wantsLink && !joinUrl;
   const overdue = remaining <= 0;
 
   if (session.status === "cancelled") {
@@ -190,9 +292,13 @@ function HostPanel({
         <div className="text-sm text-slate-500">
           Tu clase · inicio {formatDateTime(startIso)}
         </div>
-        <Badge color={isVirtual ? "indigo" : "slate"}>
-          {isVirtual ? "Virtual" : "Presencial"}
-        </Badge>
+        {/* La modalidad, por su nombre. Escrito como `virtual ? … : …` una
+            semi presencial se anunciaba al profesor como "Presencial". */}
+        {schedule && (
+          <Badge color={modalityColor(schedule.modality)}>
+            {modalityLabel(schedule.modality)}
+          </Badge>
+        )}
       </div>
 
       <div className="my-5">
@@ -269,9 +375,11 @@ function HostPanel({
                 {update.isPending ? "Iniciando…" : "Iniciar la clase →"}
               </Button>
               <p className="mt-2 text-center text-xs text-slate-400">
-                {isVirtual
-                  ? "Abre la sala en una pestaña nueva y avisa que la clase empezó."
-                  : "Marca la sesión como dada; recibe a tus alumnos en el aula."}
+                {schedule?.modality === "semi_presencial"
+                  ? "Abre la sala para quien se conecta y recibe en el aula a quien viene."
+                  : wantsLink
+                    ? "Abre la sala en una pestaña nueva y avisa que la clase empezó."
+                    : "Marca la sesión como dada; recibe a tus alumnos en el aula."}
                 {!avReady && " Prueba antes tu cámara y micrófono."}
               </p>
             </>
@@ -373,9 +481,9 @@ function StudentPanel({
         </a>
       ) : (
         <p className="rounded-xl bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">
-          {schedule?.modality === "presencial"
-            ? "Clase presencial — acude al aula asignada."
-            : "El profesor aún no ha publicado el enlace de la clase."}
+          {/* Una presencial ya no llega hasta aquí: tiene su propia pantalla.
+              Lo que queda es virtual o semi presencial sin enlace todavía. */}
+          El profesor aún no ha publicado el enlace de la clase.
         </p>
       )}
       <p className="mt-2 text-center text-xs text-slate-400">

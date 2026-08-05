@@ -9,8 +9,8 @@ import { DAYS } from "../../lib/format";
 import {
   useBulkEnroll,
   useCourses,
-  useCreateUser,
   useEnrollments,
+  useNationalities,
   usePublicTeachers,
   useSchedules,
   useUsers,
@@ -18,6 +18,7 @@ import {
 import { notify } from "../../lib/toast";
 import type { BulkEnrollOutcome } from "../../lib/types";
 import { BulkResultDialog, type BulkOutcome } from "../admin/BulkResultDialog";
+import { CreateUserModal } from "../admin/UsersPanel";
 
 interface Props {
   initialCourseId?: number;
@@ -26,8 +27,6 @@ interface Props {
   initialStudentIds?: number[];
   onClose: () => void;
 }
-
-const DEFAULT_PASSWORD = "Educa2026!";
 
 /**
  * Enrolling, as one screen that finishes the job.
@@ -57,8 +56,8 @@ export function EnrollWizard({
   const { data: teachers = [] } = usePublicTeachers();
   const { data: enrollments = [] } = useEnrollments();
   const { data: schedules = [] } = useSchedules();
+  const { data: nationalities = [] } = useNationalities();
 
-  const createUser = useCreateUser();
   const bulkEnroll = useBulkEnroll();
 
   const [picked, setPicked] = useState<number[]>(
@@ -72,15 +71,7 @@ export function EnrollWizard({
   const [clashOverride, setClashOverride] = useState(false);
   const [result, setResult] = useState<BulkEnrollOutcome[] | null>(null);
 
-  // New-student fields
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [cuiPassport, setCuiPassport] = useState("");
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
-
-  // Only courses that would actually accept somebody. Offering a draft or a
-  // closed one produces a picker whose every choice ends in the same refusal.
+  // Only courses that would actually accept somebody.
   const enrollable = useMemo(
     () => courses.filter((c) => c.status === "open" || c.status === "in_progress"),
     [courses],
@@ -110,8 +101,6 @@ export function EnrollWizard({
         .map((s) => ({
           value: s.id,
           label: s.full_name,
-          // Says up front who cannot be added, instead of letting the batch
-          // come back with them listed as refused.
           hint: alreadyIn.has(s.id) ? "Ya está en este curso" : s.email,
         })),
     [students, picked, alreadyIn],
@@ -140,36 +129,6 @@ export function EnrollWizard({
 
   function addExisting(id: number) {
     setPicked((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  }
-
-  async function createAndAdd() {
-    if (!fullName.trim() || !email.trim()) {
-      setError("El nombre y el correo son obligatorios");
-      return;
-    }
-    setError(null);
-    try {
-      const created = await createUser.mutateAsync({
-        role: "student",
-        full_name: fullName.trim(),
-        email: email.trim().toLowerCase(),
-        // Optional: the API does not require it, and making it mandatory here
-        // blocked an enrolment over a number the front desk often does not have
-        // to hand.
-        cui_passport: cuiPassport.trim() || undefined,
-        phone: phone.trim() || undefined,
-        password: password || DEFAULT_PASSWORD,
-      });
-      addExisting(created.id);
-      notify(`${created.full_name} registrado y añadido a la lista`, "success");
-      setFullName("");
-      setEmail("");
-      setPhone("");
-      setCuiPassport("");
-      setShowNewStudent(false);
-    } catch (e) {
-      setError(apiErrorMessage(e, "No se pudo registrar al alumno"));
-    }
   }
 
   function submit(force = false) {
@@ -317,49 +276,7 @@ export function EnrollWizard({
             emptyLabel="Ningún alumno coincide"
           />
 
-          {showNewStudent && (
-            <div className="space-y-2.5 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-              <Field label="Nombre completo">
-                <Input
-                  placeholder="Ej. María Fernanda López"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                />
-              </Field>
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                <Field label="Correo electrónico">
-                  <Input
-                    type="email"
-                    placeholder="maria@ejemplo.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </Field>
-                <Field label="Teléfono (opcional)">
-                  <Input
-                    placeholder="+502 5555-5555"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
-                </Field>
-              </div>
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                <Field label="CUI o pasaporte (opcional)">
-                  <Input
-                    placeholder="Ej. 2540 12345 0101"
-                    value={cuiPassport}
-                    onChange={(e) => setCuiPassport(e.target.value)}
-                  />
-                </Field>
-                <Field label="Contraseña inicial">
-                  <Input value={password} onChange={(e) => setPassword(e.target.value)} />
-                </Field>
-              </div>
-              <Button size="sm" onClick={createAndAdd} disabled={createUser.isPending}>
-                {createUser.isPending ? "Registrando…" : "Registrar y añadir"}
-              </Button>
-            </div>
-          )}
+          {/* Empty space after search */}
         </section>
 
         {/* ── Curso ── */}
@@ -482,6 +399,19 @@ export function EnrollWizard({
           </p>
         )}
       </div>
+
+      {showNewStudent && (
+        <CreateUserModal
+          defaultRole="student"
+          hideRoleSelect={true}
+          nationalities={nationalities}
+          onCreated={(createdStudent) => {
+            addExisting(createdStudent.id);
+            setShowNewStudent(false);
+          }}
+          onClose={() => setShowNewStudent(false)}
+        />
+      )}
     </Modal>
   );
 }

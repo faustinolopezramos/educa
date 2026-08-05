@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canSeeSection, defaultSection, getNavForUser } from "../nav";
+import { canManageGrades, canSeeSection, defaultSection, getNavForUser } from "../nav";
 import type { Permission, Role, User } from "../types";
 
 function user(role: Role, permissions: Permission[] = []): User {
@@ -75,6 +75,58 @@ describe("canSeeSection", () => {
 
   it("refuses everything when nobody is signed in", () => {
     expect(canSeeSection(null, "inicio")).toBe(false);
+  });
+
+  // It used to short-circuit with `if (role !== "assistant") return true`, so it
+  // cheerfully claimed a student could open the audit trail. Nothing broke —
+  // the dashboards only mount their own sections — but a guard that answers yes
+  // to everything is a trap for whoever reaches for it next.
+  it("answers a teacher and a student on their own terms, not with a blanket yes", () => {
+    const teacher = user("teacher");
+    const student = user("student");
+
+    expect(canSeeSection(teacher, "clases")).toBe(true);
+    expect(canSeeSection(student, "progreso")).toBe(true);
+
+    for (const section of ["audit", "users", "enrollments", "rooms", "tenants"]) {
+      expect(canSeeSection(teacher, section)).toBe(false);
+      expect(canSeeSection(student, section)).toBe(false);
+    }
+    // Neither one owns the other's sections either.
+    expect(canSeeSection(teacher, "progreso")).toBe(false);
+    expect(canSeeSection(student, "clases")).toBe(false);
+  });
+
+  it("still honours the two section ids 'Mi progreso' replaced", () => {
+    // Old bookmarks have to land somewhere rather than on a denial.
+    for (const legacy of ["calificaciones", "reportes"]) {
+      expect(canSeeSection(user("student"), legacy)).toBe(true);
+    }
+  });
+});
+
+/**
+ * Mirrors `require_staff_permission(manage_grades)` on the API. The tareas panel
+ * asked `role === "admin" || role === "teacher"`, which quietly showed a
+ * superadmin the student's half of the screen: no way to set work, no roster,
+ * just a "entregar" button for courses they are not enrolled in.
+ */
+describe("canManageGrades", () => {
+  it("covers every staff role the API lets through", () => {
+    expect(canManageGrades(user("teacher"))).toBe(true);
+    expect(canManageGrades(user("admin"))).toBe(true);
+    expect(canManageGrades(user("superadmin"))).toBe(true);
+  });
+
+  it("holds an assistant to the permission itself", () => {
+    expect(canManageGrades(user("assistant", ["manage_grades"]))).toBe(true);
+    expect(canManageGrades(user("assistant", ["manage_finance"]))).toBe(false);
+    expect(canManageGrades(user("assistant", []))).toBe(false);
+  });
+
+  it("never puts a student on the staff side", () => {
+    expect(canManageGrades(user("student"))).toBe(false);
+    expect(canManageGrades(null)).toBe(false);
   });
 });
 

@@ -106,6 +106,8 @@ export {
   useCancelSession,
   useRescheduleSession,
   useEnsureSession,
+  useCloseRegister,
+  useReopenRegister,
 } from "./sessions";
 export {
   useTenants,

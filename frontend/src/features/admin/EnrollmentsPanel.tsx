@@ -8,6 +8,7 @@ import {
 } from "../../components/ui";
 import { IconClipboard } from "../../components/icons";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
+import { Student360Drawer } from "./Student360Drawer";
 import {
   useCourses,
   useCreatePayment,
@@ -28,6 +29,7 @@ import type {
   Enrollment,
   EnrollmentStatus,
   PaymentKind,
+  User,
 } from "../../lib/types";
 import { onMutationError } from "./shared";
 import { allowedTransitions, formatBalance, isTerminalStatus } from "../../lib/enrollment";
@@ -44,6 +46,7 @@ export function EnrollmentsPanel() {
   const [finances, setFinances] = useState<Enrollment | null>(null);
   const [transferEnrollment, setTransferEnrollment] = useState<Enrollment | null>(null);
   const [deleting, setDeleting] = useState<Enrollment | null>(null);
+  const [drawerStudent, setDrawerStudent] = useState<User | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCourseId, setSelectedCourseId] = useState<number | "all">("all");
@@ -213,9 +216,8 @@ export function EnrollmentsPanel() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {courseEnrollments.map((e) => {
-                      const studentName =
-                        students.find((s) => s.id === e.student_id)?.full_name ??
-                        `#${e.student_id}`;
+                      const stObj = students.find((s) => s.id === e.student_id);
+                      const studentName = stObj?.full_name ?? `#${e.student_id}`;
 
                       return (
                         <tr key={e.id} className="hover:bg-slate-50">
@@ -225,7 +227,17 @@ export function EnrollmentsPanel() {
                             </span>
                           </Td>
                           <Td>
-                            <span className="font-medium text-slate-900">{studentName}</span>
+                            {stObj ? (
+                              <button
+                                type="button"
+                                onClick={() => setDrawerStudent(stObj)}
+                                className="font-medium text-slate-900 hover:text-brand-600 hover:underline text-left"
+                              >
+                                {studentName}
+                              </button>
+                            ) : (
+                              <span className="font-medium text-slate-900">{studentName}</span>
+                            )}
                           </Td>
                           <Td>
                             <StatusSelect enrollment={e} />
@@ -248,9 +260,6 @@ export function EnrollmentsPanel() {
                             </Badge>
                           </Td>
                           <Td align="right">
-                            {/* The badge says whether money is late; this says
-                                how much, which is the question actually asked
-                                at the desk. */}
                             <span
                               className={
                                 e.balance > 0.005
@@ -267,6 +276,14 @@ export function EnrollmentsPanel() {
                           <Td align="right">
                             <ActionMenu
                               items={[
+                                ...(stObj
+                                  ? [
+                                      {
+                                        label: "Ficha 360° del Alumno",
+                                        onClick: () => setDrawerStudent(stObj),
+                                      },
+                                    ]
+                                  : []),
                                 { label: "Pagos e historial", onClick: () => setFinances(e) },
                                 {
                                   label: "Trasladar a otro curso",
@@ -335,6 +352,16 @@ export function EnrollmentsPanel() {
           busy={deleteEnrollment.isPending}
           onConfirm={() => confirmDelete(deleting)}
           onClose={() => setDeleting(null)}
+        />
+      )}
+
+      {drawerStudent && (
+        <Student360Drawer
+          student={drawerStudent}
+          onClose={() => setDrawerStudent(null)}
+          onMatricular={() => {
+            setWizardCourseId("new");
+          }}
         />
       )}
     </div>
@@ -473,6 +500,7 @@ function TransferCourseModal({
       <div className="space-y-4">
         <Field
           label="Nuevo curso"
+          required={true}
           hint={
             selectedCourse
               ? `Comienza el ${selectedCourse.start_date || "— fecha sin definir"}.`
@@ -610,13 +638,13 @@ function FinancesModal({
         <div className="space-y-3">
           <h4 className="text-sm font-semibold text-slate-900">Registrar movimiento</h4>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Tipo">
+            <Field label="Tipo" required={true}>
               <Select value={kind} onChange={(e) => setKind(e.target.value as PaymentKind)}>
                 <option value="payment">Pago recibido</option>
                 <option value="charge">Cobro / cuota</option>
               </Select>
             </Field>
-            <Field label="Monto (Q)">
+            <Field label="Monto (Q)" required={true}>
               <Input
                 type="number"
                 min="0"

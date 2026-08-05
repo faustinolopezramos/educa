@@ -13,6 +13,7 @@ class PaymentCreate(BaseModel):
     # mark a debt as settled.
     amount: float = Field(gt=0)
     method: str | None = None
+    receipt_number: str | None = None
     # Only meaningful on a `charge`: the date it falls due. Without one the
     # charge is open-ended and can never make the enrollment delinquent.
     due_date: date | None = None
@@ -26,6 +27,7 @@ class PaymentRead(BaseModel):
     kind: PaymentKind
     amount: float
     method: str | None
+    receipt_number: str | None
     due_date: date | None
     paid_at: datetime
     recorded_by: int | None

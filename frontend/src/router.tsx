@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useRouteError } from "react-router-dom";
 
 import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
@@ -38,8 +38,34 @@ function RoleHome() {
   return <StudentDashboard />;
 }
 
+function RootBoundary() {
+  const error = useRouteError();
+  return (
+    <div className="flex h-screen flex-col items-center justify-center p-6 text-center">
+      <h1 className="text-xl font-bold text-slate-800">Ocurrió un error inesperado</h1>
+      <p className="mt-2 text-sm text-slate-600">
+        {error instanceof Error ? error.message : "Error al cargar la página."}
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+      >
+        Recargar página
+      </button>
+    </div>
+  );
+}
+
 export const router = createBrowserRouter([
-  { path: "/login", element: <SuspenseWrapper><Login /></SuspenseWrapper> },
+  {
+    path: "/login",
+    element: (
+      <SuspenseWrapper>
+        <Login />
+      </SuspenseWrapper>
+    ),
+    errorElement: <RootBoundary />,
+  },
   {
     path: "/",
     element: (
@@ -47,6 +73,7 @@ export const router = createBrowserRouter([
         <Layout />
       </ProtectedRoute>
     ),
+    errorElement: <RootBoundary />,
     children: [
       { index: true, element: <SuspenseWrapper><RoleHome /></SuspenseWrapper> },
       { path: "lobby/:sessionId", element: <SuspenseWrapper><Lobby /></SuspenseWrapper> },

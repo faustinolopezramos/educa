@@ -53,7 +53,11 @@ def test_modality_accepts_semi_presencial(client, world):
     res = client.post(
         f"/schedules/{world['schedule_a'].id}/location/propose",
         headers=admin,
-        json={"modality": "semi_presencial", "room_id": room["id"]},
+        json={
+            "modality": "semi_presencial",
+            "room_id": room["id"],
+            "join_url": "https://meet.google.com/demo-meet-link",
+        },
     )
     assert res.status_code == 201, res.text
     assert res.json()["modality"] == "semi_presencial"

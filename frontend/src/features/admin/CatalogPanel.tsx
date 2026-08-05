@@ -244,7 +244,7 @@ export function CatalogPanel() {
           }
         >
           <div className="space-y-4">
-            <Field label="Nombre de la materia">
+            <Field label="Nombre de la materia" required={true}>
               <Input
                 placeholder="Ej. Francés, Python, Liderazgo…"
                 value={langName}
@@ -252,7 +252,7 @@ export function CatalogPanel() {
               />
             </Field>
 
-            <Field label="Área">
+            <Field label="Área" required={true}>
               <Select
                 value={langKind}
                 onChange={(e) => setLangKind(e.target.value as TrackKind)}
@@ -290,7 +290,7 @@ export function CatalogPanel() {
           }
         >
           <div className="space-y-3.5 text-xs">
-            <Field label="Materia">
+            <Field label="Materia" required={true}>
               <Select
                 value={selectedLangForLevel}
                 onChange={(e) => setSelectedLangForLevel(Number(e.target.value))}
@@ -305,7 +305,7 @@ export function CatalogPanel() {
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Código">
+              <Field label="Código" required={true}>
                 <Input
                   placeholder="Ej. A1, Mód. 1"
                   value={levelCode}

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import date as date_type
+from datetime import datetime
 
-from sqlalchemy import Date
+from sqlalchemy import Date, DateTime
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -42,6 +43,19 @@ class ClassSession(Base):
         ForeignKey("class_sessions.id", ondelete="SET NULL"), nullable=True
     )
     recording_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Cuándo el profesor dio la lista por terminada, y quién.
+    #
+    # `status = held` sólo dice que la clase ocurrió, y lo escribe la primera
+    # marca de asistencia. Eso dejaba una lista con 3 de 30 alumnos contando
+    # como registrada: la clase existía, el registro no. El cierre es la
+    # afirmación explícita de quien estuvo en el aula — "esta lista está
+    # completa" — y es lo que el reporte cuenta como sesión registrada.
+    register_closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    register_closed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     schedule: Mapped["Schedule"] = relationship(back_populates="sessions")
     attendance_records: Mapped[list["Attendance"]] = relationship(

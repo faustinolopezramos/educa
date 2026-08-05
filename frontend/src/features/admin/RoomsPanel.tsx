@@ -75,9 +75,9 @@ export function RoomsPanel() {
           </div>
 
           <div className="mt-4 space-y-3.5">
-            <Field label="Nombre">
+            <Field label="Nombre del Aula / Sala" required={true}>
               <Input
-                placeholder="Ej. Aula 102"
+                placeholder="Ej. Aula 102 o Sala Zoom 1"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />

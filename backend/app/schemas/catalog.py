@@ -70,6 +70,7 @@ class CourseCreate(BaseModel):
     name: str
     start_date: date | None = None
     end_date: date | None = None
+    periodicity: str | None = None
     max_students: int = Field(default=20, ge=1)
     passing_score: float = Field(default=6.0, ge=0, le=10)
     # A course is born a draft: it has no timetable and no teacher yet, so it
@@ -91,6 +92,7 @@ class CourseUpdate(PatchModel):
     name: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    periodicity: str | None = None
     max_students: int | None = Field(default=None, ge=1)
     passing_score: float | None = Field(default=None, ge=0, le=10)
     # Deliberately absent: status moves through `POST /courses/{id}/status`,
@@ -106,6 +108,7 @@ class CourseRead(BaseModel):
     status: CourseStatus
     start_date: date | None
     end_date: date | None
+    periodicity: str | None = None
     max_students: int
     passing_score: float
     # Filled by `attach_course_stats` on the list endpoint: how full the course

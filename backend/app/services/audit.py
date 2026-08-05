@@ -9,7 +9,7 @@ change that was rolled back, nor go missing for one that stuck.
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any
 
 from sqlalchemy import inspect
@@ -24,7 +24,7 @@ _REDACTED = {"password_hash", "api_credentials_encrypted"}
 def _jsonable(value: Any) -> Any:
     if isinstance(value, enum.Enum):
         return value.value
-    if isinstance(value, (date, datetime)):
+    if isinstance(value, (date, datetime, time)):
         return value.isoformat()
     return value
 

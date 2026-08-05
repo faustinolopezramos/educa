@@ -156,11 +156,13 @@ def _academy_kpis(db: DbSession, user: User, course_ids: list[int]) -> AcademyKp
 
 
 def _past_unregistered(db: DbSession, course_ids: list[int], since: date) -> int:
-    """Classes whose date has passed but whose register was never taken.
+    """Classes whose date has passed and whose register was never closed.
 
-    `held` is written when a teacher marks attendance, so a past session still
-    sitting at `scheduled` is one nobody filed — the gap the reports now show as
-    "sin registrar" and which used to be silently counted as taught.
+    Antes preguntaba por `status = scheduled`, que la primera marca de
+    asistencia ya borraba: una clase con 3 de 30 alumnos marcados desaparecía de
+    los pendientes del profesor con la lista a medias. La pregunta correcta es
+    si la lista se cerró, que es lo que alguien afirma a propósito. Las
+    canceladas no cuentan: no hay lista que llenar.
     """
     if not course_ids:
         return 0
@@ -173,7 +175,8 @@ def _past_unregistered(db: DbSession, course_ids: list[int], since: date) -> int
                 Schedule.course_id.in_(course_ids),
                 ClassSession.date < academy_today(),
                 ClassSession.date >= since,
-                ClassSession.status == SessionStatus.scheduled,
+                ClassSession.register_closed_at.is_(None),
+                ClassSession.status != SessionStatus.cancelled,
             )
         )
         or 0

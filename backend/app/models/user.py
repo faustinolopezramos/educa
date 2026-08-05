@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String, text
 from sqlalchemy import true as sa_true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +16,16 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+        # La identificación personal es única dentro de la academia. Parcial
+        # sobre NOT NULL, porque el campo sigue siendo opcional para las cuentas
+        # anteriores a él y varias filas sin documento no se estorban.
+        Index(
+            "uq_users_tenant_cui_passport",
+            "tenant_id",
+            "cui_passport",
+            unique=True,
+            postgresql_where=text("cui_passport IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

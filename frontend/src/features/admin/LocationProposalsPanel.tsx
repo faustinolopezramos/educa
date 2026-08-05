@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Badge, Button, Card, EmptyState, SectionHeading, Table, Td, Th } from "../../components/ui";
 import { PromptModal } from "../../components/PromptModal";
+import { ClassLocation } from "../../components/ClassLocation";
 import { useLocationProposals, useReviewProposal, useRooms, useUsers } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import { onMutationError } from "./shared";
@@ -58,18 +59,11 @@ export function LocationProposalsPanel() {
                   </Badge>
                 </Td>
                 <Td>
-                  {p.modality === "virtual" ? (
-                    <a
-                      href={p.join_url ?? "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-brand-600 hover:underline"
-                    >
-                      {p.join_url}
-                    </a>
-                  ) : (
-                    roomName(p.room_id)
-                  )}
+                  <ClassLocation
+                    modality={p.modality}
+                    roomName={roomName(p.room_id)}
+                    joinUrl={p.join_url}
+                  />
                 </Td>
                 <Td>
                   <div className="flex gap-1">

@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     academy_timezone: str = "America/Guatemala"
 
     # CORS
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:5174,http://127.0.0.1:5174"
+    )
 
     # Set to true only when the API genuinely sits behind a reverse proxy that
     # rewrites `X-Forwarded-For`. Left false, the login rate limiter counts by

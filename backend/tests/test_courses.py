@@ -11,8 +11,17 @@ from datetime import date, time
 import pytest
 from sqlalchemy import select
 
-from app.models import Course, CourseTeacher, Language, Level, Schedule, UserRole
-from tests.conftest import auth, make_user
+from app.models import (
+    Course,
+    CourseTeacher,
+    Enrollment,
+    Language,
+    Level,
+    Schedule,
+    UserRole,
+)
+from app.services.sequences import next_enrollment_code
+from tests.conftest import TODAY, auth, make_user
 
 
 @pytest.fixture
@@ -100,15 +109,43 @@ def test_a_term_change_with_no_clash_still_works(client, two_terms, db):
 
 
 # ---------------- Capacity ----------------
-def test_capacity_cannot_drop_below_the_students_already_enrolled(client, world):
+def _seat_a_second_student(db, world) -> Enrollment:
+    """Deja dos plazas ocupadas en `course_a`, para poder bajar el cupo por
+    debajo de lo matriculado sin recurrir a un cupo de cero — que el esquema ya
+    rechaza por su cuenta (`max_students: ge=1`) antes de llegar a la regla de
+    negocio que estas pruebas quieren ejercitar."""
+    enrollment = Enrollment(
+        student_id=world["outsider"].id,
+        course_id=world["course_a"].id,
+        enrollment_code=next_enrollment_code(db, year=TODAY.year),
+    )
+    db.add(enrollment)
+    db.flush()
+    return enrollment
+
+
+def test_capacity_cannot_drop_below_the_students_already_enrolled(client, db, world):
+    _seat_a_second_student(db, world)
+    headers = auth(client, "admin@test.com")
+    res = client.patch(
+        f"/catalog/courses/{world['course_a'].id}",
+        headers=headers,
+        json={"max_students": 1},
+    )
+    assert res.status_code == 409, res.text
+    assert res.json()["detail"]["reason"] == "capacity_below_enrolled"
+
+
+def test_a_capacity_of_zero_is_refused_on_its_own_terms(client, world):
+    """Un curso sin plazas no es un curso, así que se rechaza por validación —
+    antes y con independencia de cuánta gente haya dentro."""
     headers = auth(client, "admin@test.com")
     res = client.patch(
         f"/catalog/courses/{world['course_a'].id}",
         headers=headers,
         json={"max_students": 0},
     )
-    assert res.status_code == 409
-    assert res.json()["detail"]["reason"] == "capacity_below_enrolled"
+    assert res.status_code == 422, res.text
 
 
 def test_capacity_may_drop_to_exactly_the_number_enrolled(client, world):
@@ -134,16 +171,27 @@ def test_capacity_may_always_grow(client, world):
 
 def test_a_cancelled_enrollment_does_not_hold_a_seat(client, world, db):
     """Capacity counts active enrollments, so cancelling frees the seat."""
+    _seat_a_second_student(db, world)
     headers = auth(client, "admin@test.com")
+    # Con dos plazas ocupadas, bajar a una choca…
+    assert (
+        client.patch(
+            f"/catalog/courses/{world['course_a'].id}",
+            headers=headers,
+            json={"max_students": 1},
+        ).status_code
+        == 409
+    )
     client.patch(
         f"/enrollments/{world['enrollment'].id}",
         headers=headers,
         json={"status": "withdrawn"},
     )
+    # …y deja de chocar en cuanto una de las dos suelta su plaza.
     res = client.patch(
         f"/catalog/courses/{world['course_a'].id}",
         headers=headers,
-        json={"max_students": 0},
+        json={"max_students": 1},
     )
     assert res.status_code == 200, res.text
 

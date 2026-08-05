@@ -22,7 +22,13 @@ interface AuthContextValue {
   updateUser: (user: User) => void;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const g = globalThis as unknown as {
+  __EDUCA_AUTH_CONTEXT__?: ReturnType<typeof createContext<AuthContextValue | undefined>>;
+};
+if (!g.__EDUCA_AUTH_CONTEXT__) {
+  g.__EDUCA_AUTH_CONTEXT__ = createContext<AuthContextValue | undefined>(undefined);
+}
+const AuthContext = g.__EDUCA_AUTH_CONTEXT__;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

@@ -24,7 +24,7 @@ from app.models import (
     UserRole,
 )
 from app.services.sequences import next_enrollment_code
-from tests.conftest import auth, make_user
+from tests.conftest import TODAY, auth, make_user
 
 
 def _kinds(client, headers) -> set[str]:
@@ -116,7 +116,7 @@ def test_a_past_class_with_no_register_reaches_the_teacher(client, db, world):
     db.add(
         ClassSession(
             schedule_id=world["schedule_a"].id,
-            date=date.today() - timedelta(days=3),
+            date=TODAY - timedelta(days=3),
         )
     )
     db.flush()
@@ -136,7 +136,7 @@ def test_the_admin_is_not_nagged_about_registers_they_cannot_take(client, db, wo
     db.add(
         ClassSession(
             schedule_id=world["schedule_a"].id,
-            date=date.today() - timedelta(days=3),
+            date=TODAY - timedelta(days=3),
         )
     )
     db.flush()
@@ -149,7 +149,7 @@ def test_a_future_class_is_not_a_pending_register(client, db, world):
     db.add(
         ClassSession(
             schedule_id=world["schedule_a"].id,
-            date=date.today() + timedelta(days=3),
+            date=TODAY + timedelta(days=3),
         )
     )
     db.flush()
@@ -161,7 +161,7 @@ def test_the_teacher_sees_only_their_own_unregistered_classes(client, db, world)
     db.add(
         ClassSession(
             schedule_id=world["schedule_b"].id,  # teacher_b's course
-            date=date.today() - timedelta(days=2),
+            date=TODAY - timedelta(days=2),
         )
     )
     db.flush()
@@ -245,7 +245,7 @@ def test_a_students_tray_never_mentions_another_students_debt(client, db, world)
         course_id=world["course_b"].id,
         amount=900.0,
         payment_status=PaymentStatus.overdue,
-        enrollment_code=next_enrollment_code(db, year=date.today().year),
+        enrollment_code=next_enrollment_code(db, year=TODAY.year),
     )
     db.add(outsider_enrollment)
     db.flush()

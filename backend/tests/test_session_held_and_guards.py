@@ -71,7 +71,15 @@ def test_a_class_nobody_registered_is_not_counted_as_taught(client, world, sessi
     assert report["sessions_pending"] == report["sessions_total"]
 
 
-def test_a_registered_class_moves_from_pending_to_held(client, world, session_a):
+def test_marking_one_student_does_not_yet_count_as_a_registered_class(
+    client, world, session_a
+):
+    """Una lista a medias no es una lista.
+
+    Marcar al primer alumno escribe `status = held` —la clase ocurrió— pero el
+    reporte cuenta como *registrada* la sesión cuya lista se cerró. Antes bastaba
+    un marcaje, así que 3 de 30 figuraba igual que 30 de 30.
+    """
     teacher = auth(client, "teacher_a@test.com")
     admin = auth(client, "admin@test.com")
     before = client.get("/reports?period=month", headers=admin).json()
@@ -82,6 +90,30 @@ def test_a_registered_class_moves_from_pending_to_held(client, world, session_a)
         enrollment_id=world["enrollment"].id,
         session_id=session_a["id"],
     )
+
+    after = client.get("/reports?period=month", headers=admin).json()
+    assert after["sessions_held"] == before["sessions_held"]
+    assert after["sessions_pending"] == before["sessions_pending"]
+
+
+def test_closing_the_register_moves_the_class_from_pending_to_held(
+    client, world, session_a
+):
+    teacher = auth(client, "teacher_a@test.com")
+    admin = auth(client, "admin@test.com")
+    before = client.get("/reports?period=month", headers=admin).json()
+
+    _mark(
+        client,
+        teacher,
+        enrollment_id=world["enrollment"].id,
+        session_id=session_a["id"],
+    )
+    closed = client.post(
+        f"/sessions/{session_a['id']}/close-register", headers=teacher
+    )
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["register_closed_at"] is not None
 
     after = client.get("/reports?period=month", headers=admin).json()
     assert after["sessions_held"] == before["sessions_held"] + 1

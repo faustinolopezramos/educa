@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
@@ -17,6 +17,11 @@ class ClassSessionRead(BaseModel):
     cancel_reason: str | None
     origin_session_id: int | None
     recording_url: str | None = None
+    # Cuándo se dio la lista por terminada. `None` = todavía abierta, que es lo
+    # que la interfaz usa para distinguir "sin registrar" de "registrada" —
+    # `status` sólo dice si la clase ocurrió.
+    register_closed_at: datetime | None = None
+    register_closed_by: int | None = None
 
 
 class SessionGenerate(BaseModel):

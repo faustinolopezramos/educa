@@ -119,6 +119,8 @@ def test_creating_an_account_is_audited(client, world):
             "full_name": "Recién Creado",
             "role": "teacher",
             "password": "secret123",
+            # La identificación personal es obligatoria al dar de alta.
+            "cui_passport": "2450123450101",
         },
     )
     assert created.status_code == 201, created.text

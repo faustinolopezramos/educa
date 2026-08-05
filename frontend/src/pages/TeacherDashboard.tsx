@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { ActionTray } from "../components/ActionTray";
@@ -16,24 +17,38 @@ import {
   Select,
   Stat,
 } from "../components/ui";
-import { IconBook, IconCalendar, IconClock, IconLock, IconUsers } from "../components/icons";
+import {
+  IconBook,
+  IconCalendar,
+  IconCheck,
+  IconClock,
+  IconLock,
+  IconUsers,
+} from "../components/icons";
 import { GradeTable } from "../features/grades/GradeTable";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
-import { apiErrorMessage } from "../lib/api";
+import { apiErrorDetail, apiErrorMessage } from "../lib/api";
 import { SCORE_MAX, SCORE_MIN, DAILY_EVALUATION } from "../lib/constants";
+import { absenceStreak, attendancePct, marksOf } from "../lib/attendance";
+import { holdsSeat } from "../lib/enrollment";
 import {
   MODALITY_LABELS,
+  courseModality,
+  courseModalityLabel,
   dayName,
   formatTime,
   modalityColor,
   modalityLabel,
+  needsLink,
   todayLocal,
+  usesRoom,
 } from "../lib/format";
 import { notify } from "../lib/toast";
 import {
   useCancelSession,
+  useCloseRegister,
   useCourseStudents,
   useCourses,
   useCreateAttendance,
@@ -42,8 +57,11 @@ import {
   useEnsureSession,
   useGenerateSessions,
   useGrades,
+  useLanguages,
+  useLevels,
   useLocationProposals,
   useProposeLocation,
+  useReopenRegister,
   useRescheduleSession,
   useRooms,
   useSchedules,
@@ -142,9 +160,20 @@ export default function TeacherDashboard() {
 function ClassesView() {
   const { data: schedules = [] } = useSchedules(true);
   const { data: courses = [] } = useCourses();
+  const { data: languages = [] } = useLanguages();
+  const { data: levels = [] } = useLevels();
   const [selected, setSelected] = useState<Schedule | null>(null);
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
+
+  const courseLanguageName = (id: number) => {
+    const course = courses.find((c) => c.id === id);
+    if (!course) return "";
+    const level = levels.find((l) => l.id === course.level_id);
+    if (!level) return "";
+    const lang = languages.find((g) => g.id === level.language_id);
+    return lang ? lang.name : "";
+  };
 
   const featured = useMemo(() => pickFeatured(schedules), [schedules]);
   const orderedSchedules = useMemo(() => sortByUpcoming(schedules), [schedules]);
@@ -195,15 +224,34 @@ function ClassesView() {
             <div className="space-y-4">
               {byCourse.map(([courseId, slots]) => (
                 <div key={courseId}>
-                  <div className="mb-1.5 flex items-baseline justify-between gap-2">
-                    <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
-                      {courseName(courseId)}
-                    </span>
-                    {slots.length > 1 && (
-                      <span className="flex-none text-2xs text-slate-400">
-                        {slots.length} franjas
+                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="min-w-0 flex items-center gap-1.5">
+                      {courseLanguageName(courseId) && (
+                        <Badge color="indigo">{courseLanguageName(courseId)}</Badge>
+                      )}
+                      <span className="truncate text-sm font-semibold text-slate-900">
+                        {courseName(courseId)}
                       </span>
-                    )}
+                    </div>
+                    <div className="flex flex-none items-center gap-1.5">
+                      {/* La modalidad del curso, no la de cada franja. Con dos
+                          franjas iguales repetir la etiqueta en cada fila no
+                          dice nada; cuando difieren, «mixta» es justo el aviso
+                          que el profesor necesita antes de abrir una. */}
+                      {(() => {
+                        const cm = courseModality(slots);
+                        return cm ? (
+                          <Badge color={modalityColor(cm)}>
+                            {courseModalityLabel(cm)}
+                          </Badge>
+                        ) : null;
+                      })()}
+                      {slots.length > 1 && (
+                        <span className="text-2xs text-slate-400">
+                          {slots.length} franjas
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     {slots.map((s) => {
@@ -329,10 +377,21 @@ function NowBar({
 }
 
 function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName: string }) {
-  const { data: enrollments = [] } = useEnrollments(schedule.course_id);
+  const { data: allEnrollments = [] } = useEnrollments(schedule.course_id);
   const { data: students = [] } = useCourseStudents(schedule.course_id);
   const { data: sessions = [] } = useSessions(schedule.id);
   const generate = useGenerateSessions();
+
+  // `GET /enrollments` hands over the whole history of the course — quien
+  // desistió, quien se certificó, quien está en pausa — mientras que el roster
+  // de nombres (`useCourseStudents`) sólo devuelve a quien ocupa plaza. Cruzar
+  // las dos listas sin filtrar ponía en la lista del día filas sin nombre
+  // (`#42`) sobre las que la API rechaza la marca con un 409, e inflaba el
+  // contador de alumnos con matrículas cerradas hace dos trimestres.
+  const enrollments = useMemo(
+    () => allEnrollments.filter((e) => holdsSeat(e.status)),
+    [allEnrollments],
+  );
 
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"attendance" | "exams">("attendance");
@@ -419,7 +478,15 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
                 <option key={s.id} value={s.id}>
                   {s.date}
                   {s.date === today ? " · hoy" : ""}
-                  {s.status === "cancelled" ? " · cancelada" : ""}
+                  {s.status === "cancelled"
+                    ? " · cancelada"
+                    : // Qué sesiones quedan por registrar, visible al elegirlas
+                      // en lugar de descubrirse abriéndolas una por una.
+                      s.register_closed_at
+                      ? " · registrada"
+                      : s.date <= today
+                        ? " · sin registrar"
+                        : ""}
                   {s.origin_session_id ? " · recuperación" : ""}
                 </option>
               ))}
@@ -432,8 +499,7 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
             {selectedSession && <SessionControls session={selectedSession} />}
             {sessionId != null && selectedSession?.status !== "cancelled" && (
               <SessionSheet
-                sessionId={sessionId}
-                sessionDate={selectedSession?.date}
+                session={selectedSession}
                 enrollments={enrollments}
                 studentName={studentName}
               />
@@ -464,13 +530,21 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
   const roomName = (id: number | null) =>
     id == null ? null : (rooms.find((r) => r.id === id)?.name ?? null);
 
+  // Qué pide cada modalidad. Semi presencial pide las dos cosas: es una clase
+  // que ocurre en el aula *y* en línea, y sin cualquiera de las dos mitades hay
+  // alumnos que se quedan fuera. Antes el enlace sólo se enviaba en virtual, y
+  // el backend además lo descartaba al guardarlo.
+  const wantsRoom = usesRoom(modality);
+  const wantsLink = needsLink(modality);
+  const incomplete = (wantsRoom && !roomId) || (wantsLink && !joinUrl.trim());
+
   function submit() {
     propose.mutate(
       {
         scheduleId: schedule.id,
         modality,
-        join_url: modality === "virtual" ? joinUrl : null,
-        room_id: modality !== "virtual" ? roomId || null : null,
+        join_url: wantsLink ? joinUrl.trim() : null,
+        room_id: wantsRoom ? roomId || null : null,
       },
       {
         onSuccess: () => notify("Propuesta enviada para aprobación", "success"),
@@ -479,41 +553,40 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
     );
   }
 
-  const currentLabel =
-    schedule.modality === "virtual"
-      ? "Virtual"
-      : schedule.modality === "semi_presencial"
-        ? "Semi presencial"
-        : "Presencial";
-
   return (
     <Card>
       <SectionHeading>Ubicación de la clase</SectionHeading>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-        <Badge color={schedule.modality === "virtual" ? "indigo" : "slate"}>
-          {currentLabel}
+        <Badge color={modalityColor(schedule.modality)}>
+          {modalityLabel(schedule.modality)}
         </Badge>
-        {schedule.modality === "virtual" ? (
-          schedule.join_url ? (
+        {/* Las dos mitades, cada una con su estado. Una semi presencial mostraba
+            sólo el aula, así que su enlace era invisible incluso cuando existía. */}
+        {usesRoom(schedule.modality) && (
+          <span className="text-slate-700">
+            {roomName(schedule.room_id) ?? "Sin aula asignada"}
+          </span>
+        )}
+        {needsLink(schedule.modality) &&
+          (schedule.join_url ? (
             <>
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-600">
                 {schedule.join_url}
               </span>
-              <span className="flex-none text-xs font-semibold text-emerald-700">Aprobado</span>
+              <span className="flex-none text-xs font-semibold text-emerald-700">
+                Aprobado
+              </span>
             </>
           ) : (
             <span className="text-xs text-amber-800">Pendiente de enlace</span>
-          )
-        ) : (
-          <span className="text-slate-700">{roomName(schedule.room_id) ?? "Sin aula asignada"}</span>
-        )}
+          ))}
       </div>
 
       {pending ? (
         <div className="mt-3">
           <InlineAlert type="warning">
-            Ya enviaste una propuesta ({pending.modality === "virtual" ? "virtual" : "presencial"})
+            Ya enviaste una propuesta ({modalityLabel(pending.modality).toLowerCase()})
             y está esperando aprobación de dirección.
           </InlineAlert>
         </div>
@@ -527,15 +600,7 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
               label: MODALITY_LABELS[m],
             }))}
           />
-          {modality === "virtual" ? (
-            <Input
-              className="max-w-xs"
-              aria-label="Enlace de la videollamada"
-              placeholder="https://meet.google.com/…"
-              value={joinUrl}
-              onChange={(e) => setJoinUrl(e.target.value)}
-            />
-          ) : (
+          {wantsRoom && (
             <Select
               className="max-w-xs"
               aria-label="Aula"
@@ -551,13 +616,27 @@ function LocationPanel({ schedule }: { schedule: Schedule }) {
               ))}
             </Select>
           )}
-          <Button
-            disabled={propose.isPending || (modality === "virtual" ? !joinUrl.trim() : !roomId)}
-            onClick={submit}
-          >
+          {wantsLink && (
+            <Input
+              className="max-w-xs"
+              aria-label="Enlace de la videollamada"
+              placeholder="https://meet.google.com/…"
+              value={joinUrl}
+              onChange={(e) => setJoinUrl(e.target.value)}
+            />
+          )}
+          {/* Semi presencial exige aula y enlace, así que el botón espera a las
+              dos. Antes sólo miraba una y la API rechazaba la propuesta. */}
+          <Button disabled={propose.isPending || incomplete} onClick={submit}>
             {propose.isPending ? "Enviando…" : "Enviar propuesta"}
           </Button>
         </div>
+      )}
+      {!pending && modality === "semi_presencial" && (
+        <p className="mt-2 text-2xs text-slate-500">
+          Una clase semi presencial se da en el aula y en línea a la vez: necesita
+          las dos cosas.
+        </p>
       )}
     </Card>
   );
@@ -653,19 +732,28 @@ function SessionControls({ session }: { session: ClassSession }) {
 }
 
 function SessionSheet({
-  sessionId,
-  sessionDate,
+  session,
   enrollments,
   studentName,
 }: {
-  sessionId: number;
-  sessionDate?: string;
+  session?: ClassSession;
   enrollments: Enrollment[];
   studentName: (id: number) => string;
 }) {
+  const sessionId = session?.id ?? 0;
+  const sessionDate = session?.date;
   const { data: attendance = [] } = useVisibleAttendance();
   const { data: grades = [] } = useGrades();
-  const markAll = useCreateAttendance();
+  // Una sola mutación para las dos vías de marcar —el atajo de teclado y el
+  // botón "todos presentes"—; el estado "marcando en lote" lo lleva `markingAll`
+  // porque `isPending` sólo describe la última de las N peticiones en vuelo.
+  const mark = useCreateAttendance();
+  const [markingAll, setMarkingAll] = useState(false);
+  const [focused, setFocused] = useState(0);
+
+  // Al cambiar de sesión el foco vuelve arriba: seguir en la fila catorce de la
+  // clase anterior no significa nada en la nueva.
+  useEffect(() => setFocused(0), [sessionId]);
 
   const today = todayLocal();
   const isFuture = sessionDate ? sessionDate > today : false;
@@ -695,16 +783,40 @@ function SessionSheet({
 
   const marked = enrollments.filter((e) => markBySession.has(e.id)).length;
 
-  function markEveryonePresent() {
-    enrollments
-      .filter((e) => !markBySession.has(e.id))
-      .forEach((e) =>
-        markAll.mutate({
+  // Una petición por alumno, pero un solo veredicto al final. Antes se
+  // disparaban todas y se anunciaba el éxito en el mismo gesto, sin esperar a
+  // ninguna: si la API rechazaba alguna, el profesor se quedaba con un "todos
+  // marcados" que no era cierto y una fila sin marca que no explicaba nada.
+  async function markEveryonePresent() {
+    const pending = enrollments.filter((e) => !markBySession.has(e.id));
+    if (pending.length === 0) return;
+
+    setMarkingAll(true);
+    const results = await Promise.allSettled(
+      pending.map((e) =>
+        mark.mutateAsync({
           enrollment_id: e.id,
           session_id: sessionId,
           status: "present",
         }),
-      );
+      ),
+    );
+    setMarkingAll(false);
+
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length === 0) {
+      notify("Todos marcados como presentes", "success");
+      return;
+    }
+    const first = (failed[0] as PromiseRejectedResult).reason;
+    notify(
+      failed.length === results.length
+        ? apiErrorMessage(first, "No se pudo pasar lista")
+        : `${results.length - failed.length} de ${results.length} marcados; ${
+            failed.length
+          } fallaron: ${apiErrorMessage(first, "error desconocido")}`,
+      "error",
+    );
   }
 
   if (enrollments.length === 0) {
@@ -718,82 +830,327 @@ function SessionSheet({
   }
 
   const pct = Math.round((marked / enrollments.length) * 100);
+  const closed = session?.register_closed_at != null;
+
+  // El alumno enfocado por teclado. Pasar lista es una tarea de treinta
+  // repeticiones idénticas: con el ratón son noventa clics y una búsqueda visual
+  // por fila. Con ↑↓ para moverse y P/T/A/J para marcar, el profesor no levanta
+  // la vista de la lista.
+  function moveFocus(delta: number) {
+    setFocused((current) => {
+      const next = current + delta;
+      if (next < 0) return 0;
+      if (next > enrollments.length - 1) return enrollments.length - 1;
+      return next;
+    });
+  }
+
+  function onRosterKeyDown(event: ReactKeyboardEvent<HTMLUListElement>) {
+    if (closed) return;
+    const shortcut = MARK_SHORTCUTS[event.key.toLowerCase()];
+    if (shortcut) {
+      event.preventDefault();
+      const target = enrollments[focused];
+      if (!target) return;
+      mark.mutate(
+        { enrollment_id: target.id, session_id: sessionId, status: shortcut },
+        { onError: onMutationError("No se pudo registrar la asistencia") },
+      );
+      // Avanzar solo: marcar y bajar es un gesto, no dos.
+      moveFocus(1);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveFocus(event.key === "ArrowDown" ? 1 : -1);
+    }
+  }
 
   return (
     <div className="space-y-3">
-      {/* Barra de progreso de la toma de lista.
-          El botón dice lo que hace y nada más: antes se llamaba
-          "✓ Marcar Todos Presentes (1 Clic)", donde "(1 Clic)" describía el
-          esfuerzo de usarlo, no su efecto. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <Button
-          disabled={markAll.isPending || marked === enrollments.length}
-          onClick={() => {
-            markEveryonePresent();
-            notify("Todos marcados como presentes", "success");
-          }}
-        >
-          Marcar todos presentes
-        </Button>
+      <RegisterBar
+        marked={marked}
+        total={enrollments.length}
+        pct={pct}
+        closed={closed}
+        sessionId={sessionId}
+        busy={markingAll}
+        onMarkAll={markEveryonePresent}
+      />
 
-        <div className="flex items-center gap-2.5">
-          <span className="tabular text-xs text-slate-600">
-            {marked} de {enrollments.length}
-          </span>
-          <div
-            className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"
-            role="progressbar"
-            aria-valuenow={pct}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Asistencia registrada"
-          >
-            <div className="h-full bg-emerald-600" style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Roster */}
-      <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-        {enrollments.map((e) => (
-          <li
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+      <ul
+        tabIndex={closed ? -1 : 0}
+        onKeyDown={onRosterKeyDown}
+        aria-label="Lista de asistencia"
+        className="divide-y divide-slate-100 rounded-lg border border-slate-200 outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+      >
+        {enrollments.map((e, index) => (
+          <RosterRow
             key={e.id}
-            className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
-          >
-            <div className="flex min-w-[12rem] items-center gap-2.5">
-              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                {initials(studentName(e.student_id))}
-              </span>
-              <span className="text-sm font-medium text-slate-900">
-                {studentName(e.student_id)}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <AttendanceMarks
-                enrollmentId={e.id}
-                sessionId={sessionId}
-                current={markBySession.get(e.id)}
-              />
-
-              <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-                <span className="text-xs text-slate-500">Nota</span>
-                <DailyGradeInput
-                  enrollmentId={e.id}
-                  sessionId={sessionId}
-                  grade={dailyGrade(e.id)}
-                />
-              </div>
-            </div>
-          </li>
+            enrollment={e}
+            name={studentName(e.student_id)}
+            sessionId={sessionId}
+            current={markBySession.get(e.id)}
+            grade={dailyGrade(e.id)}
+            history={marksOf(attendance, e.id)}
+            focused={index === focused && !closed}
+            locked={closed}
+            onFocus={() => setFocused(index)}
+          />
         ))}
       </ul>
+
+      {!closed && (
+        <p className="text-2xs text-slate-500">
+          Con la lista enfocada: <Key>P</Key> presente, <Key>T</Key> tarde,{" "}
+          <Key>A</Key> ausente, <Key>J</Key> justificada. <Key>↑</Key>
+          <Key>↓</Key> para moverte.
+        </p>
+      )}
     </div>
   );
 }
 
-const MARK_LABELS = { present: "Presente", late: "Tarde", absent: "Ausente" } as const;
+function Key({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="mx-0.5 rounded border border-slate-300 bg-white px-1 font-sans text-2xs font-semibold text-slate-600">
+      {children}
+    </kbd>
+  );
+}
+
+/**
+ * La cabecera de la lista: cuánto llevas, y el cierre.
+ *
+ * Cerrar es lo que convierte una lista en una sesión registrada — antes bastaba
+ * con marcar a uno, así que 3 de 30 figuraba en el reporte igual que 30 de 30.
+ */
+function RegisterBar({
+  marked,
+  total,
+  pct,
+  closed,
+  sessionId,
+  busy,
+  onMarkAll,
+}: {
+  marked: number;
+  total: number;
+  pct: number;
+  closed: boolean;
+  sessionId: number;
+  busy: boolean;
+  onMarkAll: () => void;
+}) {
+  const close = useCloseRegister();
+  const reopen = useReopenRegister();
+  const complete = marked === total;
+
+  function closeRegister(force: boolean) {
+    close.mutate(
+      { id: sessionId, force },
+      {
+        onSuccess: () => notify("Lista cerrada", "success"),
+        onError: (error) => {
+          const detail = apiErrorDetail(error);
+          if (detail?.reason === "incomplete_register") {
+            // La API dice cuántos faltan; preguntamos con ese número delante en
+            // lugar de repetir el rechazo sin salida.
+            const missing = Number(detail.total) - Number(detail.marked);
+            if (
+              window.confirm(
+                `Faltan ${missing} de ${detail.total} alumnos por marcar. ` +
+                  "¿Cerrar la lista de todos modos?",
+              )
+            ) {
+              closeRegister(true);
+            }
+            return;
+          }
+          onMutationError("No se pudo cerrar la lista")(error);
+        },
+      },
+    );
+  }
+
+  if (closed) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+        <span className="flex items-center gap-2 text-sm font-medium text-emerald-800">
+          <IconCheck className="h-4 w-4" />
+          Lista cerrada · {marked} de {total} registrados
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={reopen.isPending}
+          onClick={() =>
+            reopen.mutate(sessionId, {
+              onSuccess: () => notify("Lista reabierta para corregir", "success"),
+              onError: onMutationError("No se pudo reabrir la lista"),
+            })
+          }
+        >
+          {reopen.isPending ? "Reabriendo…" : "Reabrir para corregir"}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" disabled={busy || complete} onClick={onMarkAll}>
+          {busy ? "Marcando…" : "Marcar todos presentes"}
+        </Button>
+        <Button
+          disabled={close.isPending || marked === 0}
+          onClick={() => closeRegister(false)}
+        >
+          {close.isPending ? "Cerrando…" : "Cerrar lista"}
+        </Button>
+      </div>
+
+      <div className="flex items-center gap-2.5">
+        <span className="tabular text-xs font-medium text-slate-600">
+          {marked} de {total}
+        </span>
+        <div
+          className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Asistencia registrada"
+        >
+          <div
+            className={`h-full transition-all ${complete ? "bg-emerald-600" : "bg-brand-500"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Una fila de la lista: quién es, cómo viene, cómo se le marca hoy.
+ *
+ * El contexto (tasa acumulada y racha de faltas) sale de las marcas que la
+ * pantalla ya tenía cargadas. Sin él, el profesor marcaba a ciegas: la tercera
+ * falta seguida de un alumno se veía igual que la primera.
+ */
+function RosterRow({
+  enrollment,
+  name,
+  sessionId,
+  current,
+  grade,
+  history,
+  focused,
+  locked,
+  onFocus,
+}: {
+  enrollment: Enrollment;
+  name: string;
+  sessionId: number;
+  current?: AttendanceStatus;
+  grade?: Grade;
+  history: { status: AttendanceStatus; order: number }[];
+  focused: boolean;
+  locked: boolean;
+  onFocus: () => void;
+}) {
+  const row = useRef<HTMLLIElement>(null);
+  const pct = attendancePct(history.map((h) => h.status));
+  const streak = absenceStreak(history);
+
+  // Mantener a la vista al alumno enfocado cuando se navega con el teclado en
+  // una lista más larga que la pantalla.
+  useEffect(() => {
+    if (focused) row.current?.scrollIntoView({ block: "nearest" });
+  }, [focused]);
+
+  return (
+    <li
+      ref={row}
+      onClick={onFocus}
+      aria-current={focused ? "true" : undefined}
+      className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 transition-colors ${
+        focused ? "bg-brand-50 ring-1 ring-inset ring-brand-300" : ""
+      }`}
+    >
+      <div className="flex min-w-[13rem] flex-1 items-center gap-2.5">
+        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+          {initials(name)}
+        </span>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-slate-900">{name}</div>
+          <div className="flex flex-wrap items-center gap-x-2 text-2xs text-slate-500">
+            {pct != null ? (
+              <span className={pct < 75 ? "font-semibold text-amber-700" : ""}>
+                {pct}% asistencia
+              </span>
+            ) : (
+              <span>Sin historial</span>
+            )}
+            {streak >= 2 && (
+              <span className="font-semibold text-red-600">
+                · {streak} faltas seguidas
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <AttendanceMarks
+          enrollmentId={enrollment.id}
+          sessionId={sessionId}
+          current={current}
+          disabled={locked}
+        />
+
+        <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+          <span className="text-xs text-slate-500">Nota</span>
+          <DailyGradeInput
+            enrollmentId={enrollment.id}
+            sessionId={sessionId}
+            grade={grade}
+            disabled={locked}
+          />
+        </div>
+      </div>
+    </li>
+  );
+}
+
+// Los cuatro estados que el modelo admite. «Justificada» existía en la API desde
+// el principio y la interfaz nunca la ofreció, así que una incapacidad médica
+// sólo podía registrarse como ausencia — y penalizaba igual que no aparecer.
+const MARK_LABELS = {
+  present: "Presente",
+  late: "Tarde",
+  absent: "Ausente",
+  excused: "Justificada",
+} as const;
 type MarkableStatus = keyof typeof MARK_LABELS;
+
+/** La inicial de cada estado, que es también su atajo de teclado. */
+const MARK_KEY: Record<MarkableStatus, string> = {
+  present: "P",
+  late: "T",
+  absent: "A",
+  excused: "J",
+};
+
+const MARK_SHORTCUTS: Record<string, MarkableStatus> = {
+  p: "present",
+  t: "late",
+  a: "absent",
+  j: "excused",
+};
 
 // Un color por estado, aplicado solo al botón elegido. Antes se construía con
 // `!important` sobre el componente Button para forzar el fondo, lo que dejaba
@@ -802,16 +1159,21 @@ const MARK_SELECTED: Record<MarkableStatus, string> = {
   present: "bg-emerald-600 text-white",
   late: "bg-amber-500 text-white",
   absent: "bg-red-600 text-white",
+  // Azul y no rojo a propósito: justificar no es penalizar, y el color es lo
+  // primero que el profesor lee al repasar la columna.
+  excused: "bg-sky-600 text-white",
 };
 
 function AttendanceMarks({
   enrollmentId,
   sessionId,
   current,
+  disabled,
 }: {
   enrollmentId: number;
   sessionId: number;
   current?: AttendanceStatus;
+  disabled?: boolean;
 }) {
   const attendance = useCreateAttendance();
 
@@ -824,19 +1186,30 @@ function AttendanceMarks({
             key={st}
             type="button"
             aria-pressed={selected}
-            disabled={attendance.isPending}
+            // El nombre completo va en el `title` y el `aria-label`; en pantalla
+            // sólo la inicial, que es además el atajo. Cuatro etiquetas enteras
+            // por fila empujaban la nota fuera de la vista en portátiles.
+            title={`${MARK_LABELS[st]} (${MARK_KEY[st]})`}
+            aria-label={MARK_LABELS[st]}
+            disabled={disabled || attendance.isPending}
             onClick={() =>
-              attendance.mutate({
-                enrollment_id: enrollmentId,
-                session_id: sessionId,
-                status: st,
-              })
+              attendance.mutate(
+                {
+                  enrollment_id: enrollmentId,
+                  session_id: sessionId,
+                  status: st,
+                },
+                // Sin esto, un rechazo de la API (clase cancelada, matrícula
+                // cerrada) revertía la marca optimista sin decir por qué: la
+                // fila simplemente volvía a quedarse en blanco.
+                { onError: onMutationError("No se pudo registrar la asistencia") },
+              )
             }
-            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
-              selected ? MARK_SELECTED[st] : "text-slate-600 hover:text-slate-900"
+            className={`tabular w-8 rounded-md py-1 text-xs font-bold transition-colors disabled:opacity-50 ${
+              selected ? MARK_SELECTED[st] : "text-slate-500 hover:bg-white hover:text-slate-900"
             }`}
           >
-            {MARK_LABELS[st]}
+            {MARK_KEY[st]}
           </button>
         );
       })}
@@ -848,10 +1221,12 @@ function DailyGradeInput({
   enrollmentId,
   sessionId,
   grade,
+  disabled,
 }: {
   enrollmentId: number;
   sessionId: number;
   grade?: Grade;
+  disabled?: boolean;
 }) {
   const create = useCreateGrade();
   const [value, setValue] = useState(grade ? String(grade.score) : "");
@@ -883,12 +1258,19 @@ function DailyGradeInput({
       <Input
         className={`tabular w-14 px-2 text-center ${error ? "border-red-400" : ""}`}
         inputMode="decimal"
-        placeholder="—"
-        aria-label={`Nota diaria (0 a ${SCORE_MAX})`}
+        placeholder={`/${SCORE_MAX}`}
+        disabled={disabled}
+        title={`Nota diaria, de ${SCORE_MIN} a ${SCORE_MAX}`}
+        aria-label={`Nota diaria (${SCORE_MIN} a ${SCORE_MAX})`}
         aria-invalid={error ? true : undefined}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
+        // Enter guarda sin sacar la mano del teclado, que es como se rellena una
+        // columna de treinta notas.
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
       />
       {error && <p className="mt-0.5 text-xs text-red-600">{error}</p>}
     </div>

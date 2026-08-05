@@ -7,16 +7,33 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import apply_tenant, get_current_user, in_tenant
+from app.core.deps import (
+    apply_tenant,
+    get_current_user,
+    has_user_permission,
+    in_tenant,
+)
+from app.core.http import commit_or_conflict
 from app.core.security import hash_password
 from app.models import Permission, User, UserRole
 from app.models.refresh_session import RefreshSession
 from app.services.staff import live_assignments
 from app.schemas.base import PaginatedResponse
+from app.schemas.kardex import StudentKardexResponse
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.audit import record, snapshot
+from app.services.student_kardex import get_student_kardex
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+# Una sola frase para las dos identidades únicas de una cuenta (correo y
+# documento), porque quien la lee sólo necesita saber que ya existe alguien así
+# — y decir *cuál* de las dos chocó confirmaría a un tercero que ese correo o
+# ese DPI están registrados en esta academia.
+_DUPLICATE_IDENTITY = (
+    "Ya existe un usuario con este correo electrónico o esta identificación "
+    "personal (CUI / DPI o Pasaporte) en la academia"
+)
 
 
 # Which roles each permission puts an assistant in charge of. The user
@@ -190,17 +207,30 @@ def create_user(
     _guard_role_assignment(current_user, payload.role)
     _assert_may_manage(current_user, payload.role)
     tenant_id = _resolve_tenant_id(current_user, payload.tenant_id)
-    # Emails are unique *per tenant* (`uq_users_tenant_email`), so the
-    # duplicate check has to be scoped the same way — a global check would
-    # reject a legitimate address that only exists in another academy.
+    # `CuiPassport` ya rechazó lo que no tenga forma de documento y devolvió la
+    # forma canónica, así que aquí no queda formato que comprobar — sólo si esa
+    # identidad ya está registrada.
+    cui = payload.cui_passport
+
+    # Check for duplicate email per tenant
     if db.scalar(
         select(User).where(User.email == payload.email, User.tenant_id == tenant_id)
     ):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con este correo electrónico")
+
+    if db.scalar(
+        select(User).where(User.cui_passport == cui, User.tenant_id == tenant_id)
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Ya existe un usuario registrado con esta identificación personal (CUI / DPI o Pasaporte)",
+        )
+
     user = User(
         tenant_id=tenant_id,
         email=payload.email,
         full_name=payload.full_name,
+        cui_passport=cui,
         role=payload.role,
         timezone=payload.timezone,
         max_weekly_hours=payload.max_weekly_hours,
@@ -216,7 +246,11 @@ def create_user(
     # renamed or deleted, and those were both already traced — this was the one
     # gap in the trail, sitting exactly where accounts are born.
     record(db, current_user, "create", "user", user.id, after=snapshot(user))
-    db.commit()
+    # Las dos comprobaciones de arriba y este commit no son atómicos, así que
+    # dos altas simultáneas del mismo correo o del mismo documento todavía
+    # pueden cruzarse. Quien pierde la carrera pidió algo que el modelo prohíbe,
+    # que es un conflicto y no un error del servidor.
+    commit_or_conflict(db, _DUPLICATE_IDENTITY)
     db.refresh(user)
     return user
 
@@ -246,6 +280,41 @@ def update_user(
     _assert_may_manage(current_user, user.role)
     before = snapshot(user)
     data = payload.model_dump(exclude_unset=True)
+
+    if "email" in data and data["email"] != user.email:
+        # `create_user` comprobaba el correo duplicado y esto no, así que mover
+        # una cuenta a un correo ya usado rompía contra `uq_users_tenant_email`
+        # y salía como 500. Se comprueba aquí y no sólo con el índice porque en
+        # Postgres `NULL != NULL`: la constraint es sobre (tenant_id, email) y
+        # no restringe a las cuentas sin academia — el superadministrador.
+        if db.scalar(
+            select(User).where(
+                User.email == data["email"],
+                User.tenant_id == user.tenant_id,
+                User.id != user.id,
+            )
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Ya existe un usuario con este correo electrónico",
+            )
+
+    if "cui_passport" in data and data["cui_passport"]:
+        # Ya viene canónico del esquema; comparar la forma cruda dejaba pasar
+        # el mismo documento escrito con otra puntuación o en minúsculas.
+        cui = data["cui_passport"]
+        dup = db.scalar(
+            select(User).where(
+                User.cui_passport == cui,
+                User.tenant_id == user.tenant_id,
+                User.id != user.id,
+            )
+        )
+        if dup:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Ya existe un usuario registrado con esta identificación personal (CUI / DPI o Pasaporte)",
+            )
     if "role" in data:
         # Changing your own role is never a legitimate admin action — it is how
         # an account grants itself powers nobody handed it.
@@ -276,7 +345,10 @@ def update_user(
         setattr(user, field, value)
     # snapshot() redacts password_hash, so an audit row never leaks a secret.
     record(db, current_user, "update", "user", user.id, before, snapshot(user))
-    db.commit()
+    # El correo no se comprobaba aquí en absoluto (sólo al crear), así que
+    # moverlo a uno ya usado en la academia rompía contra `uq_users_tenant_email`
+    # y salía como 500. Es un conflicto, y ahora lo dice.
+    commit_or_conflict(db, _DUPLICATE_IDENTITY)
     db.refresh(user)
     return user
 
@@ -308,3 +380,35 @@ def delete_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="El profesor aún tiene horarios asignados; reasígnalos antes de eliminarlo.",
         )
+
+
+@router.get("/{student_id}/kardex", response_model=StudentKardexResponse)
+def get_student_kardex_endpoint(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StudentKardexResponse:
+    """El expediente académico 360° (Kardex) de un alumno.
+
+    Un alumno abre el suyo, y de nadie más. Del otro lado sólo entra quien ya
+    administra alumnos — la misma llave que abre `GET /users/{id}`, porque este
+    expediente reúne el historial completo, los certificados y el **saldo
+    pendiente**. Dejarlo detrás de la mera autenticación lo ponía al alcance de
+    cualquier profesor, sobre alumnos que nunca tuvo en clase, y de un asistente
+    sin ningún permiso concedido.
+    """
+    user = _in_scope_or_404(db, current_user, student_id)
+    # Quien no es alumno no tiene expediente. 404 antes que devolver un kardex
+    # vacío, que se lee como "este alumno no tiene historial" y no como "aquí no
+    # había un alumno".
+    if user.role != UserRole.student:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if current_user.id != user.id and not has_user_permission(
+        current_user, Permission.manage_students
+    ):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "No tienes permiso para ver este expediente",
+        )
+    return get_student_kardex(db, user.id)
+

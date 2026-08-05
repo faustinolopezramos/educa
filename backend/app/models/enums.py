@@ -1,4 +1,5 @@
 import enum
+from collections.abc import Iterable
 
 
 class UserRole(str, enum.Enum):
@@ -225,6 +226,40 @@ class AttendanceStatus(str, enum.Enum):
     excused = "excused"
 
 
+# Cómo se convierte una lista de marcas en una tasa de asistencia. Son dos
+# preguntas y no una, y hasta ahora cada módulo respondía la suya: el reporte
+# contaba la justificada como ausencia, el kardex la contaba como asistencia y
+# el panel del alumno como ausencia otra vez — de modo que el mismo alumno tenía
+# tres tasas distintas según la pantalla que abriera.
+
+#: Marcas que cuentan como "vino a clase" — el numerador.
+#: Llegar tarde es haber venido: quien llega tarde estuvo en el aula.
+ATTENDANCE_IS_PRESENT: frozenset[AttendanceStatus] = frozenset(
+    {AttendanceStatus.present, AttendanceStatus.late}
+)
+
+#: Marcas que entran en el cálculo — el denominador.
+#:
+#: La **justificada queda fuera de los dos lados**: una incapacidad médica no es
+#: una asistencia que el alumno no tuvo, pero tampoco una falta que deba
+#: penalizarle. De diez clases con una justificada, su tasa se calcula sobre
+#: nueve. Contarla como ausencia castigaba igual a quien avisó y presentó
+#: constancia que a quien simplemente no apareció.
+ATTENDANCE_COUNTS_TOWARD_RATE: frozenset[AttendanceStatus] = frozenset(
+    {AttendanceStatus.present, AttendanceStatus.late, AttendanceStatus.absent}
+)
+
+
+def attendance_rate(marks: Iterable[AttendanceStatus]) -> float | None:
+    """La tasa de asistencia de una lista de marcas, o `None` si no hay ninguna
+    que cuente. Un único sitio decide qué significa "asistió"."""
+    counted = [m for m in marks if m in ATTENDANCE_COUNTS_TOWARD_RATE]
+    if not counted:
+        return None
+    present = sum(1 for m in counted if m in ATTENDANCE_IS_PRESENT)
+    return present / len(counted)
+
+
 class ProviderName(str, enum.Enum):
     manual = "manual"
     zoom = "zoom"
@@ -249,6 +284,34 @@ class Modality(str, enum.Enum):
     presencial = "presencial"
     semi_presencial = "semi_presencial"
     virtual = "virtual"
+
+
+# Qué necesita cada modalidad para poder impartirse. Son dos preguntas
+# independientes —¿ocupa un aula? ¿hace falta un enlace?— y **semi presencial
+# responde que sí a las dos**: es una clase que existe en los dos sitios a la
+# vez, y sin cualquiera de las dos mitades no se puede dar.
+#
+# Estaban implícitas en un `if modality == virtual: … else: …`, cuyo `else`
+# metía en el mismo saco a presencial y a semi presencial. El resultado era que
+# una clase semi presencial no podía tener enlace: el validador lo borraba en
+# silencio, y el alumno se quedaba sin forma de conectarse a la mitad en línea
+# de su propia clase.
+
+#: Reserva un aula física, y por tanto compite por ella con las demás.
+MODALITY_USES_ROOM: frozenset[Modality] = frozenset(
+    {Modality.presencial, Modality.semi_presencial}
+)
+
+#: Necesita un enlace de conexión para que alguien pueda entrar.
+MODALITY_NEEDS_LINK: frozenset[Modality] = frozenset(
+    {Modality.virtual, Modality.semi_presencial}
+)
+
+MODALITY_LABELS: dict[Modality, str] = {
+    Modality.presencial: "Presencial",
+    Modality.semi_presencial: "Semi presencial",
+    Modality.virtual: "Virtual",
+}
 
 
 class TrackKind(str, enum.Enum):

@@ -55,6 +55,15 @@ export function useCreateAttendance() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ATTENDANCE_VISIBLE_KEY });
       qc.invalidateQueries({ queryKey: ["attendance"] });
+      // Pasar lista es justo lo que cambia el reporte (sesiones realizadas,
+      // tasa de asistencia, alumnos en riesgo) y la bandeja de pendientes. Sin
+      // esto, el ActionTray —que vive en la misma pantalla donde el profesor
+      // acaba de pasar lista, así que no se vuelve a montar— seguía anunciando
+      // como "pendiente de registrar" la clase que se acababa de registrar.
+      qc.invalidateQueries({ queryKey: ["report"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      // Marcar a alguien es también la única señal de que la sesión se dio.
+      qc.invalidateQueries({ queryKey: ["sessions"] });
     },
   });
 }

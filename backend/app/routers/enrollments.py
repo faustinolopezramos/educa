@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -19,10 +19,14 @@ from app.models import (
     ENROLLMENT_OCCUPIES_SEAT,
     ENROLLMENT_OPENING_STATES,
     ENROLLMENT_STATUS_LABELS,
+    Attendance,
+    Certificate,
     Course,
     Enrollment,
+    Grade,
     enrollment_transition_allowed,
     EnrollmentStatus,
+    Level,
     Payment,
     PaymentKind,
     Permission,
@@ -223,6 +227,66 @@ def create_enrollment(
     return attach_balances(db, [enrollment])[0]
 
 
+@router.get("/{enrollment_id}/next-level-suggestion")
+def suggest_next_level_enrollment(
+    enrollment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+) -> dict:
+    """Sugiére el siguiente nivel e identifica cursos abiertos para re-matriculación en 1-clic."""
+    enrollment = _in_scope_or_404(db, current_user, enrollment_id)
+    course = db.get(Course, enrollment.course_id)
+    if course is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
+
+    current_level = db.get(Level, course.level_id) if course.level_id else None
+
+    next_level = None
+    if current_level:
+        sibling_levels = list(
+            db.scalars(
+                select(Level)
+                .where(Level.language_id == current_level.language_id)
+                .order_by(Level.id)
+            ).all()
+        )
+        for idx, lvl in enumerate(sibling_levels):
+            if lvl.id == current_level.id and idx + 1 < len(sibling_levels):
+                next_level = sibling_levels[idx + 1]
+                break
+
+    suggested_courses = []
+    if next_level:
+        open_courses = list(
+            db.scalars(
+                select(Course).where(
+                    Course.level_id == next_level.id,
+                    Course.status.in_(COURSE_ACCEPTS_ENROLMENT),
+                )
+            ).all()
+        )
+        suggested_courses = [
+            {
+                "id": c.id,
+                "title": c.name,
+                "max_students": c.max_students,
+                "seats_taken": seats_taken(db, c.id),
+            }
+            for c in open_courses
+        ]
+
+    return {
+        "student_id": enrollment.student_id,
+        # `Course.name`: el modelo no tiene `title`, así que este endpoint
+        # respondía 500 en cuanto se le llamaba.
+        "current_course_title": course.name,
+        "current_level_name": current_level.name if current_level else None,
+        "next_level_id": next_level.id if next_level else None,
+        "next_level_name": next_level.name if next_level else None,
+        "suggested_courses": suggested_courses,
+    }
+
+
 @router.patch("/{enrollment_id}", response_model=EnrollmentRead)
 def update_enrollment(
     enrollment_id: int,
@@ -318,6 +382,42 @@ def delete_enrollment(
     current_user: User = Depends(admin_only),
 ) -> None:
     enrollment = _in_scope_or_404(db, current_user, enrollment_id)
+
+    # Una matrícula con expediente detrás no se borra: el `cascade` se llevaría
+    # por delante las notas, la asistencia y el certificado del alumno en ese
+    # curso, y la fila de auditoría sólo guardaría la matrícula — no lo que
+    # desapareció con ella. Para eso está «Desistió», que es la baja lógica que
+    # el resto del sistema usa por este mismo motivo.
+    #
+    # El DELETE sigue existiendo para lo que sí es un error de captura: una
+    # matrícula recién creada sobre la que todavía nadie escribió nada.
+    grades = db.scalar(
+        select(func.count(Grade.id)).where(Grade.enrollment_id == enrollment.id)
+    )
+    marks = db.scalar(
+        select(func.count(Attendance.id)).where(
+            Attendance.enrollment_id == enrollment.id
+        )
+    )
+    certificate = db.scalar(
+        select(Certificate.id).where(Certificate.enrollment_id == enrollment.id)
+    )
+    if grades or marks or certificate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    "Esta matrícula ya tiene expediente académico y no puede "
+                    "eliminarse. Cámbiala a «Desistió» para darla de baja sin "
+                    "perder sus notas ni su asistencia."
+                ),
+                "reason": "has_academic_record",
+                "grades": grades or 0,
+                "attendance": marks or 0,
+                "certificate": certificate is not None,
+            },
+        )
+
     record(
         db,
         current_user,

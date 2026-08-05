@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.http import commit_or_conflict
 from app.core.security import (
     _DUMMY_PASSWORD_HASH,
     create_access_token,
@@ -137,6 +138,12 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Token:
     user = db.get(User, user_id)
     if user is None:
         raise _credentials_exc
+    # Una cuenta dada de baja no puede entrar por la puerta principal, así que
+    # tampoco por esta: sin esta línea seguía rotando refresh tokens hasta que
+    # el suyo expirara. El access token que salía de ahí ya no servía —
+    # `get_current_user` lo rechaza— pero la sesión no moría donde debía.
+    if not user.is_active:
+        raise _credentials_exc
     if token_data.get("tv") != user.token_version:
         raise _credentials_exc
 
@@ -232,6 +239,31 @@ def update_me(
         before,
         snapshot(current_user),
     )
-    db.commit()
+    # Un usuario puede escribir aquí su propia identificación personal, que es
+    # única dentro de la academia. Sin esto, poner la de otra persona rompía
+    # contra el índice y salía como 500.
+    commit_or_conflict(
+        db,
+        "Ya existe un usuario con esa identificación personal (CUI / DPI o Pasaporte)",
+    )
     db.refresh(current_user)
     return current_user
+
+
+@router.post("/revoke-other-sessions", status_code=status.HTTP_200_OK)
+def revoke_other_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Invalida todas las demás sesiones activas del usuario incrementando su token_version."""
+    current_user.token_version += 1
+    record(
+        db,
+        current_user,
+        "update",
+        "user_sessions_revoke",
+        current_user.id,
+        after={"token_version": current_user.token_version},
+    )
+    db.commit()
+    return {"message": "Todas las demás sesiones activas han sido revocadas correctamente."}

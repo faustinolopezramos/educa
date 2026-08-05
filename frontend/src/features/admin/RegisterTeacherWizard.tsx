@@ -16,6 +16,13 @@ import {
   useUsers,
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
+import {
+  formatCuiPassport,
+  formatPhoneNumber,
+  validateCuiPassport,
+  validateEmailFormat,
+  validateFullNameFormat,
+} from "../../lib/validation";
 
 interface Props {
   initialCourseId?: number;
@@ -116,8 +123,23 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
       let finalTeacherId = teacherId;
 
       if (teacherMode === "new") {
-        if (!fullName.trim() || !email.trim() || !cuiPassport.trim()) {
-          setError("El nombre completo, correo y CUI/Pasaporte son obligatorios.");
+        const cuiVal = validateCuiPassport(cuiPassport);
+        if (!cuiVal.isValid && cuiVal.error) {
+          setError(cuiVal.error);
+          setIsSubmitting(false);
+          return;
+        }
+
+        const emailVal = validateEmailFormat(email);
+        if (!emailVal.isValid && emailVal.error) {
+          setError(emailVal.error);
+          setIsSubmitting(false);
+          return;
+        }
+
+        const nameVal = validateFullNameFormat(fullName);
+        if (!nameVal.isValid && nameVal.error) {
+          setError(nameVal.error);
           setIsSubmitting(false);
           return;
         }
@@ -346,29 +368,29 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
 
             {teacherMode === "new" ? (
               <div className="space-y-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 shadow-2xs">
-                <Field label="Nombre Completo del Profesor (*)">
-                  <Input
-                    placeholder="Ej. Ana Patricia Morales"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                  />
-                </Field>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="CUI / DPI o Pasaporte" required={true}>
+                    <Input
+                      placeholder="Ej. 2450 12345 0101"
+                      value={cuiPassport}
+                      onChange={(e) => setCuiPassport(formatCuiPassport(e.target.value))}
+                    />
+                  </Field>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Correo Electrónico (*)">
+                  <Field label="Nombre Completo" required={true}>
+                    <Input
+                      placeholder="Ej. Ana Patricia Morales"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                    />
+                  </Field>
+
+                  <Field label="Correo Electrónico" required={true}>
                     <Input
                       type="email"
                       placeholder="ana@ejemplo.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="CUI o Pasaporte (*)">
-                    <Input
-                      placeholder="Ej. 2540 12345 0101 o A12345678"
-                      value={cuiPassport}
-                      onChange={(e) => setCuiPassport(e.target.value)}
                     />
                   </Field>
                 </div>
@@ -378,11 +400,11 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
                     <Input
                       placeholder="+502 5555-5555"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
                     />
                   </Field>
 
-                  <Field label="Contraseña Inicial de Acceso">
+                  <Field label="Contraseña Inicial de Acceso" required={true}>
                     <Input
                       type="text"
                       value={password}

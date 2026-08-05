@@ -2,8 +2,14 @@
 
 The schedule holds the *effective* (approved) location; a `LocationProposal`
 holds a pending change so it never disturbs the running class until reviewed.
-Approving a presencial proposal re-runs the room double-booking check, so an
-approval can never create a clash the exclusion constraint would reject anyway.
+
+Qué necesita cada modalidad lo deciden `MODALITY_USES_ROOM` y
+`MODALITY_NEEDS_LINK`, no un `if virtual … else …`: **semi presencial responde
+que sí a las dos**, y tratarla como "todo lo que no es virtual" la dejaba sin
+enlace y sin comprobación de aula ocupada.
+
+Aprobar una propuesta que reserva aula vuelve a correr la comprobación de doble
+reserva, porque el aula pudo ocuparse entre la propuesta y la aprobación.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.http import commit_or_conflict
 from app.core.deps import (
     get_current_user,
     in_tenant,
@@ -20,9 +27,9 @@ from app.core.deps import (
     teacher_teaches_course,
 )
 from app.models import (
+    MODALITY_USES_ROOM,
     Course,
     LocationProposal,
-    Modality,
     Permission,
     ProposalStatus,
     Room,
@@ -49,6 +56,23 @@ def _apply_to_schedule(schedule: Schedule, proposal: LocationProposal) -> None:
     schedule.room_id = proposal.room_id
     schedule.join_url = proposal.join_url
     schedule.provider = proposal.provider
+
+
+def _commit_or_room_conflict(db: Session) -> None:
+    """Commit, convirtiendo un choque de aula del esquema en 409.
+
+    La comprobación en Python y este commit no son atómicos, y además el aula
+    puede haber sido ocupada por otro horario entre una cosa y la otra. Quien
+    pierde la carrera pidió algo que el modelo prohíbe, que es un conflicto y no
+    un error del servidor.
+    """
+    commit_or_conflict(
+        db,
+        {
+            "message": "El aula ya está ocupada en ese horario",
+            "reason": "room_conflict",
+        },
+    )
 
 
 def _reject_room_clash(db: Session, schedule: Schedule, room_id: int) -> None:
@@ -116,12 +140,16 @@ def propose_location(
         status=ProposalStatus.approved if self_approves else ProposalStatus.pending,
     )
     if self_approves:
-        if payload.modality == Modality.presencial and payload.room_id is not None:
+        # Cualquier modalidad que ocupe aula compite por ella. Preguntar por
+        # `== presencial` dejaba fuera a semi presencial, que también reserva
+        # una: el choque lo acababa atrapando la restricción de la base de datos
+        # y salía como 500 en vez de "el aula ya está ocupada".
+        if payload.modality in MODALITY_USES_ROOM and payload.room_id is not None:
             _reject_room_clash(db, schedule, payload.room_id)
         proposal.reviewed_by = current_user.id
         _apply_to_schedule(schedule, proposal)
     db.add(proposal)
-    db.commit()
+    _commit_or_room_conflict(db)
     db.refresh(proposal)
     return proposal
 
@@ -163,7 +191,10 @@ def approve_proposal(
     schedule = db.get(Schedule, proposal.schedule_id)
     if schedule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
-    if proposal.modality == Modality.presencial and proposal.room_id is not None:
+    # Igual que al auto-aprobar: semi presencial también ocupa aula. Y el aula
+    # pudo ocuparse entre que el profesor propuso y dirección aprueba, que es
+    # justo el hueco que este endpoint tiene por delante.
+    if proposal.modality in MODALITY_USES_ROOM and proposal.room_id is not None:
         _reject_room_clash(db, schedule, proposal.room_id)
     before = snapshot(proposal)
     proposal.status = ProposalStatus.approved
@@ -178,7 +209,7 @@ def approve_proposal(
         before,
         snapshot(proposal),
     )
-    db.commit()
+    _commit_or_room_conflict(db)
     db.refresh(proposal)
     return proposal
 

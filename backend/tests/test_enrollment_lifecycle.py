@@ -25,7 +25,7 @@ from app.models import (
 )
 from app.services.enrollments import seats_taken
 from app.services.sequences import next_enrollment_code
-from tests.conftest import auth, make_user
+from tests.conftest import TODAY, auth, make_user
 
 
 # ---------------- Seats ----------------
@@ -134,15 +134,30 @@ def test_a_withdrawn_student_leaves_the_register(client, db, world):
 
 
 def test_lowering_the_cupo_counts_the_same_seats_enrolling_does(client, db, world):
+    """Una matrícula en «Inscrito» ocupa plaza igual que una activa.
+
+    El cupo se baja a 1 y no a 0 porque un curso sin plazas lo rechaza la
+    validación del esquema (`max_students: ge=1`) antes de llegar a esta regla,
+    y lo que se quiere comprobar aquí es la regla.
+    """
     enrollment = db.get(Enrollment, world["enrollment"].id)
     enrollment.status = EnrollmentStatus.enrolled
+    db.flush()
+    # Una segunda plaza ocupada, para que bajar a 1 quede por debajo.
+    db.add(
+        Enrollment(
+            student_id=world["outsider"].id,
+            course_id=world["course_a"].id,
+            enrollment_code=next_enrollment_code(db, year=TODAY.year),
+        )
+    )
     db.flush()
 
     admin = auth(client, "admin@test.com")
     res = client.patch(
         f"/catalog/courses/{world['course_a'].id}",
         headers=admin,
-        json={"max_students": 0},
+        json={"max_students": 1},
     )
     assert res.status_code == 409, res.text
     assert res.json()["detail"]["reason"] == "capacity_below_enrolled"
@@ -296,7 +311,7 @@ def test_an_extra_enrollment_row_is_counted(db, world):
             student_id=world["outsider"].id,
             course_id=world["course_a"].id,
             status=EnrollmentStatus.enrolled,
-            enrollment_code=next_enrollment_code(db, year=date.today().year),
+            enrollment_code=next_enrollment_code(db, year=TODAY.year),
         )
     )
     db.flush()

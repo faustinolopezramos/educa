@@ -10,7 +10,7 @@ import {
   Select,
 } from "../../components/ui";
 import { apiErrorMessage } from "../../lib/api";
-import { DAYS } from "../../lib/format";
+import { DAYS, calculateEndDate, needsLink, usesRoom } from "../../lib/format";
 import { JORNADA_PRESETS } from "../../lib/jornadas";
 import {
   useAssignCourseTeacher,
@@ -49,8 +49,19 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
   const [levelId, setLevelId] = useState<number>(0);
   const [courseName, setCourseName] = useState("");
   const [maxStudents, setMaxStudents] = useState<number>(20);
+  const [periodicity, setPeriodicity] = useState<string>("mensual");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  function handlePeriodicityOrDateChange(newPeriodicity: string, newStart: string) {
+    setPeriodicity(newPeriodicity);
+    setStartDate(newStart);
+    if (!newStart) return;
+    const calcEnd = calculateEndDate(newStart, newPeriodicity);
+    if (calcEnd) {
+      setEndDate(calcEnd);
+    }
+  }
 
   // Step 2: Pre-established Schedules & Modality
   const [selectedJornada, setSelectedJornada] = useState<string>("");
@@ -162,8 +173,8 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
           start_time: slot.start_time,
           end_time: slot.end_time,
           modality,
-          room_id: modality !== "virtual" && roomId ? roomId : undefined,
-          join_url: modality !== "presencial" && joinUrl.trim() ? joinUrl.trim() : undefined,
+          room_id: usesRoom(modality) && roomId ? roomId : undefined,
+          join_url: needsLink(modality) && joinUrl.trim() ? joinUrl.trim() : undefined,
         });
       }
 
@@ -217,6 +228,7 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
       title="Nuevo curso"
       description="Datos del curso, sus franjas semanales y el profesor que lo imparte."
       onClose={onClose}
+      maxWidth="max-w-2xl"
       footer={footer}
     >
       <div className="space-y-6">
@@ -296,21 +308,24 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
         {step === 1 && (
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Nivel Académico (*)">
+              <Field label="Nivel Académico" required={true}>
                 <Select
                   value={levelId}
                   onChange={(e) => handleLevelChange(Number(e.target.value))}
                 >
                   <option value={0}>Selecciona un nivel…</option>
-                  {levels.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.code} · {l.name}
-                    </option>
-                  ))}
+                  {levels.map((l) => {
+                    const lang = languages.find((g) => g.id === l.language_id);
+                    return (
+                      <option key={l.id} value={l.id}>
+                        {lang ? `${lang.name} · ` : ""}{l.code} ({l.name})
+                      </option>
+                    );
+                  })}
                 </Select>
               </Field>
 
-              <Field label="Cupo Máximo (*)">
+              <Field label="Cupo Máximo" required={true}>
                 <Input
                   type="number"
                   min={1}
@@ -321,7 +336,7 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
               </Field>
             </div>
 
-            <Field label="Nombre del Curso (*)">
+            <Field label="Nombre del Curso" required={true}>
               <Input
                 placeholder="Ej. Inglés General A1 — Mañana"
                 value={courseName}
@@ -329,16 +344,31 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
               />
             </Field>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Fecha Inicio (Duración)">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Periodicidad del Curso" required={true}>
+                <Select
+                  value={periodicity}
+                  onChange={(e) => handlePeriodicityOrDateChange(e.target.value, startDate)}
+                >
+                  <option value="mensual">Mensual (1 mes)</option>
+                  <option value="bimensual">Bimensual (2 meses)</option>
+                  <option value="trimestral">Trimestral (3 meses)</option>
+                  <option value="cuatrimestral">Cuatrimestral (4 meses)</option>
+                  <option value="semestral">Semestral (6 meses)</option>
+                  <option value="anual">Anual (1 año)</option>
+                  <option value="custom">Personalizado</option>
+                </Select>
+              </Field>
+
+              <Field label="Fecha Inicio">
                 <Input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => handlePeriodicityOrDateChange(periodicity, e.target.value)}
                 />
               </Field>
 
-              <Field label="Fecha Fin (Duración)">
+              <Field label="Fecha Fin (Sugerida)">
                 <Input
                   type="date"
                   value={endDate}
@@ -374,7 +404,11 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
                 </Select>
               </Field>
 
-              {modality !== "virtual" ? (
+              {/* Los dos campos, cada uno según lo que la modalidad necesita.
+                  Semi presencial pide ambos: antes el formulario sólo mostraba
+                  el aula pero el envío incluía un enlace que nunca se podía
+                  escribir, así que la mitad en línea nacía vacía siempre. */}
+              {usesRoom(modality) && (
                 <Field label="Aula Asignada">
                   <Select
                     value={roomId}
@@ -388,7 +422,8 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
                     ))}
                   </Select>
                 </Field>
-              ) : (
+              )}
+              {needsLink(modality) && (
                 <Field label="Enlace Virtual / Reunión">
                   <Input
                     placeholder="https://zoom.us/j/123456..."
@@ -398,6 +433,12 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
                 </Field>
               )}
             </div>
+            {modality === "semi_presencial" && (
+              <p className="mt-2 text-2xs text-slate-500">
+                Una clase semi presencial se da en el aula y en línea a la vez:
+                necesita las dos cosas.
+              </p>
+            )}
 
             {/* Plantilla de Jornadas */}
             <Field label="Plantilla de Jornada Predefinida (Opcional)">

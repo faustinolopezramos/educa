@@ -9,10 +9,32 @@ import { useList } from "./common";
 // can't silently desync the cache read from the cache write.
 export const GRADES_ALL_KEY = ["grades", "all"] as const;
 
-export const useGrades = (enrollmentId?: number) =>
+/**
+ * Everything the server recomputes when a score changes.
+ *
+ * The final grade is *derived* server-side from the grades, and nothing here
+ * ever invalidated it: a teacher entered the exam that closed the course, the
+ * cell updated, and the "Nota final — Aprobado/No aprobado" row kept showing
+ * the previous verdict for the rest of the session. The certificate is issued
+ * against that number, so the stale one was the one being acted on.
+ *
+ * The report and the dashboard tray read the same scores, so they go with it.
+ */
+function invalidateDerivedFromGrades(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["final-grade"] });
+  qc.invalidateQueries({ queryKey: ["report"] });
+  qc.invalidateQueries({ queryKey: ["dashboard"] });
+}
+
+// `enabled` exists because the API answers a student with unpaid fees 403, and
+// every 403 raises the global "no tienes permisos" toast. The caller that
+// already knows the student is delinquent — and is showing them the proper
+// explanation — must be able to not ask at all.
+export const useGrades = (enrollmentId?: number, enabled = true) =>
   useList<Grade>(
     enrollmentId ? ["grades", enrollmentId] : [...GRADES_ALL_KEY],
     enrollmentId ? `/grades?enrollment_id=${enrollmentId}` : "/grades",
+    enabled,
   );
 
 export function useCreateGrade() {
@@ -46,6 +68,7 @@ export function useCreateGrade() {
     onSettled: (_d, _e, v) => {
       qc.invalidateQueries({ queryKey: ["grades", v.enrollment_id] });
       qc.invalidateQueries({ queryKey: GRADES_ALL_KEY });
+      invalidateDerivedFromGrades(qc);
     },
   });
 }
@@ -76,15 +99,19 @@ export function useUpdateGrade() {
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(GRADES_ALL_KEY, ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["grades"] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["grades"] });
+      invalidateDerivedFromGrades(qc);
+    },
   });
 }
 
 // ---- Final grade, evaluation weights, certificates ----
-export const useFinalGrade = (enrollmentId?: number) =>
+export const useFinalGrade = (enrollmentId?: number, enabled = true) =>
   useQuery({
     queryKey: ["final-grade", enrollmentId],
-    enabled: !!enrollmentId,
+    // Same 403-on-unpaid-fees rule as `useGrades` above.
+    enabled: !!enrollmentId && enabled,
     queryFn: async () =>
       (await api.get<FinalGrade>(`/enrollments/${enrollmentId}/final-grade`)).data,
   });

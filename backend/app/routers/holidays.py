@@ -44,7 +44,11 @@ def create_holiday(
         date=payload.date, name=payload.name, tenant_id=current_user.tenant_id
     )
     db.add(holiday)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya hay un festivo en esa fecha")
     # Adding or removing a closed day changes which classes get generated at
     # all, so it is as much an academic decision as a calendar one.
     record(db, current_user, "create", "holiday", holiday.id, after=snapshot(holiday))

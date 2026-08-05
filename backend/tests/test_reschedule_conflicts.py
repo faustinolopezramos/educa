@@ -12,10 +12,11 @@ import pytest
 
 from app.models import ClassSession, Course, CourseTeacher, Schedule
 from app.services.sessions import reschedule_session
+from tests.conftest import TODAY
 
 
 def _next_weekday(day_of_week: int, weeks_ahead: int = 2) -> date:
-    d = date.today() + timedelta(weeks=weeks_ahead)
+    d = TODAY + timedelta(weeks=weeks_ahead)
     while d.weekday() != day_of_week:
         d += timedelta(days=1)
     return d
@@ -27,7 +28,7 @@ def test_rescheduling_into_the_past_is_refused(db, world):
     db.flush()
 
     with pytest.raises(ValueError, match="fecha pasada"):
-        reschedule_session(db, session, date.today() - timedelta(days=1))
+        reschedule_session(db, session, TODAY - timedelta(days=1))
 
 
 def test_two_makeups_cannot_double_book_the_same_teacher(db, world):

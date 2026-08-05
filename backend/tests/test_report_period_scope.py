@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from app.models import ClassSession, Grade
 from app.services.reports import build_report
+from tests.conftest import TODAY
 
 
 def _grade(db, enrollment_id, name, score, *, when):
@@ -30,7 +31,7 @@ def _grade(db, enrollment_id, name, score, *, when):
 
 def test_an_old_exam_does_not_count_towards_this_months_report(db, world):
     enrollment = world["enrollment"]
-    today = date.today()
+    today = TODAY
 
     _grade(
         db,
@@ -54,7 +55,7 @@ def test_the_headline_average_counts_the_same_grades_as_the_risk_rule(db, world)
     """A failing exam must move the number the report leads with."""
     enrollment = world["enrollment"]
     schedule = world["schedule_a"]
-    today = date.today()
+    today = TODAY
 
     session = ClassSession(schedule_id=schedule.id, date=today)
     db.add(session)

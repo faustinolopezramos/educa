@@ -38,7 +38,7 @@ from app.models import (
     UserRole,
 )
 from app.services.sequences import next_enrollment_code
-from tests.conftest import auth
+from tests.conftest import TODAY, auth
 
 
 def _academy(db, slug: str) -> dict:
@@ -70,7 +70,7 @@ def _academy(db, slug: str) -> dict:
     db.add(level)
     db.flush()
 
-    term_start = date.today()
+    term_start = TODAY
     term_end = term_start + timedelta(days=90)
     course = Course(
         level_id=level.id,
@@ -103,7 +103,7 @@ def _academy(db, slug: str) -> dict:
     enrollment = Enrollment(
         student_id=student.id,
         course_id=course.id,
-        enrollment_code=next_enrollment_code(db, year=date.today().year),
+        enrollment_code=next_enrollment_code(db, year=TODAY.year),
     )
     db.add(enrollment)
     db.flush()

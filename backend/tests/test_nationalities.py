@@ -115,6 +115,7 @@ def test_a_user_can_be_assigned_a_nationality(client, world, root):
             "full_name": "Nueva Persona",
             "role": "student",
             "password": "secret123",
+            "cui_passport": "2450123450101",
             "phone": "+502 5555-0000",
             "address": "Zona 1, Ciudad",
             "nationality_id": nat["id"],

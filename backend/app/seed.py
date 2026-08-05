@@ -38,19 +38,34 @@ from app.models import (
 from app.services.sequences import next_enrollment_code
 
 _NATIONALITIES = [
+    "Guatemala",
+    "El Salvador",
+    "Honduras",
+    "Nicaragua",
+    "Costa Rica",
+    "Panamá",
+    "México",
     "Colombia",
     "Venezuela",
-    "Cuba",
-    "Brasil",
+    "Perú",
+    "Ecuador",
+    "Bolivia",
+    "Chile",
     "Argentina",
     "Uruguay",
-    "Chile",
+    "Paraguay",
+    "Brasil",
+    "Cuba",
+    "República Dominicana",
+    "Puerto Rico",
+    "España",
+    "Estados Unidos",
+    "Canadá",
     "Egipto",
     "Siria",
     "Líbano",
     "China",
     "Taiwán",
-    "Guatemala",
 ]
 
 _SKILL_TRACKS: dict[str, TrackKind] = {

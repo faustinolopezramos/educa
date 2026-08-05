@@ -14,8 +14,15 @@ import {
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { Nationality, Role, User } from "../../lib/types";
-import { EMAIL_RE, PASSWORD_MIN_LENGTH, onMutationError } from "./shared";
+import { PASSWORD_MIN_LENGTH, onMutationError } from "./shared";
 import { useAuth } from "../../auth/AuthContext";
+import {
+  formatCuiPassport,
+  formatPhoneNumber,
+  validateCuiPassport,
+  validateEmailFormat,
+  validateFullNameFormat,
+} from "../../lib/validation";
 
 import type { Permission } from "../../lib/types";
 
@@ -30,11 +37,13 @@ const ALL_PERMISSIONS: { id: Permission; label: string; description: string }[] 
   { id: "view_reports", label: "Ver Reportes", description: "Acceso a reportes académicos y financieros" },
 ];
 
+const DEFAULT_SUGGESTED_PASSWORD = "Educa2026!";
+
 const EMPTY_USER = {
   email: "",
   full_name: "",
   role: "student",
-  password: "",
+  password: DEFAULT_SUGGESTED_PASSWORD,
   timezone: "UTC",
   phone: "",
   address: "",
@@ -382,13 +391,17 @@ export function UsersPanel() {
   );
 }
 
-function CreateUserModal({
+export function CreateUserModal({
   defaultRole = "student",
+  hideRoleSelect = false,
   onClose,
+  onCreated,
   nationalities,
 }: {
   defaultRole?: string;
+  hideRoleSelect?: boolean;
   onClose: () => void;
+  onCreated?: (user: User) => void;
   nationalities: Nationality[];
 }) {
   const create = useCreateUser();
@@ -397,11 +410,18 @@ function CreateUserModal({
 
   function validate(): boolean {
     const e: Record<string, string> = {};
-    if (!form.full_name.trim()) e.full_name = "Requerido";
-    if (!EMAIL_RE.test(form.email)) e.email = "Correo no válido";
-    if (!form.cui_passport.trim()) e.cui_passport = "Requerido (CUI o Pasaporte)";
+    const nameVal = validateFullNameFormat(form.full_name);
+    if (!nameVal.isValid && nameVal.error) e.full_name = nameVal.error;
+
+    const emailVal = validateEmailFormat(form.email);
+    if (!emailVal.isValid && emailVal.error) e.email = emailVal.error;
+
+    const cuiVal = validateCuiPassport(form.cui_passport);
+    if (!cuiVal.isValid && cuiVal.error) e.cui_passport = cuiVal.error;
+
     if (form.password.length < PASSWORD_MIN_LENGTH)
-      e.password = `Mínimo ${PASSWORD_MIN_LENGTH} caracteres`;
+      e.password = `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`;
+    
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -417,21 +437,41 @@ function CreateUserModal({
         nationality_id: form.nationality_id || null,
       } as never,
       {
-        onSuccess: () => {
+        onSuccess: (createdUser: User) => {
           setForm(EMPTY_USER);
           setErrors({});
-          notify("Usuario creado con éxito", "success");
+          notify(
+            defaultRole === "student" && hideRoleSelect
+              ? "Alumno registrado con éxito"
+              : "Usuario creado con éxito",
+            "success",
+          );
+          onCreated?.(createdUser);
           onClose();
         },
-        onError: onMutationError("No se pudo crear el usuario"),
+        onError: onMutationError("No se pudo crear"),
       },
     );
   }
 
+  const modalTitle = hideRoleSelect
+    ? defaultRole === "student"
+      ? "Registrar Nuevo Alumno"
+      : defaultRole === "teacher"
+        ? "Registrar Nuevo Profesor"
+        : "Registrar Usuario"
+    : "Registrar Nuevo Usuario";
+
+  const modalDesc = hideRoleSelect
+    ? defaultRole === "student"
+      ? "Ingresa los datos personales de identificación y contacto del alumno"
+      : "Ingresa los datos del profesor"
+    : "Ingresa los datos personales del alumno, profesor o administrador";
+
   return (
     <Modal
-      title="Registrar Nuevo Usuario"
-      description="Crea una nueva cuenta de alumno, profesor o administrador"
+      title={modalTitle}
+      description={modalDesc}
       onClose={onClose}
       onSubmit={submit}
       footer={
@@ -440,48 +480,84 @@ function CreateUserModal({
             Cancelar
           </Button>
           <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? "Creando…" : "Crear Usuario"}
+            {create.isPending
+              ? "Guardando…"
+              : hideRoleSelect && defaultRole === "student"
+                ? "Registrar Alumno"
+                : "Crear Usuario"}
           </Button>
         </ModalActions>
       }
     >
       <div className="space-y-4">
-        <Field label="Nombre completo" error={errors.full_name}>
-          <Input
-            placeholder="Ej. Carlos Mendoza"
-            value={form.full_name}
-            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-          />
-        </Field>
+        {hideRoleSelect ? (
+          <Field label="CUI / DPI o Pasaporte" required={true} error={errors.cui_passport}>
+            <Input
+              placeholder="Ej. 2450 12345 0101"
+              value={form.cui_passport}
+              onChange={(e) => {
+                const formatted = formatCuiPassport(e.target.value);
+                setForm({ ...form, cui_passport: formatted });
+                if (errors.cui_passport) setErrors({ ...errors, cui_passport: "" });
+              }}
+            />
+          </Field>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="CUI / DPI o Pasaporte" required={true} error={errors.cui_passport}>
+              <Input
+                placeholder="Ej. 2450 12345 0101"
+                value={form.cui_passport}
+                onChange={(e) => {
+                  const formatted = formatCuiPassport(e.target.value);
+                  setForm({ ...form, cui_passport: formatted });
+                  if (errors.cui_passport) setErrors({ ...errors, cui_passport: "" });
+                }}
+              />
+            </Field>
 
-        <Field label="Correo electrónico" error={errors.email}>
-          <Input
-            type="email"
-            placeholder="carlos@ejemplo.com"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-        </Field>
+            <Field label="Rol de cuenta" required={true}>
+              <Select
+                value={form.role}
+                onChange={(e) => setForm({ ...form, role: e.target.value })}
+              >
+                <option value="student">Alumno</option>
+                <option value="teacher">Profesor</option>
+                <option value="assistant">Asistente / Secretaría</option>
+                <option value="admin">Administrador</option>
+              </Select>
+            </Field>
+          </div>
+        )}
 
-        <Field label="CUI o pasaporte" error={errors.cui_passport}>
-          <Input
-            placeholder="Ej. 2540 12345 0101 o A12345678"
-            value={form.cui_passport}
-            onChange={(e) => setForm({ ...form, cui_passport: e.target.value })}
-          />
-        </Field>
+        {/* Datos Personales */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Nombre Completo" required={true} error={errors.full_name}>
+            <Input
+              placeholder="Ej. Sofía Martínez López"
+              value={form.full_name}
+              onChange={(e) => {
+                setForm({ ...form, full_name: e.target.value });
+                if (errors.full_name) setErrors({ ...errors, full_name: "" });
+              }}
+            />
+          </Field>
 
-        <Field label="Rol">
-          <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            <option value="student">Alumno</option>
-            <option value="teacher">Profesor</option>
-            <option value="assistant">Asistente / Secretaría</option>
-            <option value="admin">Administrador</option>
-          </Select>
-        </Field>
+          <Field label="Correo Electrónico" required={true} error={errors.email}>
+            <Input
+              type="email"
+              placeholder="sofia@ejemplo.com"
+              value={form.email}
+              onChange={(e) => {
+                setForm({ ...form, email: e.target.value });
+                if (errors.email) setErrors({ ...errors, email: "" });
+              }}
+            />
+          </Field>
+        </div>
 
         {form.role === "assistant" && (
-          <Field label="Permisos asignados" hint="Selecciona los módulos a los que el asistente tendrá acceso">
+          <Field label="Permisos Asignados" hint="Selecciona los módulos autorizados para el asistente">
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {ALL_PERMISSIONS.map((perm) => {
                 const checked = form.permissions.includes(perm.id);
@@ -515,15 +591,19 @@ function CreateUserModal({
         )}
 
         <Field
-          label="Contraseña inicial"
+          label="Contraseña Inicial"
+          required={true}
           error={errors.password}
-          hint={`Mínimo ${PASSWORD_MIN_LENGTH} caracteres. El usuario podrá cambiarla desde su perfil.`}
+          hint="Sugerida automáticamente (Educa2026!). El usuario podrá cambiarla desde su perfil."
         >
           <Input
-            type="password"
-            placeholder="••••••••"
+            type="text"
+            placeholder="Educa2026!"
             value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            onChange={(e) => {
+              setForm({ ...form, password: e.target.value });
+              if (errors.password) setErrors({ ...errors, password: "" });
+            }}
           />
         </Field>
 
@@ -532,7 +612,7 @@ function CreateUserModal({
             <Input
               placeholder="+502 5555-5555"
               value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              onChange={(e) => setForm({ ...form, phone: formatPhoneNumber(e.target.value) })}
             />
           </Field>
 
@@ -609,6 +689,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
 
   const [selectedLangIds, setSelectedLangIds] = useState<number[]>([]);
   const [langLoaded, setLangLoaded] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (user.role === "teacher" && teacherLangs && !langLoaded) {
@@ -618,18 +699,23 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
   }, [user.role, teacherLangs, langLoaded]);
 
   async function save() {
-    if (!EMAIL_RE.test(form.email)) {
-      notify("Correo no válido", "error");
-      return;
-    }
-    if (!form.cui_passport.trim()) {
-      notify("CUI o Pasaporte es obligatorio", "error");
-      return;
-    }
+    const e: Record<string, string> = {};
+    const cuiVal = validateCuiPassport(form.cui_passport);
+    if (!cuiVal.isValid && cuiVal.error) e.cui_passport = cuiVal.error;
+
+    const emailVal = validateEmailFormat(form.email);
+    if (!emailVal.isValid && emailVal.error) e.email = emailVal.error;
+
+    const nameVal = validateFullNameFormat(form.full_name);
+    if (!nameVal.isValid && nameVal.error) e.full_name = nameVal.error;
+
     if (form.password && form.password.length < PASSWORD_MIN_LENGTH) {
-      notify(`La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`, "error");
-      return;
+      e.password = `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`;
     }
+
+    setErrors(e);
+    if (Object.keys(e).length > 0) return;
+
     const patch: Record<string, unknown> = {
       id: user.id,
       full_name: form.full_name,
@@ -655,15 +741,15 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
       }
       notify("Usuario actualizado con éxito", "success");
       onClose();
-    } catch (e) {
-      onMutationError("No se pudo actualizar")(e);
+    } catch (err) {
+      onMutationError("No se pudo actualizar")(err);
     }
   }
 
   return (
     <Modal
-      title="Editar usuario"
-      description={user.email}
+      title="Editar Usuario"
+      description={`ID: #${user.id} • ${user.email}`}
       onClose={onClose}
       onSubmit={save}
       footer={
@@ -678,33 +764,52 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
       }
     >
       <div className="space-y-4">
-        <Field label="Nombre completo">
-          <Input
-            value={form.full_name}
-            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-          />
-        </Field>
-        <Field label="Correo">
-          <Input
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-        </Field>
-        <Field label="CUI o pasaporte">
-          <Input
-            value={form.cui_passport}
-            onChange={(e) => setForm({ ...form, cui_passport: e.target.value })}
-          />
-        </Field>
-        <Field label="Rol">
-          <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            <option value="student">Alumno</option>
-            <option value="teacher">Profesor</option>
-            <option value="assistant">Asistente / Secretaría</option>
-            <option value="admin">Administrador</option>
-          </Select>
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="CUI / DPI o Pasaporte" required={true} error={errors.cui_passport}>
+            <Input
+              placeholder="Ej. 2450 12345 0101"
+              value={form.cui_passport}
+              onChange={(e) => {
+                const formatted = formatCuiPassport(e.target.value);
+                setForm({ ...form, cui_passport: formatted });
+                if (errors.cui_passport) setErrors({ ...errors, cui_passport: "" });
+              }}
+            />
+          </Field>
+
+          <Field label="Rol de cuenta" required={true}>
+            <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <option value="student">Alumno</option>
+              <option value="teacher">Profesor</option>
+              <option value="assistant">Asistente / Secretaría</option>
+              <option value="admin">Administrador</option>
+            </Select>
+          </Field>
+        </div>
+
+        {/* Datos Personales */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Nombre Completo" required={true} error={errors.full_name}>
+            <Input
+              value={form.full_name}
+              onChange={(e) => {
+                setForm({ ...form, full_name: e.target.value });
+                if (errors.full_name) setErrors({ ...errors, full_name: "" });
+              }}
+            />
+          </Field>
+
+          <Field label="Correo Electrónico" required={true} error={errors.email}>
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => {
+                setForm({ ...form, email: e.target.value });
+                if (errors.email) setErrors({ ...errors, email: "" });
+              }}
+            />
+          </Field>
+        </div>
 
         {form.role === "assistant" && (
           <Field label="Permisos asignados" hint="Selecciona los módulos a los que el asistente tendrá acceso">

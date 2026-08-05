@@ -51,6 +51,10 @@ describe("EnrollWizard", () => {
     vi.mocked(queries.usePublicTeachers).mockReturnValue({ data: [] } as never);
     vi.mocked(queries.useEnrollments).mockReturnValue({ data: [] } as never);
     vi.mocked(queries.useSchedules).mockReturnValue({ data: [] } as never);
+    // El wizard pide nacionalidades desde que el alta las recoge. Sin stub, el
+    // módulo mockeado devuelve `undefined` y desestructurar `.data` reventaba
+    // los ocho casos antes de renderizar nada.
+    vi.mocked(queries.useNationalities).mockReturnValue({ data: [] } as never);
     vi.mocked(queries.useCreateUser).mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,

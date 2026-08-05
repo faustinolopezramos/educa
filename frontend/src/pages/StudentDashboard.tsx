@@ -8,7 +8,7 @@ import {
 } from "../components/ui";
 import { ActionTray } from "../components/ActionTray";
 import {
-  IconBook, IconChevronRight, IconClock, IconLock,
+  IconBook, IconChevronRight, IconClock, IconLock, IconPin,
 } from "../components/icons";
 import { StudentGrades } from "../features/grades/StudentGrades";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
@@ -18,11 +18,15 @@ import {
   DAYS,
   ENROLLMENT_LABELS,
   PAYMENT_LABELS,
+  courseModality,
+  courseModalityLabel,
   formatDateTime,
   formatTime,
+  locationSummary,
   timeZoneLabel,
 } from "../lib/format";
-import { isCurrentEnrollment } from "../lib/enrollment";
+import { attendancePct } from "../lib/attendance";
+import { isCurrentEnrollment, isDelinquent } from "../lib/enrollment";
 import {
   downloadCertificatePdf,
   useCourses,
@@ -38,7 +42,7 @@ import {
 } from "../lib/queries";
 import { LOBBY_WINDOW_MIN, GRACE_MS } from "../lib/constants";
 import { notify } from "../lib/toast";
-import type { Enrollment } from "../lib/types";
+import type { Enrollment, Modality } from "../lib/types";
 
 function sessionStartMs(date: string, time: string): number {
   return new Date(`${date}T${time}`).getTime();
@@ -53,10 +57,10 @@ export default function StudentDashboard() {
   const [params] = useSearchParams();
   const section = params.get("m") ?? "inicio";
   const { data: enrollments = [] } = useEnrollments();
-  const isOverdue = useMemo(
-    () => enrollments.some((e) => e.status === "active" && e.payment_status === "overdue"),
-    [enrollments],
-  );
+  // Solvency is a property of the student, not of one course: a single overdue
+  // fee closes grades, final grades and the report everywhere. `isDelinquent`
+  // is the same rule the API applies in `student_is_solvent`.
+  const isOverdue = useMemo(() => enrollments.some(isDelinquent), [enrollments]);
 
   if (section === "tareas") return <AssignmentsPanel />;
   // "Calificaciones" and "Reporte" were two menu entries answering the same
@@ -66,7 +70,7 @@ export default function StudentDashboard() {
     return <ProgressView isOverdue={isOverdue} initial={section} />;
   }
   if (section === "perfil") return <ProfilePanel />;
-  return <WeekView />;
+  return <WeekView isOverdue={isOverdue} />;
 }
 
 function ProgressView({
@@ -126,17 +130,14 @@ function PaymentGate({ what }: { what: string }) {
 // The progress report is only shown to students who are up to date on payments.
 function StudentReport() {
   const { data: enrollments = [], isLoading } = useEnrollments();
-  const overdue = enrollments.filter(
-    (e) => e.status === "active" && e.payment_status === "overdue",
-  );
 
   if (isLoading) return <SkeletonRows rows={4} />;
-  if (overdue.length > 0) return <PaymentGate what="tu reporte" />;
+  if (enrollments.some(isDelinquent)) return <PaymentGate what="tu reporte" />;
 
   return <ReportView />;
 }
 
-function WeekView() {
+function WeekView({ isOverdue }: { isOverdue: boolean }) {
   const { user } = useAuth();
   const tz = user?.timezone;
   const { data: enrollments = [] } = useEnrollments();
@@ -146,7 +147,11 @@ function WeekView() {
   const { data: teachers = [] } = usePublicTeachers();
   const { data: rooms = [] } = useRooms();
   const { data: attendance = [] } = useVisibleAttendance();
-  const { data: grades = [] } = useGrades();
+  // Not asked for at all when the student owes: the API answers 403 and the
+  // interceptor turns every 403 into a red toast, so this screen used to greet
+  // a student with unpaid fees with a stack of "no tienes permisos" — one per
+  // course, doubled by the retry — instead of the explanation below.
+  const { data: grades = [] } = useGrades(undefined, !isOverdue);
 
   const now = Date.now();
   const todayDow = localDow();
@@ -156,6 +161,9 @@ function WeekView() {
     teachers.find((t) => t.id === id)?.full_name ?? "—";
   const roomName = (id: number | null) =>
     id == null ? null : (rooms.find((r) => r.id === id)?.name ?? null);
+  /** Cómo se imparte un curso, deducido de sus franjas. */
+  const modalityOf = (courseId: number) =>
+    courseModality(schedules.filter((s) => s.course_id === courseId));
 
   // Courses the student is still in, versus ones they finished or left. The two
   // used to be one undifferentiated list, so a course dropped two terms ago sat
@@ -192,16 +200,16 @@ function WeekView() {
     { attendancePct: number | null; average: number | null }
   >();
   for (const e of enrollments) {
-    const att = attendance.filter((a) => a.enrollment_id === e.id);
-    const attended = att.filter(
-      (a) => a.status === "present" || a.status === "late",
-    ).length;
-    const attendancePct = att.length ? Math.round((attended / att.length) * 100) : null;
+    // Misma regla que el reporte, el kardex y el panel del profesor: una falta
+    // justificada sale del cálculo en lugar de contar como ausencia.
+    const pct = attendancePct(
+      attendance.filter((a) => a.enrollment_id === e.id).map((a) => a.status),
+    );
     const gr = grades.filter((g) => g.enrollment_id === e.id);
     const average = gr.length
       ? Math.round((gr.reduce((s, g) => s + g.score, 0) / gr.length) * 10) / 10
       : null;
-    statsByCourse.set(e.course_id, { attendancePct, average });
+    statsByCourse.set(e.course_id, { attendancePct: pct, average });
   }
 
   const nextClassForCourse = (courseId: number): string | null => {
@@ -308,6 +316,8 @@ function WeekView() {
               name={courseName(e.course_id)}
               stats={statsByCourse.get(e.course_id)}
               nextClass={nextClassForCourse(e.course_id)}
+              gradesHidden={isOverdue}
+              modality={modalityOf(e.course_id)}
             />
           ))}
         </div>
@@ -331,6 +341,8 @@ function WeekView() {
                 name={courseName(e.course_id)}
                 stats={statsByCourse.get(e.course_id)}
                 nextClass={null}
+                gradesHidden={isOverdue}
+                modality={modalityOf(e.course_id)}
               />
             ))}
           </div>
@@ -352,7 +364,9 @@ function NextClassHero({
 }: {
   courseName: string;
   teacher: string;
-  modality: string;
+  // `Modality`, no `string`: escrito así, el compilador no podía avisar de que
+  // esta pantalla estaba doblando las tres modalidades en dos.
+  modality: Modality;
   room: string | null;
   start: number;
   opensAt: number;
@@ -393,21 +407,33 @@ function NextClassHero({
         <span aria-hidden="true">·</span>
         <span>Prof. {teacher}</span>
         <span aria-hidden="true">·</span>
-        <span>{modality === "virtual" ? "Aula virtual" : room ? `Aula ${room}` : "Presencial"}</span>
+        {/* La modalidad se nombra por su nombre. Escrito a mano como
+            `virtual ? … : …`, una semi presencial sin aula asignada se
+            anunciaba como "Presencial" — la mitad de la verdad. */}
+        <span>{locationSummary(modality, room)}</span>
       </div>
 
       <div className="mt-auto pt-6">
-        {lobbyOpen ? (
+        {/* Una presencial no se "abre": el alumno va al aula. Ofrecerle un
+            botón de entrar en vivo y una cuenta atrás le dice que espere
+            delante de la pantalla una clase que ocurre en el centro. */}
+        {modality === "presencial" ? (
+          <span className="inline-flex items-center gap-2 text-sm text-slate-300">
+            <IconPin className="h-4 w-4 text-brand-400" />
+            {room ? `Te esperamos en ${room}` : "Aula por asignar"}
+          </span>
+        ) : lobbyOpen ? (
           <Link
             to={`/lobby/${sessionId}`}
-            className="inline-flex items-center rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-500"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-all shadow-lg shadow-brand-600/30 hover:bg-brand-500 hover:scale-105"
           >
-            Entrar a la clase
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping" />
+            Entrar a la clase en vivo
           </Link>
         ) : (
           <span className="inline-flex items-center gap-2 text-sm text-slate-400">
-            <IconClock className="h-4 w-4" />
-            El acceso se abre {LOBBY_WINDOW_MIN} min antes
+            <IconClock className="h-4 w-4 text-brand-400" />
+            El acceso al aula virtual se abre {LOBBY_WINDOW_MIN} min antes del inicio
           </span>
         )}
       </div>
@@ -440,11 +466,17 @@ function CourseCard({
   name,
   stats,
   nextClass,
+  gradesHidden,
+  modality,
 }: {
   enrollment: Enrollment;
   name: string;
   stats?: { attendancePct: number | null; average: number | null };
   nextClass: string | null;
+  /** Unpaid fees: the grades were never fetched, so say so rather than "—". */
+  gradesHidden: boolean;
+  /** Deducida de las franjas del curso; `null` si todavía no tiene ninguna. */
+  modality: Modality | "mixta" | null;
 }) {
   const payColor =
     enrollment.payment_status === "paid"
@@ -459,7 +491,19 @@ function CourseCard({
   return (
     <Card>
       <div className="mb-3 flex items-start justify-between gap-2">
-        <span className="min-w-0 truncate text-base font-semibold text-slate-900">{name}</span>
+        <div className="min-w-0">
+          <span className="block truncate text-base font-semibold text-slate-900">
+            {name}
+          </span>
+          {/* Cómo se imparte el curso. La tarjeta no lo decía en ninguna parte:
+              el alumno sólo se enteraba de si su clase era presencial o en línea
+              al llegar la próxima sesión a la portada. */}
+          {modality && (
+            <span className="mt-0.5 block text-2xs text-slate-500">
+              {courseModalityLabel(modality)}
+            </span>
+          )}
+        </div>
         <Badge color={enrollment.status === "active" ? "green" : "slate"}>
           {ENROLLMENT_LABELS[enrollment.status] ?? enrollment.status}
         </Badge>
@@ -485,7 +529,7 @@ function CourseCard({
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">Promedio</span>
               <span className="tabular font-semibold text-slate-900">
-                {avg ?? "—"}
+                {gradesHidden ? "—" : (avg ?? "—")}
                 <span className="font-normal text-slate-400">/10</span>
               </span>
             </div>
@@ -493,11 +537,19 @@ function CourseCard({
               <div
                 className="h-full rounded-full"
                 style={{
-                  width: `${avg != null ? (avg / 10) * 100 : 0}%`,
+                  width: `${!gradesHidden && avg != null ? (avg / 10) * 100 : 0}%`,
                   background: tone === "green" ? "#0F6E62" : "#B77A2B",
                 }}
               />
             </div>
+            {/* Sin esta línea, un promedio oculto por deuda se lee igual que uno
+                que todavía no existe, y el alumno va a preguntarle al profesor
+                por algo que sólo administración puede resolver. */}
+            {gradesHidden && (
+              <p className="mt-1 text-2xs text-amber-800">
+                Oculto por pago pendiente
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span className="text-slate-500">Pago</span>
@@ -511,7 +563,7 @@ function CourseCard({
       {nextClass && (
         <div className="mt-3 text-xs text-slate-500">Próxima clase: {nextClass}</div>
       )}
-      <FinalGradeRow enrollmentId={enrollment.id} />
+      {!gradesHidden && <FinalGradeRow enrollmentId={enrollment.id} />}
     </Card>
   );
 }

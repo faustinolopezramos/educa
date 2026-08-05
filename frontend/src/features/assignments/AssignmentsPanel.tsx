@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../auth/AuthContext";
-import { Badge, Button, Card, Input, Modal, ModalActions, Select } from "../../components/ui";
+import {
+  Badge, Button, Card, Field, Input, Modal, ModalActions, PageHeader, SearchInput,
+  SegmentedControl, Select, Table, Td, Th, Toolbar,
+} from "../../components/ui";
 import { api, apiErrorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
+import { canManageGrades } from "../../lib/nav";
 import { notify } from "../../lib/toast";
 import type { Assignment, AssignmentSubmission, Course, RosterStudentStatus } from "../../lib/types";
 
@@ -45,8 +49,16 @@ export function AssignmentsPanel() {
   } | null>(null);
   const [gradeScore, setGradeScore] = useState<number>(10);
   const [gradeFeedback, setGradeFeedback] = useState("");
+  // Manage Submissions Hub Modal state (Teacher/Staff)
+  const [managingAssignment, setManagingAssignment] = useState<Assignment | null>(null);
+  const [subFilterTab, setSubFilterTab] = useState<string>("todos");
+  const [subSearch, setSubSearch] = useState("");
 
-  const isStaff = user?.role === "admin" || user?.role === "teacher";
+  const isStaff = canManageGrades(user);
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   async function loadData() {
     try {
@@ -62,26 +74,43 @@ export function AssignmentsPanel() {
         setNewCourseId((prev) => (prev === 0 ? loadedCourses[0].id : prev));
       }
 
+      // En paralelo, no en fila. Esto era un `await` dentro del bucle: dos
+      // peticiones por tarea, encadenadas una tras otra, de modo que treinta
+      // tareas eran sesenta viajes de ida y vuelta en serie antes de que el
+      // panel pintara nada. El coste ahora es el de la petición más lenta, no
+      // el de la suma de todas.
       const subsMap: Record<number, AssignmentSubmission[]> = {};
       const rosMap: Record<number, RosterStudentStatus[]> = {};
 
-      for (const a of loadedAssignments) {
+      async function loadOne<T>(url: string): Promise<T[]> {
         try {
-          const sRes = await api.get<AssignmentSubmission[]>(`/assignments/${a.id}/submissions`);
-          subsMap[a.id] = Array.isArray(sRes.data) ? sRes.data : [];
+          const res = await api.get<T[]>(url);
+          return Array.isArray(res.data) ? res.data : [];
         } catch {
-          subsMap[a.id] = [];
-        }
-
-        if (isStaff) {
-          try {
-            const rRes = await api.get<RosterStudentStatus[]>(`/assignments/${a.id}/roster-status`);
-            rosMap[a.id] = Array.isArray(rRes.data) ? rRes.data : [];
-          } catch {
-            rosMap[a.id] = [];
-          }
+          // Una tarea que falla no puede vaciar el panel entero; se queda sin
+          // entregas y las demás se pintan igual.
+          return [];
         }
       }
+
+      await Promise.all(
+        loadedAssignments.flatMap((a) => [
+          loadOne<AssignmentSubmission>(`/assignments/${a.id}/submissions`).then(
+            (rows) => {
+              subsMap[a.id] = rows;
+            },
+          ),
+          ...(isStaff
+            ? [
+                loadOne<RosterStudentStatus>(
+                  `/assignments/${a.id}/roster-status`,
+                ).then((rows) => {
+                  rosMap[a.id] = rows;
+                }),
+              ]
+            : []),
+        ]),
+      );
       setSubmissions(subsMap);
       setRosterMap(rosMap);
     } catch (err) {
@@ -89,9 +118,16 @@ export function AssignmentsPanel() {
     }
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  function openCreateAssignmentModal() {
+    setNewTitle("");
+    setNewDesc("");
+    setNewResourceUrl("");
+    setNewDueDate("");
+    if (courses.length > 0) {
+      setNewCourseId(courses[0].id);
+    }
+    setShowCreate(true);
+  }
 
   async function handleCreateAssignment() {
     const targetCourseId = Number(newCourseId) || (courses.length > 0 ? courses[0].id : 0);
@@ -239,28 +275,32 @@ export function AssignmentsPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Metrics & Action Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm">
-            <div className="text-xs text-slate-500 font-medium">Total Tareas</div>
-            <div className="mt-0.5 text-2xl font-semibold text-slate-900">{totalCount}</div>
-          </div>
-          <div className="rounded-xl border border-amber-200/60 bg-amber-50/40 px-4 py-3 shadow-sm">
-            <div className="text-xs text-amber-700 font-medium">Pendientes</div>
-            <div className="mt-0.5 text-2xl font-semibold text-amber-900">{pendingCount}</div>
-          </div>
-          <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/40 px-4 py-3 shadow-sm">
-            <div className="text-xs text-emerald-700 font-medium">Completadas</div>
-            <div className="mt-0.5 text-2xl font-semibold text-emerald-900">{completedCount}</div>
-          </div>
-        </div>
+      <PageHeader
+        title="Tareas y Evaluaciones"
+        description="Asignación de trabajos, recepción de entregas y libro de retroalimentación."
+        actions={
+          isStaff ? (
+            <Button onClick={openCreateAssignmentModal}>
+              + Nueva Tarea
+            </Button>
+          ) : undefined
+        }
+      />
 
-        {isStaff && (
-          <Button onClick={() => setShowCreate(true)}>
-            + Nueva Tarea
-          </Button>
-        )}
+      {/* Metrics Header */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm">
+          <div className="text-xs text-slate-500 font-medium">Total Tareas</div>
+          <div className="mt-0.5 text-2xl font-semibold text-slate-900">{totalCount}</div>
+        </div>
+        <div className="rounded-xl border border-amber-200/60 bg-amber-50/40 px-4 py-3 shadow-sm">
+          <div className="text-xs text-amber-700 font-medium">Pendientes</div>
+          <div className="mt-0.5 text-2xl font-semibold text-amber-900">{pendingCount}</div>
+        </div>
+        <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/40 px-4 py-3 shadow-sm">
+          <div className="text-xs text-emerald-700 font-medium">Completadas</div>
+          <div className="mt-0.5 text-2xl font-semibold text-emerald-900">{completedCount}</div>
+        </div>
       </div>
 
       {/* Clean Filter Toolbar */}
@@ -348,8 +388,8 @@ export function AssignmentsPanel() {
                   )}
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                  <span>
+                <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500">
                     📅 Fecha límite: {a.due_date ? formatDateTime(a.due_date) : "Sin fecha"}
                   </span>
 
@@ -365,55 +405,18 @@ export function AssignmentsPanel() {
                       {studentSub ? "Ver / Editar entrega" : "Entregar"}
                     </Button>
                   ) : (
-                    <span className="font-medium text-slate-700">
-                      Entregas: {subs.length} / {roster.length}
-                    </span>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setManagingAssignment(a);
+                        setSubFilterTab("todos");
+                        setSubSearch("");
+                      }}
+                    >
+                      Revisar Entregas ({subs.length} / {roster.length})
+                    </Button>
                   )}
                 </div>
-
-                {/* Staff Roster Grid (Docentes) */}
-                {isStaff && roster.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      Estado de alumnos ({roster.length}):
-                    </div>
-                    <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto">
-                      {roster.map((st) => (
-                        <div
-                          key={st.student_id}
-                          className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs"
-                        >
-                          <span className="font-medium text-slate-800">{st.full_name}</span>
-                          <div className="flex items-center gap-2">
-                            {st.status === "graded" ? (
-                              <Badge color="green">{st.score}/10</Badge>
-                            ) : st.status === "submitted" || st.status === "submitted_late" ? (
-                              <Badge color={st.is_late ? "amber" : "indigo"}>
-                                {st.is_late ? "Con retraso" : "Entregado"}
-                              </Badge>
-                            ) : (
-                              <Badge color="slate">Sin entregar</Badge>
-                            )}
-
-                            {st.submission_id && (
-                              <Button
-                                variant="ghost"
-                                className="!py-0.5 !px-2 text-xs"
-                                onClick={() => {
-                                  setGradingStudentStatus({ assignment: a, student: st });
-                                  setGradeScore(st.score ?? 10);
-                                  setGradeFeedback(st.feedback || "");
-                                }}
-                              >
-                                {st.status === "graded" ? "Editar nota" : "Calificar"}
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </Card>
             );
           })}
@@ -427,6 +430,7 @@ export function AssignmentsPanel() {
           description="Los alumnos del curso la verán en cuanto la asignes."
           onClose={() => setShowCreate(false)}
           onSubmit={handleCreateAssignment}
+          maxWidth="max-w-xl"
           footer={
             <ModalActions>
               <Button variant="secondary" onClick={() => setShowCreate(false)}>
@@ -439,8 +443,7 @@ export function AssignmentsPanel() {
           }
         >
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Curso</label>
+            <Field label="Curso" required={true}>
               <Select
                 value={newCourseId}
                 onChange={(e) => setNewCourseId(Number(e.target.value))}
@@ -451,42 +454,43 @@ export function AssignmentsPanel() {
                   </option>
                 ))}
               </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Título de la tarea</label>
+            </Field>
+
+            <Field label="Título de la tarea" required={true}>
               <Input
                 placeholder="Ej. Taller práctico 1: Vocabulario básico"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Instrucciones</label>
+            </Field>
+
+            <Field label="Instrucciones">
               <textarea
                 rows={3}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:bg-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                 placeholder="Detalla las instrucciones para los alumnos…"
                 value={newDesc}
                 onChange={(e) => setNewDesc(e.target.value)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">URL de recurso (opcional)</label>
-              <Input
-                placeholder="Ej. https://drive.google.com/..."
-                value={newResourceUrl}
-                onChange={(e) => setNewResourceUrl(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Fecha y hora límite</label>
-              <Input
-                type="datetime-local"
-                value={newDueDate}
-                onChange={(e) => setNewDueDate(e.target.value)}
-              />
-            </div>
+            </Field>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="URL de recurso (opcional)">
+                <Input
+                  placeholder="Ej. https://drive.google.com/..."
+                  value={newResourceUrl}
+                  onChange={(e) => setNewResourceUrl(e.target.value)}
+                />
+              </Field>
+
+              <Field label="Fecha y hora límite" required={true}>
+                <Input
+                  type="datetime-local"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                />
+              </Field>
+            </div>
           </div>
         </Modal>
       )}
@@ -498,6 +502,7 @@ export function AssignmentsPanel() {
           description={submittingAssignment.title}
           onClose={() => setSubmittingAssignment(null)}
           onSubmit={handleSubmitWork}
+          maxWidth="max-w-xl"
           footer={
             <ModalActions hint="Basta con un texto o un enlace.">
               <Button variant="secondary" onClick={() => setSubmittingAssignment(null)}>
@@ -510,25 +515,22 @@ export function AssignmentsPanel() {
           }
         >
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Respuesta / Explicación</label>
+            <Field label="Respuesta / Explicación">
               <textarea
                 rows={4}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:bg-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                 placeholder="Escribe tu respuesta o resumen del trabajo…"
                 value={subContent}
                 onChange={(e) => setSubContent(e.target.value)}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Enlace del trabajo (Drive, GitHub, Figma, etc.)</label>
+            </Field>
+            <Field label="Enlace del trabajo (Drive, GitHub, Figma, etc.)">
               <Input
                 placeholder="Ej. https://github.com/..."
                 value={subUrl}
                 onChange={(e) => setSubUrl(e.target.value)}
               />
-            </div>
-
+            </Field>
           </div>
         </Modal>
       )}
@@ -540,6 +542,7 @@ export function AssignmentsPanel() {
           description={gradingStudentStatus.assignment.title}
           onClose={() => setGradingStudentStatus(null)}
           onSubmit={handleGradeSubmission}
+          maxWidth="max-w-xl"
           footer={
             <ModalActions>
               <Button variant="secondary" onClick={() => setGradingStudentStatus(null)}>
@@ -552,28 +555,27 @@ export function AssignmentsPanel() {
           }
         >
           <div className="space-y-4">
-            <div className="rounded-lg bg-slate-50 p-3 text-xs space-y-1">
-              <div><strong>Tarea:</strong> {gradingStudentStatus.assignment.title}</div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 text-xs space-y-1.5">
+              <div><strong className="text-slate-700">Tarea:</strong> {gradingStudentStatus.assignment.title}</div>
               {gradingStudentStatus.student.content && (
-                <div><strong>Respuesta:</strong> {gradingStudentStatus.student.content}</div>
+                <div><strong className="text-slate-700">Respuesta del Alumno:</strong> {gradingStudentStatus.student.content}</div>
               )}
               {gradingStudentStatus.student.submission_url && (
                 <div>
-                  <strong>Enlace:</strong>{" "}
+                  <strong className="text-slate-700">Enlace adjunto:</strong>{" "}
                   <a
                     href={gradingStudentStatus.student.submission_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-brand-600 underline"
+                    className="text-brand-600 hover:underline font-medium"
                   >
-                    Ver archivo ↗
+                    Ver archivo / entregable ↗
                   </a>
                 </div>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Nota (0 a 10)</label>
+            <Field label="Nota (0 a 10)" required={true}>
               <Input
                 type="number"
                 min={0}
@@ -582,32 +584,190 @@ export function AssignmentsPanel() {
                 value={gradeScore}
                 onChange={(e) => setGradeScore(Number(e.target.value))}
               />
-            </div>
+            </Field>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Retroalimentación / Comentarios</label>
+            <Field label="Retroalimentación / Comentarios">
               <textarea
                 rows={3}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:bg-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                 placeholder="Comentarios para el alumno…"
                 value={gradeFeedback}
                 onChange={(e) => setGradeFeedback(e.target.value)}
               />
-              <div className="mt-2 flex flex-wrap gap-1">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {QUICK_FEEDBACK_TAGS.map((tag) => (
                   <button
                     key={tag}
                     type="button"
                     onClick={() => setGradeFeedback(tag)}
-                    className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-brand-50 hover:text-brand-700 transition"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 transition"
                   >
                     + {tag}
                   </button>
                 ))}
               </div>
-            </div>
-
+            </Field>
           </div>
+        </Modal>
+      )}
+
+      {/* Modal: Gestionar Entregas por Tarea (Teacher/Staff Hub) */}
+      {managingAssignment && (
+        <Modal
+          title={`Libro de Entregas · ${managingAssignment.title}`}
+          description={`Curso: ${safeCourses.find((c) => c.id === managingAssignment.course_id)?.name || "Curso"} • Fecha límite: ${managingAssignment.due_date ? formatDateTime(managingAssignment.due_date) : "Sin fecha"}`}
+          onClose={() => setManagingAssignment(null)}
+          maxWidth="max-w-4xl"
+          footer={
+            <ModalActions>
+              <Button variant="secondary" onClick={() => setManagingAssignment(null)}>
+                Cerrar
+              </Button>
+            </ModalActions>
+          }
+        >
+          {(() => {
+            const roster = rosterMap[managingAssignment.id] || [];
+            const submittedCount = roster.filter((r) => r.status === "submitted" || r.status === "submitted_late" || r.status === "graded").length;
+            const gradedCount = roster.filter((r) => r.status === "graded").length;
+            const pendingGradeCount = roster.filter((r) => r.status === "submitted" || r.status === "submitted_late").length;
+            const unsubmittedCount = roster.filter((r) => r.status === "not_submitted").length;
+
+            const filteredRoster = roster.filter((st) => {
+              const matchesSearch = subSearch.trim() === "" || st.full_name.toLowerCase().includes(subSearch.toLowerCase());
+              if (!matchesSearch) return false;
+              if (subFilterTab === "pending_grade") return st.status === "submitted" || st.status === "submitted_late";
+              if (subFilterTab === "graded") return st.status === "graded";
+              if (subFilterTab === "unsubmitted") return st.status === "not_submitted";
+              return true;
+            });
+
+            return (
+              <div className="space-y-4">
+                {/* Metric Summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 text-center">
+                    <div className="text-[11px] text-slate-500 font-medium">Total Alumnos</div>
+                    <div className="text-lg font-bold text-slate-900">{roster.length}</div>
+                  </div>
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-2.5 text-center">
+                    <div className="text-[11px] text-indigo-700 font-medium">Entregados</div>
+                    <div className="text-lg font-bold text-indigo-900">{submittedCount}</div>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 text-center">
+                    <div className="text-[11px] text-amber-700 font-medium">Por Calificar</div>
+                    <div className="text-lg font-bold text-amber-900">{pendingGradeCount}</div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5 text-center">
+                    <div className="text-[11px] text-emerald-700 font-medium">Calificados</div>
+                    <div className="text-lg font-bold text-emerald-900">{gradedCount}</div>
+                  </div>
+                </div>
+
+                {/* Toolbar Filter & Search */}
+                <Toolbar>
+                  <SegmentedControl
+                    value={subFilterTab}
+                    onChange={(v) => setSubFilterTab(v)}
+                    options={[
+                      { value: "todos", label: "Todos", count: roster.length },
+                      { value: "pending_grade", label: "Por Calificar", count: pendingGradeCount },
+                      { value: "graded", label: "Calificados", count: gradedCount },
+                      { value: "unsubmitted", label: "Sin Entregar", count: unsubmittedCount },
+                    ]}
+                  />
+                  <SearchInput
+                    className="w-full sm:ml-auto sm:w-64"
+                    placeholder="Buscar alumno..."
+                    value={subSearch}
+                    onChange={(e) => setSubSearch(e.target.value)}
+                  />
+                </Toolbar>
+
+                {/* Roster Table */}
+                <div className="max-h-96 overflow-y-auto rounded-xl border border-slate-200">
+                  <Table>
+                    <thead>
+                      <tr>
+                        <Th>Alumno</Th>
+                        <Th>Estado</Th>
+                        <Th>Entregable / Enlace</Th>
+                        <Th align="right">Nota</Th>
+                        <Th align="right">Acción</Th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredRoster.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8 text-center text-xs text-slate-400">
+                            Ningún alumno coincide con los criterios de búsqueda.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredRoster.map((st) => (
+                          <tr key={st.student_id} className="hover:bg-slate-50">
+                            <Td>
+                              <span className="font-semibold text-slate-900">{st.full_name}</span>
+                            </Td>
+                            <Td>
+                              {st.status === "graded" ? (
+                                <Badge color="green">Calificado</Badge>
+                              ) : st.status === "submitted" || st.status === "submitted_late" ? (
+                                <Badge color={st.is_late ? "amber" : "indigo"}>
+                                  {st.is_late ? "Con retraso" : "Entregado"}
+                                </Badge>
+                              ) : (
+                                <Badge color="slate">Sin entregar</Badge>
+                              )}
+                            </Td>
+                            <Td>
+                              {st.submission_url ? (
+                                <a
+                                  href={st.submission_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs font-medium text-brand-600 hover:underline"
+                                >
+                                  Ver recurso ↗
+                                </a>
+                              ) : st.content ? (
+                                <span className="text-xs text-slate-600 line-clamp-1">{st.content}</span>
+                              ) : (
+                                <span className="text-xs text-slate-400">—</span>
+                              )}
+                            </Td>
+                            <Td align="right">
+                              {st.score !== null && st.score !== undefined ? (
+                                <span className="font-bold text-slate-900 tabular">{st.score} / 10</span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </Td>
+                            <Td align="right">
+                              {st.submission_id ? (
+                                <Button
+                                  variant={st.status === "graded" ? "secondary" : "primary"}
+                                  onClick={() => {
+                                    setGradingStudentStatus({ assignment: managingAssignment, student: st });
+                                    setGradeScore(st.score ?? 10);
+                                    setGradeFeedback(st.feedback || "");
+                                  }}
+                                >
+                                  {st.status === "graded" ? "Editar nota" : "Calificar"}
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-slate-400">Pendiente</span>
+                              )}
+                            </Td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </Table>
+                </div>
+              </div>
+            );
+          })()}
         </Modal>
       )}
     </div>

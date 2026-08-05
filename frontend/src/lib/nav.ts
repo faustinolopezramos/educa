@@ -33,10 +33,10 @@ const ADMIN_GROUPS: NavGroup[] = [
     // clicks deep and mixed two jobs that have nothing in common.
     label: "Gestión Académica",
     items: [
+      { id: "enrollments", label: "Matrículas" },
+      { id: "students", label: "Alumnos" },
       { id: "courses", label: "Cursos" },
       { id: "teachers", label: "Profesores" },
-      { id: "students", label: "Alumnos" },
-      { id: "enrollments", label: "Matrículas" },
       { id: "reports", label: "Reportes" },
     ],
   },
@@ -47,7 +47,7 @@ const ADMIN_GROUPS: NavGroup[] = [
   {
     label: "Configuración del sistema",
     items: [
-      { id: "catalog", label: "Estructura e Idiomas" },
+      { id: "catalog", label: "Estructura académica" },
       { id: "rooms", label: "Aulas" },
       { id: "video_providers", label: "Videoconferencias" },
       { id: "holidays", label: "Festivos" },
@@ -108,13 +108,36 @@ export const NAV: Record<Role, NavGroup[]> = {
   ],
 };
 
+// Sections a role may open that have no menu entry of their own. `schedules`
+// and `pendientes` hang off the courses hub; the two student ids are the ones
+// "Mi progreso" replaced, kept alive so an old bookmark still lands somewhere.
+const EXTRA_SECTIONS: Partial<Record<Role, string[]>> = {
+  admin: ["schedules", "pendientes"],
+  assistant: ["schedules", "pendientes"],
+  student: ["calificaciones", "reportes"],
+};
+
+function sectionsForRole(role: Role): Set<string> {
+  return new Set([
+    ...NAV[role].flatMap((group) => group.items.map((item) => item.id)),
+    ...(EXTRA_SECTIONS[role] ?? []),
+  ]);
+}
+
+/**
+ * Whether `user` may open the section `sectionId`.
+ *
+ * Every role is answered on its own terms. This used to short-circuit with
+ * `if (user.role !== "assistant") return true`, so it claimed a student could
+ * open `audit` and a teacher `tenants`. Nothing broke — the dashboards only
+ * mount their own sections and the API refuses the rest — but a guard that
+ * answers "yes" to everything is a trap for whoever reaches for it next.
+ */
 export function canSeeSection(user: User | null, sectionId: string): boolean {
   if (!user) return false;
-  if (user.role === "superadmin") {
-    return sectionId === "tenants" || sectionId === "audit" || sectionId === "perfil";
-  }
-  // Tenant management is for superadmin only.
-  if (sectionId === "tenants") return false;
+  // Tenant management is for superadmin only, whatever else a menu may list.
+  if (sectionId === "tenants") return user.role === "superadmin";
+  if (!sectionsForRole(user.role).has(sectionId)) return false;
   if (user.role !== "assistant") return true;
 
   const perms = new Set(user.permissions || []);
@@ -137,6 +160,24 @@ export function canSeeSection(user: User | null, sectionId: string): boolean {
   // Auditoría stays admin-only: it replays every change in the academy,
   // including those made by the people an assistant reports to.
   return false;
+}
+
+/**
+ * Whether `user` may create and grade work, rather than hand it in.
+ *
+ * Mirrors `require_staff_permission(manage_grades)` on the API — teacher, admin
+ * and superadmin pass, an assistant only with the permission. The tareas panel
+ * used to ask `role === "admin" || role === "teacher"`, which quietly showed a
+ * superadmin the student's side of the screen: no way to set work, no roster,
+ * just a "entregar" button for courses they are not enrolled in.
+ */
+export function canManageGrades(user: User | null): boolean {
+  if (!user) return false;
+  if (user.role === "student") return false;
+  if (user.role === "assistant") {
+    return (user.permissions || []).includes("manage_grades");
+  }
+  return true;
 }
 
 export function getNavForUser(user: User | null): NavGroup[] {

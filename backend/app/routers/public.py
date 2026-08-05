@@ -57,10 +57,20 @@ def verify_certificate_public(
     student = db.get(User, enrollment.student_id)
     course = db.get(Course, enrollment.course_id)
     level = db.get(Level, cert.level_id)
-    tenant = db.get(Tenant, course.tenant_id) if course else None
+    # `course.tenant_id` puede ser nulo (una instalación de una sola academia),
+    # y pedirle a `db.get` una clave primaria nula avisa por lo bajo de que no
+    # va a devolver nada. Preguntarlo antes dice lo mismo sin el ruido.
+    tenant = (
+        db.get(Tenant, course.tenant_id)
+        if course is not None and course.tenant_id is not None
+        else None
+    )
 
     student_name = student.full_name if student else "Estudiante Desconocido"
-    course_name = course.title if course else "Curso Desconocido"
+    # `Course.name`. Escrito contra un `title` que el modelo nunca tuvo, este
+    # endpoint —público, sin autenticación, el que usa un empleador para validar
+    # un diploma— respondía 500 a *todo* código de certificado válido.
+    course_name = course.name if course else "Curso Desconocido"
     level_name = level.name if level else "Nivel General"
     academy_name = tenant.name if tenant else "Educa Academy"
     academy_logo = tenant.logo_url if tenant else None

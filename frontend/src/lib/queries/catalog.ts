@@ -127,6 +127,7 @@ export interface CoursePayload {
   max_students: number;
   start_date?: string | null;
   end_date?: string | null;
+  periodicity?: string | null;
 }
 
 export function useCreateCourse() {
