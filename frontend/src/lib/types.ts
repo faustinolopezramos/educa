@@ -57,6 +57,14 @@ export interface LoginResponse {
   user: User;
 }
 
+export interface TeacherLoad {
+  teacher_id: number;
+  assigned_hours: number;
+  availability_hours: number;
+  max_hours: number;
+  percentage: number;
+}
+
 export type TrackKind = "language" | "digital_skill" | "business_skill";
 
 export interface Language {

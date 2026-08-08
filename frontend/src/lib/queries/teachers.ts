@@ -5,6 +5,7 @@ import type {
   TeacherAvailability,
   TeacherLanguage,
   TeacherLiveAssignment,
+  TeacherLoad,
   TeacherReassignResult,
 } from "../types";
 
@@ -41,6 +42,14 @@ export const useTeacherAvailability = (teacherId?: number) =>
         .data,
   });
 
+export const useTeacherLoad = (teacherId?: number) =>
+  useQuery({
+    queryKey: ["teacher-load", teacherId],
+    enabled: !!teacherId,
+    queryFn: async () =>
+      (await api.get<TeacherLoad>(`/teachers/${teacherId}/load`)).data,
+  });
+
 export function useAddAvailability() {
   const qc = useQueryClient();
   return useMutation({
@@ -53,8 +62,10 @@ export function useAddAvailability() {
       start_time: string;
       end_time: string;
     }) => (await api.post(`/teachers/${teacherId}/availability`, payload)).data,
-    onSuccess: (_d, v) =>
-      qc.invalidateQueries({ queryKey: ["teacher-availability", v.teacherId] }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["teacher-availability", v.teacherId] });
+      qc.invalidateQueries({ queryKey: ["teacher-load", v.teacherId] });
+    },
   });
 }
 
@@ -68,8 +79,31 @@ export function useDeleteAvailability() {
       teacherId: number;
       id: number;
     }) => api.delete(`/teachers/${teacherId}/availability/${id}`),
-    onSuccess: (_d, v) =>
-      qc.invalidateQueries({ queryKey: ["teacher-availability", v.teacherId] }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["teacher-availability", v.teacherId] });
+      qc.invalidateQueries({ queryKey: ["teacher-load", v.teacherId] });
+    },
+  });
+}
+
+export function usePatchAvailability() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      teacherId,
+      id,
+      ...payload
+    }: {
+      teacherId: number;
+      id: number;
+      day_of_week: number;
+      start_time: string;
+      end_time: string;
+    }) => (await api.patch(`/teachers/${teacherId}/availability/${id}`, payload)).data,
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["teacher-availability", v.teacherId] });
+      qc.invalidateQueries({ queryKey: ["teacher-load", v.teacherId] });
+    },
   });
 }
 
@@ -105,6 +139,7 @@ export function useReassignTeacher() {
         .data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["teacher-assignments"] });
+      qc.invalidateQueries({ queryKey: ["teacher-load"] });
       qc.invalidateQueries({ queryKey: ["schedules"] });
       qc.invalidateQueries({ queryKey: ["course-teachers"] });
       qc.invalidateQueries({ queryKey: ["courses"] });

@@ -84,10 +84,35 @@ def test_qualifications_are_not_set_on_a_non_teacher(client, world):
     assert res.status_code == 400
 
 
-def test_a_teacher_may_not_read_qualifications(client, world):
+def test_a_teacher_can_read_and_update_own_languages(client, world, db):
     headers = auth(client, "teacher_a@test.com")
-    res = client.get(f"/teachers/{world['teacher_a'].id}/languages", headers=headers)
+    teacher_id = world["teacher_a"].id
+    language_id = db.scalar(select(Language.id))
+
+    res = client.put(
+        f"/teachers/{teacher_id}/languages",
+        headers=headers,
+        json={"language_ids": [language_id]},
+    )
+    assert res.status_code == 200
+
+    listed = client.get(f"/teachers/{teacher_id}/languages", headers=headers)
+    assert res.status_code == 200
+    assert [r["language_id"] for r in listed.json()] == [language_id]
+
+
+def test_a_teacher_cannot_modify_another_teachers_languages(client, world):
+    headers = auth(client, "teacher_a@test.com")
+    other_teacher_id = world["teacher_b"].id
+    res = client.put(
+        f"/teachers/{other_teacher_id}/languages",
+        headers=headers,
+        json={"language_ids": []},
+    )
     assert res.status_code == 403
+
+    res_get = client.get(f"/teachers/{other_teacher_id}/languages", headers=headers)
+    assert res_get.status_code == 403
 
 
 # ---------------- Availability windows ----------------
@@ -136,14 +161,26 @@ def test_a_window_of_another_teacher_is_not_deletable_through_the_wrong_path(
     assert res.status_code == 404
 
 
-def test_a_teacher_may_not_write_their_own_availability(client, world):
-    headers = auth(client, "teacher_a@test.com")
-    res = client.post(
-        f"/teachers/{world['teacher_a'].id}/availability",
-        headers=headers,
+def test_a_teacher_can_write_own_availability_but_not_others(client, world):
+    headers_a = auth(client, "teacher_a@test.com")
+    teacher_a_id = world["teacher_a"].id
+    teacher_b_id = world["teacher_b"].id
+
+    # Teacher A writes own availability -> 201 CREATED
+    res_own = client.post(
+        f"/teachers/{teacher_a_id}/availability",
+        headers=headers_a,
         json={"day_of_week": 2, "start_time": "08:00", "end_time": "12:00"},
     )
-    assert res.status_code == 403
+    assert res_own.status_code == 201
+
+    # Teacher A attempts to write Teacher B's availability -> 403 FORBIDDEN
+    res_other = client.post(
+        f"/teachers/{teacher_b_id}/availability",
+        headers=headers_a,
+        json={"day_of_week": 2, "start_time": "08:00", "end_time": "12:00"},
+    )
+    assert res_other.status_code == 403
 
 
 def test_qualifications_are_replaced_not_appended(client, world, db):
@@ -170,3 +207,62 @@ def test_qualifications_are_replaced_not_appended(client, world, db):
         select(TeacherLanguage).where(TeacherLanguage.teacher_id == teacher_id)
     ).all()
     assert [r.language_id for r in rows] == [other.id]
+
+
+def test_teacher_availability_exceeding_max_weekly_hours_raises_422(client, world):
+    headers = auth(client, "teacher_a@test.com")
+    teacher_id = world["teacher_a"].id
+
+    # 5 days x 9 hours = 45 hours (exceeds default cap of 40h) -> 422
+    payload = [
+        {"day_of_week": dow, "start_time": "08:00", "end_time": "17:00"}
+        for dow in range(5)
+    ]
+    res = client.put(
+        f"/teachers/{teacher_id}/availability",
+        headers=headers,
+        json=payload,
+    )
+    assert res.status_code == 422
+    assert "excede el límite" in res.json()["detail"]
+
+
+def test_teacher_availability_schedule_conflict_raises_422(client, world):
+    headers = auth(client, "teacher_a@test.com")
+    teacher_id = world["teacher_a"].id
+
+    # Overlapping availability windows on the same day -> 422
+    payload = [
+        {"day_of_week": 0, "start_time": "08:00", "end_time": "12:00"},
+        {"day_of_week": 0, "start_time": "10:00", "end_time": "14:00"},
+    ]
+    res = client.put(
+        f"/teachers/{teacher_id}/availability",
+        headers=headers,
+        json=payload,
+    )
+    assert res.status_code == 422
+    assert "Conflicto de horario" in res.json()["detail"]
+
+
+def test_releasing_availability_with_assigned_class_raises_warning_409(client, world, db):
+    headers = auth(client, "teacher_a@test.com")
+    teacher_id = world["teacher_a"].id
+
+    # Create an availability window matching teacher_a's schedule_a
+    avail = TeacherAvailability(
+        teacher_id=teacher_id,
+        day_of_week=world["schedule_a"].day_of_week,
+        start_time=world["schedule_a"].start_time,
+        end_time=world["schedule_a"].end_time,
+    )
+    db.add(avail)
+    db.flush()
+
+    # Attempting to delete this availability window must raise HTTP 409 warning
+    res = client.delete(
+        f"/teachers/{teacher_id}/availability/{avail.id}",
+        headers=headers,
+    )
+    assert res.status_code == 409
+    assert "Advertencia" in res.json()["detail"]

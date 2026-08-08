@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { DashboardSummary } from "../types";
+import type { AcademyKpis, DashboardSummary } from "../types";
 
 /**
  * The caller's tray of things waiting on them.
@@ -14,5 +14,12 @@ export const useDashboard = () =>
   useQuery({
     queryKey: ["dashboard"],
     queryFn: async () => (await api.get<DashboardSummary>("/dashboard")).data,
+    staleTime: 30_000,
+  });
+
+export const useExecutiveKpis = () =>
+  useQuery({
+    queryKey: ["executive-kpis"],
+    queryFn: async () => (await api.get<AcademyKpis>("/dashboard/executive-kpis")).data,
     staleTime: 30_000,
   });

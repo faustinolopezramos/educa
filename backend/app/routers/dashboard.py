@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import User
-from app.schemas.dashboard import DashboardSummaryRead
-from app.services.dashboard import build_summary
+from app.schemas.dashboard import AcademyKpisRead, DashboardSummaryRead
+from app.services.dashboard import build_executive_kpis, build_summary
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -24,3 +24,12 @@ def get_dashboard(
     simply gets no money item rather than a 403 on their own home screen.
     """
     return DashboardSummaryRead.model_validate(build_summary(db, current_user))
+
+
+@router.get("/executive-kpis", response_model=AcademyKpisRead)
+def get_executive_kpis(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AcademyKpisRead:
+    """Retorna las métricas clave ejecutivas de la academia (KPIs)."""
+    return AcademyKpisRead.model_validate(build_executive_kpis(db, current_user))

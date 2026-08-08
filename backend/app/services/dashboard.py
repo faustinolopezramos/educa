@@ -155,6 +155,12 @@ def _academy_kpis(db: DbSession, user: User, course_ids: list[int]) -> AcademyKp
     return kpis
 
 
+def build_executive_kpis(db: DbSession, user: User) -> AcademyKpis:
+    """Función dedicada para compilar las métricas clave ejecutivas de la academia."""
+    course_ids = tenant_course_ids(db, user)
+    return _academy_kpis(db, user, course_ids)
+
+
 def _past_unregistered(db: DbSession, course_ids: list[int], since: date) -> int:
     """Classes whose date has passed and whose register was never closed.
 

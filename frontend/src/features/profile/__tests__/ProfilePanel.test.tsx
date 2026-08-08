@@ -45,6 +45,41 @@ describe("ProfilePanel", () => {
       isLoading: false,
       error: null,
     } as any);
+
+    vi.mocked(queries.useTeacherLanguages).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as any);
+
+    vi.mocked(queries.useLanguages).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as any);
+
+    vi.mocked(queries.useSetTeacherLanguages).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as any);
+
+    vi.mocked(queries.useTeacherAvailability).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as any);
+
+    vi.mocked(queries.useTeacherLoad).mockReturnValue({
+      data: { assigned_hours: 0, max_hours: 40, percentage: 0 },
+      isLoading: false,
+    } as any);
+
+    vi.mocked(queries.useAddAvailability).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as any);
+
+    vi.mocked(queries.useDeleteAvailability).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as any);
   });
 
   it("renders the current user's details", () => {

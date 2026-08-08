@@ -285,3 +285,17 @@ def test_the_teachers_pending_tray_counts_open_registers_not_unmarked_ones(
         (i["count"] for i in after["items"] if i["kind"] == "unregistered_sessions"), 0
     )
     assert pending_after == pending_before - 1
+
+
+def test_assigned_teacher_can_close_own_register(client, db, world, session_a):
+    """Un profesor asignado a la franja puede cerrar la lista de su propia sesión."""
+    teacher = auth(client, "teacher_a@test.com")
+    _mark(
+        client,
+        teacher,
+        enrollment_id=world["enrollment"].id,
+        session_id=session_a.id,
+    )
+    res = client.post(f"/sessions/{session_a.id}/close-register", headers=teacher)
+    assert res.status_code == 200
+    assert res.json()["register_closed_at"] is not None

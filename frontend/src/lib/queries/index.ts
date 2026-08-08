@@ -1,4 +1,4 @@
-export { useDashboard } from "./dashboard";
+export { useDashboard, useExecutiveKpis } from "./dashboard";
 export {
   useAttendance,
   useVisibleAttendance,
@@ -119,8 +119,10 @@ export {
   useTeacherLanguages,
   useSetTeacherLanguages,
   useTeacherAvailability,
+  useTeacherLoad,
   useAddAvailability,
   useDeleteAvailability,
+  usePatchAvailability,
   useTeacherAssignments,
   useReassignTeacher,
 } from "./teachers";

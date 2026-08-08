@@ -330,6 +330,8 @@ def delete_meeting(
 
 # How early a student may step into the room before the class starts.
 LOBBY_EARLY_ACCESS_MINUTES = 15
+# How long after the class ends the student link remains active for Q&A / wrap-up.
+LOBBY_LATE_ACCESS_MINUTES = 15
 
 
 def lobby_access(
@@ -369,9 +371,7 @@ def lobby_access(
             minutes_remaining=minutes_remaining,
         )
 
-    # Students get a window bounded at *both* ends. Only checking "has it nearly
-    # started?" was also true forever afterwards, which left the link live long
-    # after the class — and after the term.
+    # Students get a window bounded at *both* ends (15m before start up to 15m after end).
     if now_dt < start_dt - timedelta(minutes=LOBBY_EARLY_ACCESS_MINUTES):
         return LobbyJoinInfo(
             can_join=False,
@@ -381,12 +381,22 @@ def lobby_access(
             ),
             minutes_remaining=minutes_remaining,
         )
-    if now_dt > end_dt:
+    if now_dt > end_dt + timedelta(minutes=LOBBY_LATE_ACCESS_MINUTES):
         return LobbyJoinInfo(
             can_join=False,
             reason="Esta clase ya terminó.",
             minutes_remaining=0,
         )
+    
+    # Grace period after end_dt (within 15 minutes after class ended)
+    if now_dt > end_dt:
+        return LobbyJoinInfo(
+            join_url=join_url,
+            can_join=True,
+            reason="La clase finalizó, pero el enlace sigue activo durante el período de gracia (15 min).",
+            minutes_remaining=0,
+        )
+
     return LobbyJoinInfo(
         join_url=join_url,
         can_join=True,

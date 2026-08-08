@@ -217,6 +217,7 @@ function InPersonClass({
 }
 
 // The host (teacher) opens the room and starts the class — enabled early so they
+// The host (teacher) opens the room and starts the class — enabled early so they
 // can prep, and it records the session as held plus the day's topic.
 function HostPanel({
   session,
@@ -238,9 +239,6 @@ function HostPanel({
   const startIso = schedule
     ? new Date(sessionStart(session.date, schedule.start_time)).toISOString()
     : session.date;
-  // `needsLink`, no `=== "virtual"`: una clase semi presencial también tiene
-  // sala, y preguntando sólo por virtual el anfitrión de una híbrida se quedaba
-  // sin enlace al que entrar — y sin el aviso de que faltaba.
   const wantsLink = schedule ? needsLink(schedule.modality) : false;
   const joinUrl =
     lobbyInfo?.host_url ??
@@ -248,6 +246,7 @@ function HostPanel({
     (wantsLink ? (schedule?.join_url ?? null) : null);
   const missingLink = wantsLink && !joinUrl;
   const overdue = remaining <= 0;
+  const isGracePeriod = lobbyInfo?.reason?.includes("gracia") ?? false;
 
   if (session.status === "cancelled") {
     return (
@@ -292,8 +291,6 @@ function HostPanel({
         <div className="text-sm text-slate-500">
           Tu clase · inicio {formatDateTime(startIso)}
         </div>
-        {/* La modalidad, por su nombre. Escrito como `virtual ? … : …` una
-            semi presencial se anunciaba al profesor como "Presencial". */}
         {schedule && (
           <Badge color={modalityColor(schedule.modality)}>
             {modalityLabel(schedule.modality)}
@@ -302,9 +299,31 @@ function HostPanel({
       </div>
 
       <div className="my-5">
-        {started ? (
-          <div className="font-serif text-2xl font-medium text-green-700">
-            La clase está en curso
+        {isGracePeriod ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center gap-2 font-serif text-lg font-bold text-amber-900">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+              </span>
+              Período de Gracia Post-Clase (15 min)
+            </div>
+            <p className="mt-1 text-xs text-amber-800">
+              La hora lectiva ha concluido, pero la sala permanece abierta para atenciones finales o consultas.
+            </p>
+          </div>
+        ) : started ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex items-center gap-2 font-serif text-xl font-bold text-emerald-800">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              La clase está en curso
+            </div>
+            <p className="mt-1 text-xs text-emerald-700">
+              Los alumnos ya pueden conectarse a la sala virtual.
+            </p>
           </div>
         ) : overdue ? (
           <div className="font-serif text-2xl font-medium text-slate-900">
@@ -320,20 +339,20 @@ function HostPanel({
         )}
       </div>
 
-      {started ? (
+      {started || isGracePeriod ? (
         <>
           <ul className="mb-5 space-y-2.5">
             <CheckItem done label="Sesión marcada como dada" />
             <CheckItem done={!!topic.trim()} label={topic.trim() ? `Tema: ${topic.trim()}` : "Sin tema anotado"} pending />
           </ul>
           {joinUrl && (
-            <Button className="w-full" onClick={openRoom}>
-              Volver a abrir la sala →
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl shadow-sm transition" onClick={openRoom}>
+              {isGracePeriod ? "Acceder a Sala de Consulta (Gracia) →" : "Volver a abrir la sala →"}
             </Button>
           )}
           <Link
             to="/"
-            className="mt-2 block w-full rounded-xl bg-slate-50 px-3 py-3 text-center text-sm font-semibold text-brand-700 transition hover:bg-slate-100"
+            className="mt-2 block w-full rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-800 transition hover:bg-slate-200"
           >
             Pasar lista y calificar →
           </Link>
@@ -368,7 +387,7 @@ function HostPanel({
           ) : (
             <>
               <Button
-                className="w-full"
+                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-3 rounded-xl shadow-md transition"
                 disabled={update.isPending}
                 onClick={start}
               >
@@ -407,29 +426,59 @@ function StudentPanel({
   const startIso = schedule
     ? new Date(sessionStart(session.date, schedule.start_time)).toISOString()
     : session.date;
-  // The lobby endpoint is the only source of the link for a student: it is what
-  // enforces the class window server-side. Falling back to `schedule.join_url`
-  // used to hand the link over regardless of the hour — and the backend no
-  // longer sends that field to students anyway. No lobby answer yet means "not
-  // allowed in", never "let them in".
   const joinUrl = lobbyInfo?.join_url ?? null;
   const canJoin = lobbyInfo?.can_join ?? false;
+  const isGracePeriod = lobbyInfo?.reason?.includes("gracia") ?? false;
 
   return (
     <Card>
       <div className="text-sm text-slate-500">Tu clase · inicio {formatDateTime(startIso)}</div>
       <div className="my-5">
-        {canJoin ? (
-          <div className="font-serif text-2xl font-medium text-green-700">
-            La sala está lista
+        {isGracePeriod ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center gap-2 font-serif text-lg font-bold text-amber-900">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+              </span>
+              Período de Gracia Post-Clase (15 min)
+            </div>
+            <p className="mt-1 text-xs text-amber-800">
+              La clase finalizó, pero el enlace sigue activo para consultas o descarga de material.
+            </p>
           </div>
-        ) : (
+        ) : canJoin ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex items-center gap-2 font-serif text-xl font-bold text-emerald-800">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              La sala está abierta
+            </div>
+            <p className="mt-1 text-xs text-emerald-700">
+              ¡El profesor ha abierto el aula virtual! Puedes ingresar ahora.
+            </p>
+          </div>
+        ) : remaining > 0 ? (
           <>
             <div className="text-xs uppercase tracking-wide text-slate-400">
               Empieza en
             </div>
             <Countdown ms={remaining} />
+            <p className="mt-2 text-xs text-slate-500">
+              El enlace se habilitará 15 minutos antes de la hora de inicio.
+            </p>
           </>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-serif text-xl font-bold text-slate-700">
+              Clase Concluida
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Esta clase ya terminó y su período de gracia de 15 minutos ha expirado.
+            </p>
+          </div>
         )}
       </div>
 
@@ -439,7 +488,13 @@ function StudentPanel({
         <CheckItem done={avReady} label="Micrófono con señal" />
         <CheckItem
           done={canJoin}
-          label={canJoin ? "La sala está abierta" : "El profesor abrirá la sala en breve"}
+          label={
+            isGracePeriod
+              ? "Enlace extendido activo (15 min gracia)"
+              : canJoin
+                ? "La sala está abierta"
+                : "El profesor abrirá la sala 15 min antes"
+          }
           pending
         />
       </ul>
@@ -464,10 +519,12 @@ function StudentPanel({
           href={canJoin && avReady ? joinUrl : undefined}
           target="_blank"
           rel="noreferrer"
-          className={`block w-full rounded-xl px-3 py-3 text-center text-sm font-semibold transition ${
+          className={`block w-full rounded-xl px-4 py-3.5 text-center text-sm font-bold shadow-md transition ${
             canJoin && avReady
-              ? "bg-brand-600 text-white hover:bg-brand-700"
-              : "cursor-not-allowed bg-slate-200 text-slate-400"
+              ? isGracePeriod
+                ? "bg-amber-600 text-white hover:bg-amber-700"
+                : "bg-emerald-600 text-white hover:bg-emerald-700"
+              : "cursor-not-allowed bg-slate-200 text-slate-400 shadow-none"
           }`}
           onClick={(e) => {
             if (!(canJoin && avReady)) e.preventDefault();
@@ -475,14 +532,14 @@ function StudentPanel({
         >
           {!avReady
             ? "Prueba tu cámara y micrófono primero"
-            : canJoin
-              ? "Entrar a la clase →"
-              : "Disponible al iniciar"}
+            : isGracePeriod
+              ? "Entrar a Sala de Consulta (Período Gracia) →"
+              : canJoin
+                ? "Entrar a la Clase Virtual →"
+                : "Disponible 15 min antes del inicio"}
         </a>
       ) : (
         <p className="rounded-xl bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">
-          {/* Una presencial ya no llega hasta aquí: tiene su propia pantalla.
-              Lo que queda es virtual o semi presencial sin enlace todavía. */}
           El profesor aún no ha publicado el enlace de la clase.
         </p>
       )}

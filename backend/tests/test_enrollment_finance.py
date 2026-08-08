@@ -57,10 +57,12 @@ def test_registering_a_payment_reduces_the_balance(client, world):
             "enrollment_id": enrollment["id"],
             "kind": "payment",
             "amount": 100.0,
-            "method": "efectivo",
+            "method": "transfer",
+            "receipt_number": "BOL-987654",
         },
     )
     assert res.status_code == 201, res.text
+    assert res.json()["receipt_number"] == "BOL-987654"
 
     ledger = client.get(f"/enrollments/{enrollment['id']}/ledger", headers=admin).json()
     assert ledger["charged"] == 300.0

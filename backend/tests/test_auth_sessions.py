@@ -201,3 +201,11 @@ def test_burning_the_refresh_budget_does_not_lock_you_out_of_login(client, world
         "/auth/login", data={"username": "student@test.com", "password": "secret123"}
     )
     assert res.status_code == 200
+
+
+def test_revoke_other_sessions(client, world):
+    student = auth(client, "student@test.com")
+    res = client.post("/auth/revoke-other-sessions", headers=student)
+    assert res.status_code == 200, res.text
+    assert "message" in res.json()
+

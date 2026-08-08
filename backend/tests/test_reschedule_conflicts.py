@@ -75,3 +75,40 @@ def test_a_free_date_still_reschedules(db, world):
 
     assert makeup.origin_session_id == session.id
     assert session.status.value == "cancelled"
+
+
+def test_reschedule_fails_with_409_on_teacher_schedule_conflict(client, db, world):
+    """Rescheduling via API returns HTTP 409 'Conflicto de horario detectado' when the teacher has a clash."""
+    from tests.conftest import auth
+
+    teacher = world["teacher_a"]
+    course_b = world["course_b"]
+    db.add(CourseTeacher(course_id=course_b.id, teacher_id=teacher.id))
+    db.flush()
+
+    course_a = world["course_a"]
+    other = Schedule(
+        course_id=course_b.id,
+        teacher_id=teacher.id,
+        day_of_week=4,
+        start_time=world["schedule_a"].start_time,
+        end_time=world["schedule_a"].end_time,
+        term_start=course_a.start_date,
+        term_end=course_a.end_date,
+    )
+    db.add(other)
+    db.flush()
+
+    session = ClassSession(schedule_id=world["schedule_a"].id, date=_next_weekday(0))
+    db.add(session)
+    db.flush()
+
+    target_friday = _next_weekday(4)
+    headers = auth(client, "teacher_a@test.com")
+    res = client.post(
+        f"/sessions/{session.id}/reschedule",
+        headers=headers,
+        json={"new_date": target_friday.isoformat()},
+    )
+    assert res.status_code == 409
+    assert "Conflicto de horario detectado" in res.json()["detail"]

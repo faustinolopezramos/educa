@@ -26,6 +26,7 @@ from app.models import (
     Schedule,
     SessionStatus,
 )
+from app.services.scheduling import teacher_available
 
 
 def _tenant_of(db: Session, schedule: Schedule | None) -> int | None:
@@ -239,6 +240,19 @@ def reschedule_session(
 
     if schedule:
         if schedule.teacher_id:
+            # 1. Validate that the teacher is available on the new weekday/time
+            if not teacher_available(
+                db,
+                schedule.teacher_id,
+                new_date.weekday(),
+                schedule.start_time,
+                schedule.end_time,
+            ):
+                raise ValueError(
+                    "Conflicto de horario detectado: el profesor no tiene disponibilidad en ese horario en esa fecha"
+                )
+
+            # 2. Validate that no other weekly schedule of the teacher clashes
             teacher_conflict = db.scalar(
                 select(Schedule.id).where(
                     Schedule.teacher_id == schedule.teacher_id,
@@ -252,7 +266,7 @@ def reschedule_session(
             )
             if teacher_conflict:
                 raise ValueError(
-                    "El profesor ya tiene otra clase en ese horario en esa fecha"
+                    "Conflicto de horario detectado: el profesor ya tiene otra clase en ese horario en esa fecha"
                 )
 
         if schedule.room_id:
@@ -292,7 +306,7 @@ def reschedule_session(
                 continue
             if schedule.teacher_id and other_schedule.teacher_id == schedule.teacher_id:
                 raise ValueError(
-                    "El profesor ya tiene otra clase en ese horario en esa fecha"
+                    "Conflicto de horario detectado: el profesor ya tiene otra clase en ese horario en esa fecha"
                 )
             if schedule.room_id and other_schedule.room_id == schedule.room_id:
                 raise ValueError("El aula ya está ocupada en ese horario en esa fecha")

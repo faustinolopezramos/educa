@@ -51,12 +51,17 @@ def test_the_link_stays_live_during_the_class():
     assert info.can_join is True
 
 
-def test_the_link_dies_when_the_class_ends():
-    """The regression: `seconds_until_start <= 15*60` was also true here."""
-    info = _at(END + timedelta(minutes=1))
-    assert info.can_join is False
-    assert info.join_url is None
-    assert "terminó" in info.reason
+def test_the_link_stays_live_during_grace_period_and_dies_afterwards():
+    """Students retain access for 15 minutes after class end (grace period)."""
+    grace_period = _at(END + timedelta(minutes=10))
+    assert grace_period.can_join is True
+    assert grace_period.join_url == "https://zoom.us/j/CLASS"
+    assert "gracia" in (grace_period.reason or "").lower()
+
+    after_grace = _at(END + timedelta(minutes=LOBBY_EARLY_ACCESS_MINUTES + 1))
+    assert after_grace.can_join is False
+    assert after_grace.join_url is None
+    assert "terminó" in (after_grace.reason or "")
 
     much_later = _at(END + timedelta(days=90))
     assert much_later.can_join is False

@@ -94,3 +94,13 @@ class TeacherLiveAssignment(BaseModel):
     course_id: int
     course_name: str
     schedule_count: int
+
+
+class TeacherLoadRead(BaseModel):
+    """Weekly teaching load metrics for a teacher."""
+
+    teacher_id: int
+    assigned_hours: float
+    availability_hours: float
+    max_hours: float
+    percentage: float

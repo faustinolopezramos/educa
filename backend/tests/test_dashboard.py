@@ -263,3 +263,15 @@ def test_a_teacher_is_never_handed_the_admin_queues(client, db, world):
     kinds = _kinds(client, auth(client, "teacher_a@test.com"))
     assert "overdue_enrollments" not in kinds
     assert "courses_nearly_full" not in kinds
+
+
+def test_get_executive_kpis(client, world):
+    admin = auth(client, "admin@test.com")
+    res = client.get("/dashboard/executive-kpis", headers=admin)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert "active_courses" in data
+    assert "active_students" in data
+    assert "active_teachers" in data
+    assert "occupancy_rate" in data
+

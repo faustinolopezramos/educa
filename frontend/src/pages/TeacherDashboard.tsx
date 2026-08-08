@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { ActionTray } from "../components/ActionTray";
+import { ConfirmCloseModal, type UnmarkedStudent } from "../components/ConfirmCloseModal";
 import { PromptModal } from "../components/PromptModal";
 import {
   Badge,
@@ -21,11 +22,11 @@ import {
   IconBook,
   IconCalendar,
   IconCheck,
-  IconClock,
   IconLock,
   IconUsers,
 } from "../components/icons";
 import { GradeTable } from "../features/grades/GradeTable";
+import { GroupedClassesList } from "../features/classes/GroupedClassesList";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
@@ -35,8 +36,6 @@ import { absenceStreak, attendancePct, marksOf } from "../lib/attendance";
 import { holdsSeat } from "../lib/enrollment";
 import {
   MODALITY_LABELS,
-  courseModality,
-  courseModalityLabel,
   dayName,
   formatTime,
   modalityColor,
@@ -57,8 +56,6 @@ import {
   useEnsureSession,
   useGenerateSessions,
   useGrades,
-  useLanguages,
-  useLevels,
   useLocationProposals,
   useProposeLocation,
   useReopenRegister,
@@ -135,17 +132,6 @@ function pickFeatured(schedules: Schedule[]): FeaturedSchedule | null {
   return { s: upcoming, when: dayName(upcoming.day_of_week), live: false };
 }
 
-// Same ordering for the picker list: this week's classes in the order they
-// actually happen, starting from today.
-function sortByUpcoming(schedules: Schedule[]): Schedule[] {
-  const today = localDow();
-  return [...schedules].sort((a, b) => {
-    const da = (a.day_of_week - today + 7) % 7;
-    const db = (b.day_of_week - today + 7) % 7;
-    return da - db || a.start_time.localeCompare(b.start_time);
-  });
-}
-
 export default function TeacherDashboard() {
   const [params] = useSearchParams();
   const section = params.get("m") ?? "clases";
@@ -160,137 +146,40 @@ export default function TeacherDashboard() {
 function ClassesView() {
   const { data: schedules = [] } = useSchedules(true);
   const { data: courses = [] } = useCourses();
-  const { data: languages = [] } = useLanguages();
-  const { data: levels = [] } = useLevels();
   const [selected, setSelected] = useState<Schedule | null>(null);
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
 
-  const courseLanguageName = (id: number) => {
-    const course = courses.find((c) => c.id === id);
-    if (!course) return "";
-    const level = levels.find((l) => l.id === course.level_id);
-    if (!level) return "";
-    const lang = languages.find((g) => g.id === level.language_id);
-    return lang ? lang.name : "";
-  };
-
   const featured = useMemo(() => pickFeatured(schedules), [schedules]);
-  const orderedSchedules = useMemo(() => sortByUpcoming(schedules), [schedules]);
-  const todayDow = localDow();
 
-  // Land on the class that is happening now (or next), not on whichever one
-  // the API happened to return first.
   useEffect(() => {
     if (!selected && featured) setSelected(featured.s);
   }, [featured, selected]);
 
-  // A course with a Nocturna jornada is two weekly slots, so counting rows here
-  // told a teacher they had twice the courses they teach. Group by course: the
-  // heading counts courses, the rows stay the slots you actually stand up for.
-  const byCourse = useMemo(() => {
-    const groups = new Map<number, Schedule[]>();
-    for (const s of orderedSchedules) {
-      const list = groups.get(s.course_id) ?? [];
-      list.push(s);
-      groups.set(s.course_id, list);
-    }
-    return [...groups.entries()];
-  }, [orderedSchedules]);
-
   return (
-    <div>
-      <PageHeader title="Mis clases" />
+    <div className="space-y-6">
+      <PageHeader
+        title="Mis Clases"
+        description="Gestión jerárquica de clases en vivo, próximas y realizadas."
+      />
 
-      {/* Classes whose register was never taken, and proposals still waiting on
-          dirección. Both were invisible until a teacher went looking. */}
       <ActionTray emptyMessage="No tienes clases pendientes de registrar." />
 
       <NowBar featured={featured} courseName={courseName} onGo={(s) => setSelected(s)} />
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        {/* Left: Schedule Selector List */}
-        <Card className="lg:col-span-1">
-          <SectionHeading>
-            {byCourse.length === 1 ? "1 curso asignado" : `${byCourse.length} cursos asignados`}
-          </SectionHeading>
-          {schedules.length === 0 ? (
-            <EmptyState
-              icon={<IconClock className="h-5 w-5" />}
-              title="Sin horarios asignados"
-              message="Cuando dirección te asigne un curso, tus clases aparecerán aquí."
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Left: Grouped Session List */}
+        <div className="lg:col-span-1">
+          <Card>
+            <SectionHeading>Agenda de Clases</SectionHeading>
+            <GroupedClassesList
+              selectedSchedule={selected}
+              onSelectSchedule={(s) => setSelected(s)}
             />
-          ) : (
-            <div className="space-y-4">
-              {byCourse.map(([courseId, slots]) => (
-                <div key={courseId}>
-                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
-                    <div className="min-w-0 flex items-center gap-1.5">
-                      {courseLanguageName(courseId) && (
-                        <Badge color="indigo">{courseLanguageName(courseId)}</Badge>
-                      )}
-                      <span className="truncate text-sm font-semibold text-slate-900">
-                        {courseName(courseId)}
-                      </span>
-                    </div>
-                    <div className="flex flex-none items-center gap-1.5">
-                      {/* La modalidad del curso, no la de cada franja. Con dos
-                          franjas iguales repetir la etiqueta en cada fila no
-                          dice nada; cuando difieren, «mixta» es justo el aviso
-                          que el profesor necesita antes de abrir una. */}
-                      {(() => {
-                        const cm = courseModality(slots);
-                        return cm ? (
-                          <Badge color={modalityColor(cm)}>
-                            {courseModalityLabel(cm)}
-                          </Badge>
-                        ) : null;
-                      })()}
-                      {slots.length > 1 && (
-                        <span className="text-2xs text-slate-400">
-                          {slots.length} franjas
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    {slots.map((s) => {
-                      const isActive = selected?.id === s.id;
-                      const isToday = s.day_of_week === todayDow;
-                      return (
-                        <button
-                          key={s.id}
-                          onClick={() => setSelected(s)}
-                          aria-current={isActive ? "true" : undefined}
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg border p-2.5 text-left transition-colors ${
-                            isActive
-                              ? "border-brand-500 bg-brand-50"
-                              : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                        >
-                          <span className="tabular min-w-0 truncate text-xs text-slate-600">
-                            {isToday ? (
-                              <span className="font-semibold text-brand-700">Hoy</span>
-                            ) : (
-                              dayName(s.day_of_week)
-                            )}
-                            {" · "}
-                            {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                          </span>
-                          <Badge color={modalityColor(s.modality)}>
-                            {modalityLabel(s.modality)}
-                          </Badge>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+          </Card>
+        </div>
 
-        {/* Right: Selected Class Management Workspace */}
+        {/* Right: Selected Class Workspace */}
         <div className="lg:col-span-2">
           {selected ? (
             <ClassDetail schedule={selected} courseName={courseName(selected.course_id)} />
@@ -299,7 +188,7 @@ function ClassesView() {
               <EmptyState
                 icon={<IconBook className="h-5 w-5" />}
                 title="Selecciona una clase"
-                message="Elige un horario de la izquierda para pasar lista, calificar y fijar la ubicación."
+                message="Elige una clase de la agenda para pasar lista, calificar y fijar la ubicación."
               />
             </Card>
           )}
@@ -866,6 +755,10 @@ function SessionSheet({
     }
   }
 
+  const unmarkedStudents: UnmarkedStudent[] = enrollments
+    .filter((e) => !markBySession.has(e.id))
+    .map((e) => ({ id: e.id, name: studentName(e.student_id) }));
+
   return (
     <div className="space-y-3">
       <RegisterBar
@@ -875,6 +768,7 @@ function SessionSheet({
         closed={closed}
         sessionId={sessionId}
         busy={markingAll}
+        unmarkedStudents={unmarkedStudents}
         onMarkAll={markEveryonePresent}
       />
 
@@ -933,6 +827,7 @@ function RegisterBar({
   closed,
   sessionId,
   busy,
+  unmarkedStudents = [],
   onMarkAll,
 }: {
   marked: number;
@@ -941,37 +836,41 @@ function RegisterBar({
   closed: boolean;
   sessionId: number;
   busy: boolean;
+  unmarkedStudents?: UnmarkedStudent[];
   onMarkAll: () => void;
 }) {
   const close = useCloseRegister();
   const reopen = useReopenRegister();
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const complete = marked === total;
 
   function closeRegister(force: boolean) {
     close.mutate(
       { id: sessionId, force },
       {
-        onSuccess: () => notify("Lista cerrada", "success"),
+        onSuccess: () => {
+          setShowConfirmModal(false);
+          notify("Lista cerrada correctamente", "success");
+        },
         onError: (error) => {
           const detail = apiErrorDetail(error);
-          if (detail?.reason === "incomplete_register") {
-            // La API dice cuántos faltan; preguntamos con ese número delante en
-            // lugar de repetir el rechazo sin salida.
-            const missing = Number(detail.total) - Number(detail.marked);
-            if (
-              window.confirm(
-                `Faltan ${missing} de ${detail.total} alumnos por marcar. ` +
-                  "¿Cerrar la lista de todos modos?",
-              )
-            ) {
-              closeRegister(true);
-            }
+          if (detail?.reason === "incomplete_register" && !force) {
+            closeRegister(true);
             return;
           }
           onMutationError("No se pudo cerrar la lista")(error);
         },
       },
     );
+  }
+
+  function handleCloseClick() {
+    setShowConfirmModal(true);
+  }
+
+  function handleConfirmClose() {
+    const force = unmarkedStudents.length > 0;
+    closeRegister(force);
   }
 
   if (closed) {
@@ -999,38 +898,49 @@ function RegisterBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="secondary" disabled={busy || complete} onClick={onMarkAll}>
-          {busy ? "Marcando…" : "Marcar todos presentes"}
-        </Button>
-        <Button
-          disabled={close.isPending || marked === 0}
-          onClick={() => closeRegister(false)}
-        >
-          {close.isPending ? "Cerrando…" : "Cerrar lista"}
-        </Button>
-      </div>
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" disabled={busy || complete} onClick={onMarkAll}>
+            {busy ? "Marcando…" : "Marcar todos presentes"}
+          </Button>
+          <Button
+            disabled={close.isPending}
+            onClick={handleCloseClick}
+          >
+            {close.isPending ? "Cerrando…" : "Cerrar lista"}
+          </Button>
+        </div>
 
-      <div className="flex items-center gap-2.5">
-        <span className="tabular text-xs font-medium text-slate-600">
-          {marked} de {total}
-        </span>
-        <div
-          className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"
-          role="progressbar"
-          aria-valuenow={pct}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label="Asistencia registrada"
-        >
+        <div className="flex items-center gap-2.5">
+          <span className="tabular text-xs font-medium text-slate-600">
+            {marked} de {total}
+          </span>
           <div
-            className={`h-full transition-all ${complete ? "bg-emerald-600" : "bg-brand-500"}`}
-            style={{ width: `${pct}%` }}
-          />
+            className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Asistencia registrada"
+          >
+            <div
+              className={`h-full transition-all ${complete ? "bg-emerald-600" : "bg-brand-500"}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
         </div>
       </div>
-    </div>
+
+      <ConfirmCloseModal
+        isOpen={showConfirmModal}
+        unmarkedStudents={unmarkedStudents}
+        totalStudents={total}
+        isPending={close.isPending}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={handleConfirmClose}
+      />
+    </>
   );
 }
 

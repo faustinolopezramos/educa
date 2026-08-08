@@ -2,7 +2,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
 import { ActionTray } from "../../components/ActionTray";
-import { AcademyKpis } from "./AcademyKpis";
+import { ExecutiveKpiCard } from "./ExecutiveKpiCard";
 import { Button, Card, MetaItem, PageHeader } from "../../components/ui";
 import { useReport } from "../../lib/queries";
 import { canSeeSection } from "../../lib/nav";
@@ -70,7 +70,7 @@ export function InicioPanel() {
         }
       />
 
-      <AcademyKpis />
+      <ExecutiveKpiCard />
 
       <ActionTray emptyMessage="No hay nada pendiente en la academia. Todo al día." />
 
