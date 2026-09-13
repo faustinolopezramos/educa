@@ -46,6 +46,7 @@ from app.schemas.meeting import (
     VirtualMeetingRead,
     VirtualMeetingUpdate,
 )
+from app.services.audit import record, snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,7 @@ def upsert_provider(
     if current_user.tenant_id:
         stmt = stmt.where(MeetingProvider.tenant_id == current_user.tenant_id)
     provider = db.scalar(stmt)
+    before = snapshot(provider) if provider else None
 
     if provider is None:
         provider = MeetingProvider(name=payload.name, tenant_id=current_user.tenant_id)
@@ -137,6 +139,16 @@ def upsert_provider(
     provider.is_active = payload.is_active
     if payload.credentials is not None:
         provider.api_credentials_encrypted = encrypt(json.dumps(payload.credentials))
+    db.flush()
+    record(
+        db,
+        current_user,
+        "update" if before else "create",
+        "meeting_provider",
+        provider.id,
+        before=before,
+        after=snapshot(provider),
+    )
     db.commit()
     db.refresh(provider)
     return provider

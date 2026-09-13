@@ -50,7 +50,15 @@ def test_e2e_teacher_register_close_and_ownership(client, db, world):
     teacher_a_id = world["teacher_a"].id
 
     # Create session for teacher_a's schedule
-    session = ClassSession(schedule_id=world["schedule_a"].id, date=TODAY)
+    sched_a = world["schedule_a"]
+    session = ClassSession(
+        schedule_id=sched_a.id,
+        date=TODAY,
+        teacher_id=sched_a.teacher_id,
+        room_id=sched_a.room_id,
+        start_time=sched_a.start_time,
+        end_time=sched_a.end_time,
+    )
     db.add(session)
     db.flush()
 
@@ -95,7 +103,15 @@ def test_e2e_reschedule_conflict_rejection(client, db, world):
     db.flush()
 
     # Session to reschedule
-    session = ClassSession(schedule_id=world["schedule_a"].id, date=_next_weekday(0))
+    sched_a = world["schedule_a"]
+    session = ClassSession(
+        schedule_id=sched_a.id,
+        date=_next_weekday(0),
+        teacher_id=sched_a.teacher_id,
+        room_id=sched_a.room_id,
+        start_time=sched_a.start_time,
+        end_time=sched_a.end_time,
+    )
     db.add(session)
     db.flush()
 

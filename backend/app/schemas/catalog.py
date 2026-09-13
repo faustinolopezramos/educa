@@ -128,3 +128,19 @@ class CourseStatusRefusal(BaseModel):
     reason: str
     message: str
     blockers: list[str]
+
+
+# ---- Delete Impact ----
+class DeleteImpact(BaseModel):
+    """Cascade delete impact assessment for catalog entities."""
+    can_delete: bool
+    reason: str | None = None
+    levels_count: int = 0
+    courses_count: int = 0
+    enrollments_count: int = 0
+    attendance_count: int = 0
+    grades_count: int = 0
+    certificates_count: int = 0
+    payments_count: int = 0
+    invoices_count: int = 0
+    message: str

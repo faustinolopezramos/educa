@@ -33,13 +33,14 @@ from app.routers import (
 )
 from app.webhooks import router as webhooks
 
-# ---- In-memory rate limiter for login ----
-#
-# NOTE: this counter lives in the process, so N uvicorn workers enforce N times
-# the limit and a restart forgets everything. It raises the cost of online
-# password guessing; it is not a substitute for a shared (Redis) limiter once
-# the API runs on more than one worker.
+# ---- Rate limiter for login & refresh (In-memory or Redis) ----
+from app.core.rate_limiter import MemoryRateLimiter, RedisRateLimiter
+
 _login_attempts: dict[str, list[datetime]] = defaultdict(list)
+_memory_limiter = MemoryRateLimiter(_login_attempts)
+_redis_limiter = RedisRateLimiter(settings.redis_url) if settings.redis_url else None
+_rate_limiter = _redis_limiter if _redis_limiter else _memory_limiter
+
 LOGIN_RATE_LIMIT = 5  # max *failed* attempts
 LOGIN_RATE_WINDOW = 60  # seconds
 
@@ -85,18 +86,8 @@ async def rate_limit_middleware(request: Request, call_next):
         return await call_next(request)
 
     client_ip = _bucket_key(request)
-    now = datetime.now(timezone.utc)
-    window_start = now - timedelta(seconds=LOGIN_RATE_WINDOW)
-    recent = [t for t in _login_attempts[client_ip] if t > window_start]
-    if recent:
-        _login_attempts[client_ip] = recent
-    else:
-        # Nothing left in the window: drop the key instead of leaving an
-        # empty list behind — otherwise every IP that has ever hit
-        # one of these endpoints stays in memory for the life of the process.
-        _login_attempts.pop(client_ip, None)
 
-    if len(recent) >= limit:
+    if _rate_limiter.is_rate_limited(client_ip, limit, LOGIN_RATE_WINDOW):
         from fastapi.responses import JSONResponse
 
         return JSONResponse(
@@ -109,7 +100,7 @@ async def rate_limit_middleware(request: Request, call_next):
     # networks — a classroom behind one NAT address ran out of budget after
     # five students signed in normally.
     if response.status_code == 401:
-        _login_attempts[client_ip].append(now)
+        _rate_limiter.record_failed_attempt(client_ip, LOGIN_RATE_WINDOW)
     return response
 
 

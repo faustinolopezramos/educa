@@ -94,7 +94,14 @@ def generate_sessions(db: Session, schedule: Schedule) -> list[ClassSession]:
     created: list[ClassSession] = []
     for d in dates:
         if d not in existing and d not in holidays:
-            session = ClassSession(schedule_id=schedule.id, date=d)
+            session = ClassSession(
+                schedule_id=schedule.id,
+                date=d,
+                teacher_id=schedule.teacher_id,
+                room_id=schedule.room_id,
+                start_time=schedule.start_time,
+                end_time=schedule.end_time,
+            )
             db.add(session)
             created.append(session)
     if created:
@@ -119,7 +126,14 @@ def ensure_session(db: Session, schedule: Schedule, on: date) -> ClassSession:
         )
     )
     if session is None:
-        session = ClassSession(schedule_id=schedule.id, date=on)
+        session = ClassSession(
+            schedule_id=schedule.id,
+            date=on,
+            teacher_id=schedule.teacher_id,
+            room_id=schedule.room_id,
+            start_time=schedule.start_time,
+            end_time=schedule.end_time,
+        )
         db.add(session)
         db.flush()
     return session
@@ -317,6 +331,10 @@ def reschedule_session(
         schedule_id=session.schedule_id,
         date=new_date,
         origin_session_id=session.id,
+        teacher_id=session.teacher_id,
+        room_id=session.room_id,
+        start_time=session.start_time,
+        end_time=session.end_time,
     )
     db.add(makeup)
     db.flush()

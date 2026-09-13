@@ -22,7 +22,10 @@ import {
   IconBook,
   IconCalendar,
   IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
   IconLock,
+  IconSearch,
   IconUsers,
 } from "../components/icons";
 import { GradeTable } from "../features/grades/GradeTable";
@@ -357,29 +360,60 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
           </div>
 
           {activeTab === "attendance" && (
-            <Select
-              aria-label="Sesión"
-              className="max-w-[16rem]"
-              value={sessionId ?? 0}
-              onChange={(e) => setSessionId(Number(e.target.value))}
-            >
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.date}
-                  {s.date === today ? " · hoy" : ""}
-                  {s.status === "cancelled"
-                    ? " · cancelada"
-                    : // Qué sesiones quedan por registrar, visible al elegirlas
-                      // en lugar de descubrirse abriéndolas una por una.
-                      s.register_closed_at
-                      ? " · registrada"
-                      : s.date <= today
-                        ? " · sin registrar"
-                        : ""}
-                  {s.origin_session_id ? " · recuperación" : ""}
-                </option>
-              ))}
-            </Select>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={sessions.findIndex((s) => s.id === sessionId) <= 0}
+                onClick={() => {
+                  const idx = sessions.findIndex((s) => s.id === sessionId);
+                  if (idx > 0) setSessionId(sessions[idx - 1].id);
+                }}
+                title="Sesión anterior"
+                aria-label="Sesión anterior"
+              >
+                <IconChevronLeft className="h-4 w-4" />
+              </button>
+              <Select
+                aria-label="Sesión"
+                className="max-w-[16rem]"
+                value={sessionId ?? 0}
+                onChange={(e) => setSessionId(Number(e.target.value))}
+              >
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.date}
+                    {s.date === today ? " · hoy" : ""}
+                    {s.status === "cancelled"
+                      ? " · cancelada"
+                      : // Qué sesiones quedan por registrar, visible al elegirlas
+                        // en lugar de descubrirse abriéndolas una por una.
+                        s.register_closed_at
+                        ? " · registrada"
+                        : s.date <= today
+                          ? " · sin registrar"
+                          : ""}
+                    {s.origin_session_id ? " · recuperación" : ""}
+                  </option>
+                ))}
+              </Select>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={
+                  sessions.findIndex((s) => s.id === sessionId) === -1 ||
+                  sessions.findIndex((s) => s.id === sessionId) >= sessions.length - 1
+                }
+                onClick={() => {
+                  const idx = sessions.findIndex((s) => s.id === sessionId);
+                  if (idx >= 0 && idx < sessions.length - 1) setSessionId(sessions[idx + 1].id);
+                }}
+                title="Sesión siguiente"
+                aria-label="Sesión siguiente"
+              >
+                <IconChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           )}
         </div>
 
@@ -620,6 +654,14 @@ function SessionControls({ session }: { session: ClassSession }) {
   );
 }
 
+interface AttendanceStats {
+  present: number;
+  late: number;
+  absent: number;
+  excused: number;
+  unmarked: number;
+}
+
 function SessionSheet({
   session,
   enrollments,
@@ -633,19 +675,53 @@ function SessionSheet({
   const sessionDate = session?.date;
   const { data: attendance = [] } = useVisibleAttendance();
   const { data: grades = [] } = useGrades();
-  // Una sola mutación para las dos vías de marcar —el atajo de teclado y el
-  // botón "todos presentes"—; el estado "marcando en lote" lo lleva `markingAll`
-  // porque `isPending` sólo describe la última de las N peticiones en vuelo.
   const mark = useCreateAttendance();
   const [markingAll, setMarkingAll] = useState(false);
   const [focused, setFocused] = useState(0);
-
-  // Al cambiar de sesión el foco vuelve arriba: seguir en la fila catorce de la
-  // clase anterior no significa nada en la nueva.
-  useEffect(() => setFocused(0), [sessionId]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "unmarked" | MarkableStatus>("all");
 
   const today = todayLocal();
   const isFuture = sessionDate ? sessionDate > today : false;
+
+  const markBySession = useMemo(
+    () =>
+      new Map(
+        attendance
+          .filter((a) => a.session_id === sessionId)
+          .map((a) => [a.enrollment_id, a.status]),
+      ),
+    [attendance, sessionId],
+  );
+
+  const stats: AttendanceStats = useMemo(() => {
+    let present = 0;
+    let late = 0;
+    let absent = 0;
+    let excused = 0;
+    for (const e of enrollments) {
+      const st = markBySession.get(e.id);
+      if (st === "present") present++;
+      else if (st === "late") late++;
+      else if (st === "absent") absent++;
+      else if (st === "excused") excused++;
+    }
+    const unmarked = enrollments.length - (present + late + absent + excused);
+    return { present, late, absent, excused, unmarked };
+  }, [enrollments, markBySession]);
+
+  const filteredEnrollments = useMemo(() => {
+    return enrollments.filter((e) => {
+      const name = studentName(e.student_id).toLowerCase();
+      if (search.trim() && !name.includes(search.trim().toLowerCase())) return false;
+      const st = markBySession.get(e.id);
+      if (statusFilter === "all") return true;
+      if (statusFilter === "unmarked") return !st;
+      return st === statusFilter;
+    });
+  }, [enrollments, search, statusFilter, markBySession, studentName]);
+
+  useEffect(() => setFocused(0), [sessionId, search, statusFilter]);
 
   if (isFuture) {
     return (
@@ -657,11 +733,6 @@ function SessionSheet({
     );
   }
 
-  const markBySession = new Map(
-    attendance
-      .filter((a) => a.session_id === sessionId)
-      .map((a) => [a.enrollment_id, a.status]),
-  );
   const dailyGrade = (enrollmentId: number) =>
     grades.find(
       (g) =>
@@ -672,10 +743,6 @@ function SessionSheet({
 
   const marked = enrollments.filter((e) => markBySession.has(e.id)).length;
 
-  // Una petición por alumno, pero un solo veredicto al final. Antes se
-  // disparaban todas y se anunciaba el éxito en el mismo gesto, sin esperar a
-  // ninguna: si la API rechazaba alguna, el profesor se quedaba con un "todos
-  // marcados" que no era cierto y una fila sin marca que no explicaba nada.
   async function markEveryonePresent() {
     const pending = enrollments.filter((e) => !markBySession.has(e.id));
     if (pending.length === 0) return;
@@ -708,6 +775,30 @@ function SessionSheet({
     );
   }
 
+  async function markUnmarkedAbsent() {
+    const pending = enrollments.filter((e) => !markBySession.has(e.id));
+    if (pending.length === 0) return;
+
+    setMarkingAll(true);
+    const results = await Promise.allSettled(
+      pending.map((e) =>
+        mark.mutateAsync({
+          enrollment_id: e.id,
+          session_id: sessionId,
+          status: "absent",
+        }),
+      ),
+    );
+    setMarkingAll(false);
+
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length === 0) {
+      notify(`${pending.length} alumno(s) marcados como ausentes`, "success");
+      return;
+    }
+    notify("Hubo errores al marcar algunos alumnos", "error");
+  }
+
   if (enrollments.length === 0) {
     return (
       <EmptyState
@@ -721,15 +812,11 @@ function SessionSheet({
   const pct = Math.round((marked / enrollments.length) * 100);
   const closed = session?.register_closed_at != null;
 
-  // El alumno enfocado por teclado. Pasar lista es una tarea de treinta
-  // repeticiones idénticas: con el ratón son noventa clics y una búsqueda visual
-  // por fila. Con ↑↓ para moverse y P/T/A/J para marcar, el profesor no levanta
-  // la vista de la lista.
   function moveFocus(delta: number) {
     setFocused((current) => {
       const next = current + delta;
       if (next < 0) return 0;
-      if (next > enrollments.length - 1) return enrollments.length - 1;
+      if (next > filteredEnrollments.length - 1) return filteredEnrollments.length - 1;
       return next;
     });
   }
@@ -739,13 +826,12 @@ function SessionSheet({
     const shortcut = MARK_SHORTCUTS[event.key.toLowerCase()];
     if (shortcut) {
       event.preventDefault();
-      const target = enrollments[focused];
+      const target = filteredEnrollments[focused];
       if (!target) return;
       mark.mutate(
         { enrollment_id: target.id, session_id: sessionId, status: shortcut },
         { onError: onMutationError("No se pudo registrar la asistencia") },
       );
-      // Avanzar solo: marcar y bajar es un gesto, no dos.
       moveFocus(1);
       return;
     }
@@ -768,32 +854,120 @@ function SessionSheet({
         closed={closed}
         sessionId={sessionId}
         busy={markingAll}
+        stats={stats}
         unmarkedStudents={unmarkedStudents}
         onMarkAll={markEveryonePresent}
+        onMarkUnmarkedAbsent={markUnmarkedAbsent}
       />
 
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-      <ul
-        tabIndex={closed ? -1 : 0}
-        onKeyDown={onRosterKeyDown}
-        aria-label="Lista de asistencia"
-        className="divide-y divide-slate-100 rounded-lg border border-slate-200 outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-      >
-        {enrollments.map((e, index) => (
-          <RosterRow
-            key={e.id}
-            enrollment={e}
-            name={studentName(e.student_id)}
-            sessionId={sessionId}
-            current={markBySession.get(e.id)}
-            grade={dailyGrade(e.id)}
-            history={marksOf(attendance, e.id)}
-            focused={index === focused && !closed}
-            locked={closed}
-            onFocus={() => setFocused(index)}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border border-slate-200/80 bg-slate-50/70 p-2.5">
+        <div className="relative min-w-[12rem] flex-1 max-w-xs">
+          <IconSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Input
+            placeholder="Buscar alumno por nombre…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 text-xs"
           />
-        ))}
-      </ul>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setStatusFilter("all")}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              statusFilter === "all"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Todos ({enrollments.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("unmarked")}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              statusFilter === "unmarked"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+            }`}
+          >
+            Sin marcar ({stats.unmarked})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("present")}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              statusFilter === "present"
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+            }`}
+          >
+            Presentes ({stats.present})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("late")}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              statusFilter === "late"
+                ? "bg-amber-500 text-white shadow-sm"
+                : "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+            }`}
+          >
+            Tardes ({stats.late})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("absent")}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              statusFilter === "absent"
+                ? "bg-red-600 text-white shadow-sm"
+                : "border border-red-200 bg-red-50 text-red-800 hover:bg-red-100"
+            }`}
+          >
+            Ausentes ({stats.absent})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("excused")}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              statusFilter === "excused"
+                ? "bg-sky-600 text-white shadow-sm"
+                : "border border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100"
+            }`}
+          >
+            Justificadas ({stats.excused})
+          </button>
+        </div>
+      </div>
+
+      {filteredEnrollments.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400">
+          No hay alumnos que coincidan con la búsqueda o filtro seleccionado.
+        </div>
+      ) : (
+        /* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */
+        <ul
+          tabIndex={closed ? -1 : 0}
+          onKeyDown={onRosterKeyDown}
+          aria-label="Lista de asistencia"
+          className="divide-y divide-slate-100 rounded-lg border border-slate-200 outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+        >
+          {filteredEnrollments.map((e, index) => (
+            <RosterRow
+              key={e.id}
+              enrollment={e}
+              name={studentName(e.student_id)}
+              sessionId={sessionId}
+              current={markBySession.get(e.id)}
+              grade={dailyGrade(e.id)}
+              history={marksOf(attendance, e.id)}
+              focused={index === focused && !closed}
+              locked={closed}
+              onFocus={() => setFocused(index)}
+            />
+          ))}
+        </ul>
+      )}
 
       {!closed && (
         <p className="text-2xs text-slate-500">
@@ -827,8 +1001,10 @@ function RegisterBar({
   closed,
   sessionId,
   busy,
+  stats,
   unmarkedStudents = [],
   onMarkAll,
+  onMarkUnmarkedAbsent,
 }: {
   marked: number;
   total: number;
@@ -836,8 +1012,10 @@ function RegisterBar({
   closed: boolean;
   sessionId: number;
   busy: boolean;
+  stats: AttendanceStats;
   unmarkedStudents?: UnmarkedStudent[];
   onMarkAll: () => void;
+  onMarkUnmarkedAbsent: () => void;
 }) {
   const close = useCloseRegister();
   const reopen = useReopenRegister();
@@ -899,36 +1077,77 @@ function RegisterBar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" disabled={busy || complete} onClick={onMarkAll}>
-            {busy ? "Marcando…" : "Marcar todos presentes"}
-          </Button>
-          <Button
-            disabled={close.isPending}
-            onClick={handleCloseClick}
-          >
-            {close.isPending ? "Cerrando…" : "Cerrar lista"}
-          </Button>
+      <div className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" disabled={busy || complete} onClick={onMarkAll}>
+              {busy ? "Marcando…" : "Marcar todos presentes"}
+            </Button>
+            {stats.unmarked > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={onMarkUnmarkedAbsent}
+                title="Marcar como ausentes a los alumnos que aún no tienen registro"
+                className="border-amber-200 text-amber-800 hover:bg-amber-100/50"
+              >
+                Pendientes como ausentes ({stats.unmarked})
+              </Button>
+            )}
+            <Button
+              size="sm"
+              disabled={close.isPending}
+              onClick={handleCloseClick}
+            >
+              {close.isPending ? "Cerrando…" : "Cerrar lista"}
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <span className="tabular text-xs font-medium text-slate-600">
+              {marked} de {total}
+            </span>
+            <div
+              className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"
+              role="progressbar"
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Asistencia registrada"
+            >
+              <div
+                className={`h-full transition-all ${complete ? "bg-emerald-600" : "bg-brand-500"}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <span className="tabular text-xs font-medium text-slate-600">
-            {marked} de {total}
+        {/* Breakdown de métricas en tiempo real */}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200/60 pt-2 text-2xs">
+          <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            {stats.present} presentes
           </span>
-          <div
-            className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200"
-            role="progressbar"
-            aria-valuenow={pct}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Asistencia registrada"
-          >
-            <div
-              className={`h-full transition-all ${complete ? "bg-emerald-600" : "bg-brand-500"}`}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
+          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-800">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            {stats.late} tardes
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 font-semibold text-red-800">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+            {stats.absent} ausentes
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 font-semibold text-sky-800">
+            <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+            {stats.excused} justificadas
+          </span>
+          {stats.unmarked > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+              {stats.unmarked} sin marcar
+            </span>
+          )}
         </div>
       </div>
 
@@ -988,15 +1207,30 @@ function RosterRow({
       onClick={onFocus}
       aria-current={focused ? "true" : undefined}
       className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 transition-colors ${
-        focused ? "bg-brand-50 ring-1 ring-inset ring-brand-300" : ""
+        focused ? "bg-brand-50 ring-1 ring-inset ring-brand-300" : !current && !locked ? "bg-amber-50/25" : ""
       }`}
     >
       <div className="flex min-w-[13rem] flex-1 items-center gap-2.5">
-        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+        <span
+          className={`flex h-8 w-8 flex-none items-center justify-center rounded-full text-xs font-semibold ${
+            current ? "bg-slate-100 text-slate-700" : !locked ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-400"
+          }`}
+        >
           {initials(name)}
         </span>
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-slate-900">{name}</div>
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium text-slate-900">{name}</span>
+            {current ? (
+              <span className="inline-flex items-center gap-0.5 text-2xs font-semibold text-emerald-700" title="Asistencia registrada">
+                <IconCheck className="h-3 w-3 text-emerald-600" />
+              </span>
+            ) : !locked ? (
+              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-2xs font-medium text-amber-800">
+                Sin marcar
+              </span>
+            ) : null}
+          </div>
           <div className="flex flex-wrap items-center gap-x-2 text-2xs text-slate-500">
             {pct != null ? (
               <span className={pct < 75 ? "font-semibold text-amber-700" : ""}>
@@ -1004,6 +1238,11 @@ function RosterRow({
               </span>
             ) : (
               <span>Sin historial</span>
+            )}
+            {pct != null && pct < 75 && (
+              <span className="rounded border border-red-200 bg-red-50 px-1 py-0.5 text-2xs font-bold text-red-700">
+                En riesgo
+              </span>
             )}
             {streak >= 2 && (
               <span className="font-semibold text-red-600">

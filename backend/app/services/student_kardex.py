@@ -11,12 +11,14 @@ from app.models import (
     Certificate,
     Course,
     ENROLLMENT_OCCUPIES_SEAT,
+    ENROLLMENT_OWES,
     ENROLLMENT_STATUS_LABELS,
     Enrollment,
     EnrollmentStatus,
     Grade,
     Level,
     Nationality,
+    PaymentStatus,
     User,
 )
 from app.schemas.kardex import (
@@ -99,6 +101,7 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
                 enrollment_code=en.enrollment_code,
                 final_score=final_score,
                 passed=passed,
+                certificate_id=cert.id if cert else None,
                 certificate_code=cert.code if cert else None,
                 balance=bal,
             )
@@ -142,7 +145,12 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
 
     # Person operational status calculation
     active_enrollments = [en for en in enrollments if en.status in ENROLLMENT_OCCUPIES_SEAT]
-    if total_balance > 0 and en.payment_status.value == "overdue":
+    has_overdue = any(
+        en.payment_status == PaymentStatus.overdue
+        for en in enrollments
+        if en.status in ENROLLMENT_OWES
+    )
+    if total_balance > 0 and has_overdue:
         person_status = "delinquent"
         person_status_label = "En Mora"
     elif active_enrollments:

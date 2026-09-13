@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from datetime import date as date_type
-from datetime import datetime
+from datetime import datetime, time
 
-from sqlalchemy import Date, DateTime
+from sqlalchemy import Date, DateTime, ForeignKey, String, Time, UniqueConstraint
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -30,6 +29,15 @@ class ClassSession(Base):
     schedule_id: Mapped[int] = mapped_column(
         ForeignKey("schedules.id", ondelete="CASCADE"), index=True
     )
+    # Denormalized from schedule for GiST exclusion constraints
+    teacher_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    room_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rooms.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    start_time: Mapped[time] = mapped_column(Time, nullable=False)
+    end_time: Mapped[time] = mapped_column(Time, nullable=False)
     date: Mapped[date_type] = mapped_column(Date, index=True)
     status: Mapped[SessionStatus] = mapped_column(
         SqlEnum(SessionStatus, name="session_status"),

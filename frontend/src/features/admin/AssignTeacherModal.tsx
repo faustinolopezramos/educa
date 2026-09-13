@@ -10,6 +10,8 @@ import {
   useAssignCourseTeacher,
   useCourseTeachers,
   useCourses,
+  useLanguages,
+  useLevels,
   useSchedules,
   useTeacherLanguages,
   useUsers,
@@ -47,6 +49,8 @@ export function AssignTeacherModal({
   const { data: courses = [] } = useCourses();
   const { data: teachers = [] } = useUsers("teacher");
   const { data: schedules = [] } = useSchedules();
+  const { data: languages = [] } = useLanguages();
+  const { data: levels = [] } = useLevels();
   const assign = useAssignCourseTeacher();
 
   const [courseId, setCourseId] = useState(initialCourseId ?? 0);
@@ -59,6 +63,21 @@ export function AssignTeacherModal({
   const course = courses.find((c) => c.id === courseId);
   const teacher = teachers.find((t) => t.id === teacherId);
   const courseSchedules = schedules.filter((s) => s.course_id === courseId);
+
+  // Determine course's language through level -> language
+  const courseLevel = levels.find((l) => l.id === course?.level_id);
+  const courseLanguage = languages.find((l) => l.id === courseLevel?.language_id);
+  const teacherQualifiedLanguageIds = qualifications.map((q) => q.language_id);
+  
+  const hasQualifications = qualifications.length > 0;
+  const hasCourseLanguage = Boolean(courseLanguage);
+  const teacherHasCourseLanguage = courseLanguage 
+    ? teacherQualifiedLanguageIds.includes(courseLanguage.id) 
+    : false;
+  
+  // Warning states
+  const noQualificationsWarning = hasCourseLanguage && !hasQualifications;
+  const qualificationMismatchWarning = hasCourseLanguage && hasQualifications && !teacherHasCourseLanguage;
 
   const alreadyAssigned = assigned.some((a) => a.teacher_id === teacherId);
 
@@ -167,11 +186,32 @@ export function AssignTeacherModal({
         </Field>
 
         {teacher && (
-          <p className="text-xs text-slate-500">
-            {qualifications.length === 0
-              ? "Sin idiomas configurados: puede impartir cualquier curso."
-              : `Cualificado en ${qualifications.length} idioma${qualifications.length === 1 ? "" : "s"}. Si el curso no está entre ellos, la asignación se rechaza.`}
-          </p>
+          <div className="space-y-2">
+            {noQualificationsWarning && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+                <strong>⚠ Advertencia:</strong> Este profesor no tiene idiomas configurados.
+                El sistema le permite impartir <strong>cualquier curso</strong> (incluido "{courseLanguage?.name}").
+                Si esto no es intencional, configura sus idiomas antes de asignar.
+              </p>
+            )}
+            {qualificationMismatchWarning && (
+              <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs leading-relaxed text-red-900">
+                <strong>⛔ Bloqueo:</strong> El curso es de <strong>{courseLanguage?.name}</strong>
+                pero el profesor no tiene ese idioma en sus cualificaciones ({qualifications.map(q => languages.find(l => l.id === q.language_id)?.name).filter(Boolean).join(", ") || "ninguno"}).
+                La asignación será rechazada por el servidor.
+              </p>
+            )}
+            {!noQualificationsWarning && !qualificationMismatchWarning && hasCourseLanguage && (
+              <p className="text-xs text-emerald-700">
+                ✓ El profesor está cualificado para <strong>{courseLanguage?.name}</strong>.
+              </p>
+            )}
+            {!hasCourseLanguage && (
+              <p className="text-xs text-slate-500">
+                El curso no tiene idioma asociado (sin nivel configurado).
+              </p>
+            )}
+          </div>
         )}
 
         {course && (

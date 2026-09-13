@@ -14,7 +14,7 @@ import type { LoginResponse, Permission, Role, User } from "../lib/types";
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password: string, tenantSlug?: string) => Promise<User>;
   logout: () => void;
   hasRole: (...roles: Role[]) => boolean;
   hasPermission: (permission: Permission) => boolean;
@@ -58,13 +58,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(LOGOUT_EVENT, handler);
   }, []);
 
-  async function login(email: string, password: string): Promise<User> {
+  async function login(email: string, password: string, tenantSlug?: string): Promise<User> {
     const form = new URLSearchParams();
     form.set("username", email);
     form.set("password", password);
-    const res = await api.post<LoginResponse>("/auth/login", form, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
+    if (tenantSlug) {
+      form.set("client_id", tenantSlug);
+    }
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (tenantSlug) {
+      headers["X-Tenant-Slug"] = tenantSlug;
+    }
+    const res = await api.post<LoginResponse>("/auth/login", form, { headers });
     setToken(res.data.access_token, res.data.refresh_token);
     setUser(res.data.user);
     return res.data.user;

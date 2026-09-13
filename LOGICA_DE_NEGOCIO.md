@@ -234,8 +234,8 @@ Elegir "Nocturna" crea automáticamente **dos** horarios (uno por cada día de e
 - Una sesión puede cancelarse (con motivo opcional); la fila se conserva con estado "cancelada"
 - Puede reprogramarse a otra fecha (crea una sesión de recuperación vinculada a la original)
 - Al cancelar/reprogramar, se genera una **notificación interna del sistema** (campana in-app) a los alumnos con matrícula activa — **no** se envía correo ni SMS
-- **⚠️ La reprogramación no revalida choques reales de horario**: solo verifica que la nueva fecha no sea festivo y que no exista ya otra sesión de ese mismo horario ese día. No comprueba si el profesor o el aula ya tienen otra clase (de otro horario distinto) en esa fecha/hora — a diferencia de la creación de un horario nuevo, que sí está protegida por la restricción de base de datos. Es posible generar una doble reserva silenciosa al reprogramar
-- **⚠️ Ni cancelar ni reprogramar quedan en la auditoría** — solo generan la notificación al alumno; no hay traza de quién canceló o reprogramó una clase y cuándo
+- **La reprogramación SÍ valida choques reales**: comprueba disponibilidad del profesor, otros horarios semanales del profesor, disponibilidad del aula, y sesiones concretas ya existentes en esa fecha/hora (protegido además por constraint de exclusión GiST en `ClassSession`)
+- **Tanto cancelar como reprogramar quedan en la auditoría** (`entity=class_session`, actions `cancel` y `reschedule`) con before/after, actor y timestamp
 
 ---
 

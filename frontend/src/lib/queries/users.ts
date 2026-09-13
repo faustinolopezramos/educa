@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { User } from "../types";
+import type { StudentKardexResponse, User } from "../types";
 
 /**
  * `enabled` lets a caller skip the request entirely rather than fire one it
@@ -18,6 +18,16 @@ export const useUsers = (role?: string, enabled = true) =>
       return res.data.items;
     },
     enabled,
+  });
+
+export const useStudentKardex = (studentId?: number, enabled = true) =>
+  useQuery({
+    queryKey: ["student-kardex", studentId],
+    queryFn: async () => {
+      const res = await api.get<StudentKardexResponse>(`/users/${studentId}/kardex`);
+      return res.data;
+    },
+    enabled: enabled && !!studentId,
   });
 
 export function useCreateUser() {

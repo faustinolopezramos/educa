@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # the socket's own address, which a client cannot forge.
     trust_proxy_headers: bool = False
 
+    # Optional Redis URL for distributed rate limiting in multi-worker production
+    redis_url: str | None = None
+
     # Seed
     seed_admin_email: str = "admin@educa.com"
     seed_admin_password: str = "admin123"

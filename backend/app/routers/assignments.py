@@ -29,6 +29,7 @@ from app.schemas.assignment import (
     SubmissionGrade,
     SubmissionRead,
 )
+from app.services.audit import record, snapshot
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
@@ -103,6 +104,15 @@ def create_assignment(
         tenant_id=tenant_id,
     )
     db.add(assignment)
+    db.flush()
+    record(
+        db,
+        current_user,
+        "create",
+        "assignment",
+        assignment.id,
+        after=snapshot(assignment),
+    )
     db.commit()
     db.refresh(assignment)
     return assignment
@@ -207,10 +217,20 @@ def grade_submission(
     # Grading is a write on someone's academic record; it needs the same course
     # check as everything else here, which it had none of.
     _visible_assignment_or_404(db, current_user, submission.assignment_id)
+    before = snapshot(submission)
     submission.score = payload.score
     submission.feedback = payload.feedback
     submission.status = "graded"
-
+    db.flush()
+    record(
+        db,
+        current_user,
+        "update",
+        "assignment_submission",
+        submission.id,
+        before=before,
+        after=snapshot(submission),
+    )
     db.commit()
     db.refresh(submission)
     return submission

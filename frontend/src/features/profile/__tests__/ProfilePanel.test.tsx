@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "../../../test/utils";
+import { render, screen, waitFor, act } from "../../../test/utils";
 import userEvent from "@testing-library/user-event";
 import { ProfilePanel } from "../ProfilePanel";
 import * as AuthContext from "../../../auth/AuthContext";
@@ -209,11 +209,13 @@ describe("ProfilePanel", () => {
   });
 
   it("shows a server error message when the password change fails", async () => {
-    mockMutate.mockImplementation((_vars: unknown, opts: any) =>
-      opts?.onError?.({
-        response: { data: { detail: "La contraseña actual no es correcta" } },
-      }),
-    );
+    mockMutate.mockImplementation((_vars: unknown, opts: any) => {
+      setTimeout(() => {
+        opts?.onError?.({
+          response: { data: { detail: "La contraseña actual no es correcta" } },
+        });
+      }, 0);
+    });
     const user = userEvent.setup();
     const { container } = render(<ProfilePanel />);
     const [currentPassword, newPassword, confirm] = Array.from(
@@ -223,8 +225,12 @@ describe("ProfilePanel", () => {
     await user.type(currentPassword, "wrong");
     await user.type(newPassword, "new-secret-1");
     await user.type(confirm, "new-secret-1");
-    await user.click(screen.getByRole("button", { name: "Actualizar contraseña" }));
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: "Actualizar contraseña" }));
+    });
 
-    expect(screen.getByText("La contraseña actual no es correcta")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("La contraseña actual no es correcta")).toBeInTheDocument();
+    });
   });
 });

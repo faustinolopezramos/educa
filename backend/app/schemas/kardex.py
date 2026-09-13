@@ -22,6 +22,7 @@ class KardexCourseEntry(BaseModel):
     enrollment_code: str
     final_score: float | None = None
     passed: bool | None = None
+    certificate_id: int | None = None
     certificate_code: str | None = None
     balance: float = 0.0
     # Deliberately no `created_at`: `Enrollment` has no such column, and the

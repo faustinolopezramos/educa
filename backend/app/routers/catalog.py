@@ -28,6 +28,14 @@ from app.models import (
     User,
     UserRole,
 )
+from app.models import (
+    ClassSession,
+    Attendance,
+    Grade,
+    Certificate,
+    Payment,
+    Invoice,
+)
 from app.schemas.catalog import (
     CourseCreate,
     CourseRead,
@@ -42,6 +50,7 @@ from app.schemas.catalog import (
     NationalityCreate,
     NationalityRead,
     NationalityUpdate,
+    DeleteImpact,
 )
 from app.schemas.teacher import CourseTeacherAssign, CourseTeacherRead
 from app.schemas.user import UserBrief
@@ -246,6 +255,289 @@ def delete_language(
     record(db, current_user, "delete", "language", lang.id, before=before)
     db.delete(lang)
     db.commit()
+
+
+@router.get("/languages/{language_id}/delete-impact", response_model=DeleteImpact)
+def language_delete_impact(
+    language_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+) -> DeleteImpact:
+    """Assess the cascade impact of deleting a language."""
+    lang = _language_or_404(db, current_user, language_id)
+    
+    # Count levels
+    levels_count = db.scalar(
+        select(func.count()).select_from(Level).where(Level.language_id == language_id)
+    ) or 0
+    
+    if levels_count == 0:
+        return DeleteImpact(
+            can_delete=True,
+            message="El idioma no tiene niveles. Se puede eliminar sin impacto.",
+            levels_count=0,
+        )
+    
+    # Get level IDs for this language
+    level_ids = db.scalars(
+        select(Level.id).where(Level.language_id == language_id)
+    ).all()
+    
+    # Count courses in those levels
+    courses_count = db.scalar(
+        select(func.count()).select_from(Course).where(Course.level_id.in_(level_ids))
+    ) or 0
+    
+    if courses_count == 0:
+        return DeleteImpact(
+            can_delete=True,
+            message=f"El idioma tiene {levels_count} nivel(es) pero sin cursos. Se eliminarán {levels_count} nivel(es).",
+            levels_count=levels_count,
+            courses_count=0,
+        )
+    
+    # Get course IDs
+    course_ids = db.scalars(
+        select(Course.id).where(Course.level_id.in_(level_ids))
+    ).all()
+    
+    # Count enrollments
+    enrollments_count = db.scalar(
+        select(func.count()).select_from(Enrollment).where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count attendance (join through sessions)
+    attendance_count = db.scalar(
+        select(func.count())
+        .select_from(Attendance)
+        .join(ClassSession, Attendance.session_id == ClassSession.id)
+        .join(Schedule, ClassSession.schedule_id == Schedule.id)
+        .where(Schedule.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count grades
+    grades_count = db.scalar(
+        select(func.count())
+        .select_from(Grade)
+        .join(Enrollment, Grade.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count certificates
+    certificates_count = db.scalar(
+        select(func.count())
+        .select_from(Certificate)
+        .join(Enrollment, Certificate.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count payments
+    payments_count = db.scalar(
+        select(func.count())
+        .select_from(Payment)
+        .join(Enrollment, Payment.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count invoices
+    invoices_count = db.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .join(Enrollment, Invoice.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    return DeleteImpact(
+        can_delete=False,
+        reason="has_levels",
+        levels_count=levels_count,
+        courses_count=courses_count,
+        enrollments_count=enrollments_count,
+        attendance_count=attendance_count,
+        grades_count=grades_count,
+        certificates_count=certificates_count,
+        payments_count=payments_count,
+        invoices_count=invoices_count,
+        message=(
+            f"Eliminar este idioma borrará en cascada: {levels_count} nivel(es), "
+            f"{courses_count} curso(s), {enrollments_count} matrícula(s), "
+            f"{attendance_count} registro(s) de asistencia, {grades_count} nota(s), "
+            f"{certificates_count} certificado(s), {payments_count} pago(s), "
+            f"{invoices_count} factura(s). Esta acción es irreversible."
+        ),
+    )
+
+
+@router.get("/levels/{level_id}/delete-impact", response_model=DeleteImpact)
+def level_delete_impact(
+    level_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+) -> DeleteImpact:
+    """Assess the cascade impact of deleting a level."""
+    level = _level_or_404(db, current_user, level_id)
+    
+    # Count courses in this level
+    courses_count = db.scalar(
+        select(func.count()).select_from(Course).where(Course.level_id == level_id)
+    ) or 0
+    
+    if courses_count == 0:
+        return DeleteImpact(
+            can_delete=True,
+            message="El nivel no tiene cursos. Se puede eliminar sin impacto.",
+            levels_count=0,
+            courses_count=0,
+        )
+    
+    # Get course IDs
+    course_ids = db.scalars(
+        select(Course.id).where(Course.level_id == level_id)
+    ).all()
+    
+    # Count enrollments
+    enrollments_count = db.scalar(
+        select(func.count()).select_from(Enrollment).where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count attendance
+    attendance_count = db.scalar(
+        select(func.count())
+        .select_from(Attendance)
+        .join(ClassSession, Attendance.session_id == ClassSession.id)
+        .join(Schedule, ClassSession.schedule_id == Schedule.id)
+        .where(Schedule.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count grades
+    grades_count = db.scalar(
+        select(func.count())
+        .select_from(Grade)
+        .join(Enrollment, Grade.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count certificates
+    certificates_count = db.scalar(
+        select(func.count())
+        .select_from(Certificate)
+        .join(Enrollment, Certificate.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count payments
+    payments_count = db.scalar(
+        select(func.count())
+        .select_from(Payment)
+        .join(Enrollment, Payment.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    # Count invoices
+    invoices_count = db.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .join(Enrollment, Invoice.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id.in_(course_ids))
+    ) or 0
+    
+    return DeleteImpact(
+        can_delete=False,
+        reason="has_courses",
+        courses_count=courses_count,
+        enrollments_count=enrollments_count,
+        attendance_count=attendance_count,
+        grades_count=grades_count,
+        certificates_count=certificates_count,
+        payments_count=payments_count,
+        invoices_count=invoices_count,
+        message=(
+            f"Eliminar este nivel borrará en cascada: {courses_count} curso(s), "
+            f"{enrollments_count} matrícula(s), {attendance_count} registro(s) de asistencia, "
+            f"{grades_count} nota(s), {certificates_count} certificado(s), "
+            f"{payments_count} pago(s), {invoices_count} factura(s). "
+            "Esta acción es irreversible."
+        ),
+    )
+
+
+@router.get("/courses/{course_id}/delete-impact", response_model=DeleteImpact)
+def course_delete_impact(
+    course_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+) -> DeleteImpact:
+    """Assess the cascade impact of deleting a course."""
+    course = _course_or_404(db, current_user, course_id)
+    
+    # Count enrollments
+    enrollments_count = db.scalar(
+        select(func.count()).select_from(Enrollment).where(Enrollment.course_id == course_id)
+    ) or 0
+    
+    if enrollments_count == 0:
+        return DeleteImpact(
+            can_delete=True,
+            message="El curso no tiene matrículas. Se puede eliminar sin impacto.",
+        )
+    
+    # Count attendance
+    attendance_count = db.scalar(
+        select(func.count())
+        .select_from(Attendance)
+        .join(ClassSession, Attendance.session_id == ClassSession.id)
+        .join(Schedule, ClassSession.schedule_id == Schedule.id)
+        .where(Schedule.course_id == course_id)
+    ) or 0
+    
+    # Count grades
+    grades_count = db.scalar(
+        select(func.count())
+        .select_from(Grade)
+        .join(Enrollment, Grade.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id == course_id)
+    ) or 0
+    
+    # Count certificates
+    certificates_count = db.scalar(
+        select(func.count())
+        .select_from(Certificate)
+        .join(Enrollment, Certificate.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id == course_id)
+    ) or 0
+    
+    # Count payments
+    payments_count = db.scalar(
+        select(func.count())
+        .select_from(Payment)
+        .join(Enrollment, Payment.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id == course_id)
+    ) or 0
+    
+    # Count invoices
+    invoices_count = db.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .join(Enrollment, Invoice.enrollment_id == Enrollment.id)
+        .where(Enrollment.course_id == course_id)
+    ) or 0
+    
+    return DeleteImpact(
+        can_delete=False,
+        reason="has_enrollments",
+        enrollments_count=enrollments_count,
+        attendance_count=attendance_count,
+        grades_count=grades_count,
+        certificates_count=certificates_count,
+        payments_count=payments_count,
+        invoices_count=invoices_count,
+        message=(
+            f"Eliminar este curso borrará en cascada: {enrollments_count} matrícula(s), "
+            f"{attendance_count} registro(s) de asistencia, {grades_count} nota(s), "
+            f"{certificates_count} certificado(s), {payments_count} pago(s), "
+            f"{invoices_count} factura(s). Esta acción es irreversible."
+        ),
+    )
 
 
 # ---------------- Levels ----------------

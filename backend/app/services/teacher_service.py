@@ -3,8 +3,8 @@
 Business rules & advanced validations:
 - Admin (UserRole.admin, UserRole.superadmin) or Assistant (with Permission.manage_teachers) can view/update any teacher's information.
 - Teacher (UserRole.teacher) can view/update ONLY their own information (current_user.id == teacher_id).
-- Weekly load limit: total availability + assigned course hours must not exceed max_weekly_hours (default 40h). Violations raise HTTP 422.
-- Schedule conflicts: availability windows must not overlap or clash in an invalid way. Violations raise HTTP 422 or 409.
+- Weekly load limit: total assigned course schedule hours must not exceed max_weekly_hours (default 40h). Availability windows define candidate working hours and are decoupled from teaching load.
+- Schedule conflicts: availability windows must not overlap or clash with assigned classes. Violations raise HTTP 422 or 409.
 """
 
 from datetime import date, datetime, time
@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import apply_tenant, has_user_permission, in_tenant
 from app.models import (
+    Course,
+    CourseStatus,
     Language,
     Permission,
     Schedule,
@@ -71,6 +73,25 @@ def _window_minutes(start_time: time, end_time: time) -> int:
     return int(diff // 60)
 
 
+def _active_assigned_schedules(db: Session, teacher_id: int) -> list[Schedule]:
+    """Return all active assigned class schedules for the teacher.
+
+    Excludes schedules of closed or archived courses, and schedules
+    whose terms have already concluded in the past.
+    """
+    today = date.today()
+    stmt = (
+        select(Schedule)
+        .join(Course, Schedule.course_id == Course.id)
+        .where(
+            Schedule.teacher_id == teacher_id,
+            Course.status.notin_([CourseStatus.closed, CourseStatus.archived]),
+        )
+    )
+    schedules = db.scalars(stmt).all()
+    return [s for s in schedules if s.term_end is None or s.term_end >= today]
+
+
 def get_teacher_load(db: Session, teacher_id: int, current_user: User) -> dict:
     """Calculate assigned course hours, declared availability hours, and load percentage for a teacher."""
     validate_teacher_self_or_admin(current_user, teacher_id)
@@ -83,9 +104,7 @@ def get_teacher_load(db: Session, teacher_id: int, current_user: User) -> dict:
         else DEFAULT_MAX_WEEKLY_HOURS
     )
 
-    assigned_schedules = db.scalars(
-        select(Schedule).where(Schedule.teacher_id == teacher_id)
-    ).all()
+    assigned_schedules = _active_assigned_schedules(db, teacher_id)
     assigned_minutes = sum(_window_minutes(s.start_time, s.end_time) for s in assigned_schedules)
 
     avail_windows = db.scalars(
@@ -109,12 +128,17 @@ def get_teacher_load(db: Session, teacher_id: int, current_user: User) -> dict:
 def validate_teacher_weekly_load(
     db: Session,
     teacher_id: int,
+    additional_minutes: int = 0,
+    term_start: date | None = None,
+    term_end: date | None = None,
+    exclude_schedule_id: int | None = None,
     proposed_availability_windows: list[AvailabilityCreate] | None = None,
     new_window: AvailabilityCreate | None = None,
 ) -> None:
-    """Validate that total weekly load (assigned course schedules + availability) does not exceed max_weekly_hours (default 40h).
+    """Validate that total assigned course schedule hours do not exceed max_weekly_hours (default 40h).
 
-    Raises HTTP 422 Unprocessable Entity if limit is exceeded.
+    Availability windows represent candidate working hours and are decoupled from assigned teaching load.
+    Raises HTTP 422 Unprocessable Entity if the limit is exceeded.
     """
     teacher = db.get(User, teacher_id)
     max_hours = (
@@ -123,31 +147,27 @@ def validate_teacher_weekly_load(
         else DEFAULT_MAX_WEEKLY_HOURS
     )
 
-    # 1. Assigned class schedules duration
-    assigned_schedules = db.scalars(
-        select(Schedule).where(Schedule.teacher_id == teacher_id)
-    ).all()
-    assigned_minutes = sum(_window_minutes(s.start_time, s.end_time) for s in assigned_schedules)
+    assigned_schedules = _active_assigned_schedules(db, teacher_id)
+    if exclude_schedule_id is not None:
+        assigned_schedules = [s for s in assigned_schedules if s.id != exclude_schedule_id]
 
-    # 2. Proposed availability duration
-    if proposed_availability_windows is not None:
-        avail_minutes = sum(
-            _window_minutes(w.start_time, w.end_time) for w in proposed_availability_windows
+    if term_start is not None or term_end is not None:
+        from app.services.scheduling import terms_overlap
+        assigned_minutes = sum(
+            _window_minutes(s.start_time, s.end_time)
+            for s in assigned_schedules
+            if terms_overlap(term_start, term_end, s.term_start, s.term_end)
         )
     else:
-        existing = db.scalars(
-            select(TeacherAvailability).where(TeacherAvailability.teacher_id == teacher_id)
-        ).all()
-        avail_minutes = sum(_window_minutes(w.start_time, w.end_time) for w in existing)
-        if new_window:
-            avail_minutes += _window_minutes(new_window.start_time, new_window.end_time)
+        assigned_minutes = sum(_window_minutes(s.start_time, s.end_time) for s in assigned_schedules)
 
-    total_hours = (assigned_minutes + avail_minutes) / 60.0
+    total_minutes = assigned_minutes + additional_minutes
+    assigned_hours = total_minutes / 60.0
 
-    if total_hours > max_hours:
+    if assigned_hours > max_hours:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"El profesor excede el límite de horas semanales permitidas (máximo {int(max_hours)} horas, solicitadas: {total_hours:.1f}h)",
+            detail=f"El profesor excede el límite de horas lectivas semanales permitidas (máximo {int(max_hours)} horas, asignadas: {assigned_hours:.1f}h)",
         )
 
 
@@ -252,10 +272,7 @@ def add_availability(
     validate_teacher_self_or_admin(current_user, teacher_id)
     require_teacher_user(db, teacher_id, current_user)
 
-    # 1. Validate weekly load limit (max 40h)
-    validate_teacher_weekly_load(db, teacher_id, new_window=payload)
-
-    # 2. Check overlap with existing availability windows
+    # Availability windows define candidate working hours and do not consume teaching load
     existing = db.scalars(
         select(TeacherAvailability).where(
             TeacherAvailability.teacher_id == teacher_id,
@@ -297,6 +314,37 @@ def add_availability(
     return window
 
 
+def check_assigned_classes_coverage(
+    db: Session,
+    teacher_id: int,
+    resulting_windows: list[AvailabilityCreate] | list[TeacherAvailability],
+    relevant_day_of_week: int | None = None,
+) -> None:
+    """Verify that active assigned class schedules for the teacher are covered by resulting_windows.
+
+    If relevant_day_of_week is specified, only checks active schedules on that day.
+    Raises HTTP 409 Conflict if any active assigned schedule would be left uncovered.
+    """
+    assigned_schedules = _active_assigned_schedules(db, teacher_id)
+    if relevant_day_of_week is not None:
+        assigned_schedules = [s for s in assigned_schedules if s.day_of_week == relevant_day_of_week]
+
+    for s in assigned_schedules:
+        is_covered = any(
+            w.day_of_week == s.day_of_week
+            and w.start_time <= s.start_time
+            and w.end_time >= s.end_time
+            for w in resulting_windows
+        )
+        if not is_covered:
+            course = db.get(Course, s.course_id)
+            course_name = course.name if course else f"Curso #{s.course_id}"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Advertencia: Tienes una clase asignada activa en este horario ({course_name}: {s.start_time.strftime('%H:%M')}–{s.end_time.strftime('%H:%M')}). No se puede modificar la disponibilidad dejando la clase sin cobertura horaria.",
+            )
+
+
 def update_availability(
     db: Session, teacher_id: int, payload: list[AvailabilityCreate], current_user: User
 ) -> list[TeacherAvailability]:
@@ -307,14 +355,33 @@ def update_availability(
     # 1. Validate schedule conflicts (internal overlaps)
     validate_schedule_conflicts(payload)
 
-    # 2. Validate weekly load limit (max 40h)
-    validate_teacher_weekly_load(db, teacher_id, proposed_availability_windows=payload)
-
-    existing = db.scalars(
-        select(TeacherAvailability).where(
-            TeacherAvailability.teacher_id == teacher_id
+    # 2. Ensure active assigned classes that were covered or are on days in payload remain covered
+    existing = list(
+        db.scalars(
+            select(TeacherAvailability).where(
+                TeacherAvailability.teacher_id == teacher_id
+            )
+        ).all()
+    )
+    for s in _active_assigned_schedules(db, teacher_id):
+        was_covered = any(
+            w.day_of_week == s.day_of_week and w.start_time <= s.start_time and w.end_time >= s.end_time
+            for w in existing
         )
-    ).all()
+        day_in_payload = any(w.day_of_week == s.day_of_week for w in payload)
+        if was_covered or day_in_payload:
+            is_covered_now = any(
+                w.day_of_week == s.day_of_week and w.start_time <= s.start_time and w.end_time >= s.end_time
+                for w in payload
+            )
+            if not is_covered_now:
+                course = db.get(Course, s.course_id)
+                course_name = course.name if course else f"Curso #{s.course_id}"
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Advertencia: Tienes una clase asignada activa en este horario ({course_name}: {s.start_time.strftime('%H:%M')}–{s.end_time.strftime('%H:%M')}). No se puede modificar la disponibilidad dejando la clase sin cobertura horaria.",
+                )
+
     for row in existing:
         db.delete(row)
     db.flush()
@@ -346,24 +413,32 @@ def update_availability(
 
 
 def check_assigned_class_conflict_on_release(
-    db: Session, teacher_id: int, day_of_week: int, start_time: time, end_time: time
+    db: Session,
+    teacher_id: int,
+    day_of_week: int,
+    start_time: time,
+    end_time: time,
+    replacement_window: AvailabilityCreate | None = None,
 ) -> None:
-    """Check if releasing an availability block collides with an assigned course schedule."""
-    clashing_schedule = db.scalar(
-        select(Schedule)
-        .where(
-            Schedule.teacher_id == teacher_id,
-            Schedule.day_of_week == day_of_week,
-            Schedule.start_time < end_time,
-            Schedule.end_time > start_time,
-        )
-    )
-    if clashing_schedule:
-        course = db.get(User, clashing_schedule.course_id)
-        course_name = f"Curso #{clashing_schedule.course_id}"
+    """Check if releasing or shrinking an availability block collides with an assigned course schedule."""
+    active_schedules = [
+        s for s in _active_assigned_schedules(db, teacher_id)
+        if s.day_of_week == day_of_week and s.start_time < end_time and s.end_time > start_time
+    ]
+    for clashing_schedule in active_schedules:
+        if replacement_window:
+            is_covered = (
+                replacement_window.day_of_week == clashing_schedule.day_of_week
+                and replacement_window.start_time <= clashing_schedule.start_time
+                and replacement_window.end_time >= clashing_schedule.end_time
+            )
+            if is_covered:
+                continue
+        course = db.get(Course, clashing_schedule.course_id)
+        course_name = course.name if course else f"Curso #{clashing_schedule.course_id}"
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Advertencia: Tienes una clase asignada en este horario ({start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')}). No se puede liberar este bloque de disponibilidad sin reasignar la clase primero.",
+            detail=f"Advertencia: Tienes una clase asignada en este horario ({course_name}: {clashing_schedule.start_time.strftime('%H:%M')}–{clashing_schedule.end_time.strftime('%H:%M')}). No se puede liberar este bloque de disponibilidad sin reasignar la clase primero.",
         )
 
 
@@ -381,16 +456,43 @@ def patch_availability(
     if window is None or window.teacher_id != teacher_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Availability window not found")
 
-    if (
-        window.day_of_week != payload.day_of_week
-        or window.start_time != payload.start_time
-        or window.end_time != payload.end_time
-    ):
-        check_assigned_class_conflict_on_release(
-            db, teacher_id, window.day_of_week, window.start_time, window.end_time
+    other_windows = list(
+        db.scalars(
+            select(TeacherAvailability).where(
+                TeacherAvailability.teacher_id == teacher_id,
+                TeacherAvailability.id != availability_id,
+            )
+        ).all()
+    )
+
+    # Check for internal overlap with other existing availability windows
+    overlapping = [
+        w for w in other_windows
+        if w.day_of_week == payload.day_of_week
+        and w.start_time < payload.end_time
+        and w.end_time > payload.start_time
+    ]
+    if overlapping:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya hay otra ventana de disponibilidad que se solapa con ese horario",
         )
 
-    validate_teacher_weekly_load(db, teacher_id, new_window=payload)
+    # Check that any active assigned class that intersected the old window remains covered after patch
+    resulting_windows = other_windows + [payload]
+    for s in _active_assigned_schedules(db, teacher_id):
+        if s.day_of_week == window.day_of_week and s.start_time < window.end_time and s.end_time > window.start_time:
+            covered = any(
+                w.day_of_week == s.day_of_week and w.start_time <= s.start_time and w.end_time >= s.end_time
+                for w in resulting_windows
+            )
+            if not covered:
+                course = db.get(Course, s.course_id)
+                course_name = course.name if course else f"Curso #{s.course_id}"
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Advertencia: Tienes una clase asignada activa en este horario ({course_name}: {s.start_time.strftime('%H:%M')}–{s.end_time.strftime('%H:%M')}). No se puede modificar la disponibilidad dejando la clase sin cobertura horaria.",
+                )
 
     window.day_of_week = payload.day_of_week
     window.start_time = payload.start_time
@@ -420,10 +522,29 @@ def delete_availability(
     if window is None or window.teacher_id != teacher_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Availability not found")
 
-    # Check if releasing this window conflicts with an assigned class
-    check_assigned_class_conflict_on_release(
-        db, teacher_id, window.day_of_week, window.start_time, window.end_time
+    remaining_windows = list(
+        db.scalars(
+            select(TeacherAvailability).where(
+                TeacherAvailability.teacher_id == teacher_id,
+                TeacherAvailability.id != availability_id,
+            )
+        ).all()
     )
+
+    # Check if this window intersected an active assigned class that would now be left uncovered
+    for s in _active_assigned_schedules(db, teacher_id):
+        if s.day_of_week == window.day_of_week and s.start_time < window.end_time and s.end_time > window.start_time:
+            covered = any(
+                w.day_of_week == s.day_of_week and w.start_time <= s.start_time and w.end_time >= s.end_time
+                for w in remaining_windows
+            )
+            if not covered:
+                course = db.get(Course, s.course_id)
+                course_name = course.name if course else f"Curso #{s.course_id}"
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Advertencia: Tienes una clase asignada activa en este horario ({course_name}: {s.start_time.strftime('%H:%M')}–{s.end_time.strftime('%H:%M')}). No se puede liberar este bloque de disponibilidad sin reasignar la clase primero.",
+                )
 
     record(
         db,

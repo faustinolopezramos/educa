@@ -2,7 +2,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models import RefreshSession, User
+from app.models import RefreshSession, Tenant, User
 from app.schemas.auth import RefreshRequest, Token
 from app.schemas.user import UserRead, UserSelfUpdate
 from app.services.audit import record, snapshot
@@ -86,37 +86,56 @@ def _purge_old_revoked_sessions(db: Session, user_id: int) -> None:
 @router.post("/login", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
+    x_tenant_slug: str | None = Header(None, alias="X-Tenant-Slug"),
     db: Session = Depends(get_db),
 ) -> Token:
-    # Emails are unique per tenant, not globally (`uq_users_tenant_email`), so
-    # an address can legitimately exist in two academies. There is no tenant in
-    # a login request to disambiguate with — and taking one from the client
-    # would let the caller choose whose account to authenticate against — so an
-    # ambiguous address is refused rather than resolved arbitrarily.
+    tenant_slug = (x_tenant_slug or form_data.client_id or "").strip() or None
+
     candidates = list(
         db.scalars(select(User).where(User.email == form_data.username)).all()
     )
-    user = candidates[0] if len(candidates) == 1 else None
-    if len(candidates) > 1:
-        logger.warning(
-            "Refused login for %s: the address exists in %d tenants",
-            form_data.username,
-            len(candidates),
-        )
-    # Always run verify_password, even for an unknown or ambiguous email:
-    # comparing against a dummy hash keeps this branch's timing
-    # indistinguishable from a wrong password on a real account, so response
-    # time can't be used to enumerate registered emails.
-    password_hash = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
-    password_ok = verify_password(form_data.password, password_hash)
-    if user is None or not password_ok:
+
+    if tenant_slug:
+        target_tenant = db.scalar(select(Tenant).where(Tenant.slug == tenant_slug))
+        if target_tenant is None:
+            verify_password(form_data.password, _DUMMY_PASSWORD_HASH)
+            raise _credentials_exc
+        candidates = [u for u in candidates if u.tenant_id == target_tenant.id]
+
+    if len(candidates) == 1:
+        user = candidates[0]
+        password_ok = verify_password(form_data.password, user.password_hash)
+        if not password_ok:
+            raise _credentials_exc
+    elif len(candidates) > 1:
+        matching_users = [
+            u for u in candidates if verify_password(form_data.password, u.password_hash)
+        ]
+        if len(matching_users) == 1:
+            user = matching_users[0]
+        elif len(matching_users) > 1:
+            tenant_ids = [u.tenant_id for u in matching_users if u.tenant_id is not None]
+            tenants = list(
+                db.scalars(select(Tenant).where(Tenant.id.in_(tenant_ids))).all()
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "tenant_required",
+                    "message": "Tu cuenta pertenece a múltiples instituciones. Selecciona una para ingresar.",
+                    "tenants": [{"id": t.id, "slug": t.slug, "name": t.name} for t in tenants],
+                },
+            )
+        else:
+            raise _credentials_exc
+    else:
+        verify_password(form_data.password, _DUMMY_PASSWORD_HASH)
         raise _credentials_exc
-    # A deactivated account keeps its rows — its grades, its classes, its trail
-    # — but stops being a way in. Same generic error as a wrong password: which
-    # accounts have been switched off is not something a stranger gets to probe.
+
     if not user.is_active:
         logger.info("Refused login for deactivated account %s", user.id)
         raise _credentials_exc
+
     _purge_old_revoked_sessions(db, user.id)
     token = _issue_tokens(db, user)
     db.commit()

@@ -11,6 +11,7 @@ import {
   IconBook, IconChevronRight, IconClock, IconLock, IconPin,
 } from "../components/icons";
 import { StudentGrades } from "../features/grades/StudentGrades";
+import { StudentKardexView } from "../features/grades/StudentKardexView";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
@@ -34,6 +35,8 @@ import {
   useEnrollments,
   useFinalGrade,
   useGrades,
+  useHolidays,
+  useLevels,
   useMySessions,
   usePublicTeachers,
   useRooms,
@@ -42,6 +45,7 @@ import {
 } from "../lib/queries";
 import { LOBBY_WINDOW_MIN, GRACE_MS } from "../lib/constants";
 import { notify } from "../lib/toast";
+import { Modal, ModalActions } from "../components/ui";
 import type { Enrollment, Modality } from "../lib/types";
 
 function sessionStartMs(date: string, time: string): number {
@@ -66,7 +70,12 @@ export default function StudentDashboard() {
   // "Calificaciones" and "Reporte" were two menu entries answering the same
   // question — how am I doing — and a student had to know which one held the
   // number they wanted. They are one section with two views now.
-  if (section === "progreso" || section === "calificaciones" || section === "reportes") {
+  if (
+    section === "progreso" ||
+    section === "calificaciones" ||
+    section === "reportes" ||
+    section === "kardex"
+  ) {
     return <ProgressView isOverdue={isOverdue} initial={section} />;
   }
   if (section === "perfil") return <ProfilePanel />;
@@ -78,18 +87,22 @@ function ProgressView({
   initial,
 }: {
   isOverdue: boolean;
-  /** Honours the two old section ids, so a bookmark still lands where it used to. */
+  /** Honours the old section ids, so a bookmark still lands where it used to. */
   initial: string;
 }) {
-  const [view, setView] = useState<"notas" | "avance">(
-    initial === "reportes" ? "avance" : "notas",
+  const [view, setView] = useState<"notas" | "avance" | "expediente">(
+    initial === "reportes"
+      ? "avance"
+      : initial === "kardex" || initial === "expediente"
+        ? "expediente"
+        : "notas",
   );
 
   return (
     <div>
       <PageHeader
         title="Mi progreso"
-        description="Tus notas por curso y tu avance del periodo."
+        description="Tus notas por curso, avance del periodo y expediente oficial (Kardex)."
       />
       <div className="mb-4">
         <SegmentedControl
@@ -98,15 +111,18 @@ function ProgressView({
           options={[
             { value: "notas", label: "Notas" },
             { value: "avance", label: "Avance del periodo" },
+            { value: "expediente", label: "Expediente Oficial (Kardex)" },
           ]}
         />
       </div>
-      {isOverdue ? (
+      {isOverdue && view !== "expediente" ? (
         <PaymentGate what={view === "notas" ? "tus notas" : "tu avance"} />
       ) : view === "notas" ? (
         <StudentGrades />
-      ) : (
+      ) : view === "avance" ? (
         <StudentReport />
+      ) : (
+        <StudentKardexView />
       )}
     </div>
   );
@@ -142,19 +158,19 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
   const tz = user?.timezone;
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
+  const { data: levels = [] } = useLevels();
   const { data: schedules = [] } = useSchedules();
   const { data: sessions = [] } = useMySessions();
   const { data: teachers = [] } = usePublicTeachers();
   const { data: rooms = [] } = useRooms();
   const { data: attendance = [] } = useVisibleAttendance();
-  // Not asked for at all when the student owes: the API answers 403 and the
-  // interceptor turns every 403 into a red toast, so this screen used to greet
-  // a student with unpaid fees with a stack of "no tienes permisos" — one per
-  // course, doubled by the retry — instead of the explanation below.
+  const { data: holidays = [] } = useHolidays();
   const { data: grades = [] } = useGrades(undefined, !isOverdue);
 
   const now = Date.now();
   const todayDow = localDow();
+  const [selectedDow, setSelectedDow] = useState<number>(todayDow);
+  const [selectedCourseForModal, setSelectedCourseForModal] = useState<Enrollment | null>(null);
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
   const teacherName = (id: number) =>
@@ -165,9 +181,6 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
   const modalityOf = (courseId: number) =>
     courseModality(schedules.filter((s) => s.course_id === courseId));
 
-  // Courses the student is still in, versus ones they finished or left. The two
-  // used to be one undifferentiated list, so a course dropped two terms ago sat
-  // beside Tuesday's class with the same weight and the same progress ring.
   const current = enrollments.filter((e) => isCurrentEnrollment(e.status));
   const history = enrollments.filter((e) => !isCurrentEnrollment(e.status));
 
@@ -200,8 +213,6 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
     { attendancePct: number | null; average: number | null }
   >();
   for (const e of enrollments) {
-    // Misma regla que el reporte, el kardex y el panel del profesor: una falta
-    // justificada sale del cálculo en lugar de contar como ausencia.
     const pct = attendancePct(
       attendance.filter((a) => a.enrollment_id === e.id).map((a) => a.status),
     );
@@ -221,10 +232,6 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
     <div>
       <PageHeader title={`Hola, ${user?.full_name?.split(" ")[0] ?? ""}`} />
 
-      {/* Overdue fees and unhandled homework arrive here, with the amount and
-          the deadline. This replaced a bare "tienes un pago vencido" that never
-          said how much, and homework that was only discoverable by navigating
-          to the Tareas section and counting. */}
       <ActionTray
         title="Pendientes"
         emptyMessage="No tienes pendientes. Todo al día."
@@ -242,6 +249,7 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
               opensAt={next.opensAt}
               sessionId={next.sess.id}
               tz={tz}
+              topic={next.sess.topic}
             />
           ) : (
             <Card className="h-full">
@@ -254,40 +262,112 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
           )}
         </div>
 
-        <Card>
-          <SectionHeading>Esta semana</SectionHeading>
-          {/* All seven days. This used to stop at Friday, so a student on the
-              Plan Sabatino or Dominical — jornadas the academy actually sells —
-              opened their week and found it empty. */}
-          <div className="flex gap-1.5">
-            {DAYS.map((d, i) => {
-              const dayClasses = mySchedules.filter((s) => s.day_of_week === i);
-              const has = dayClasses.length > 0;
-              const isToday = i === todayDow;
-              return (
-                <div key={i} className="flex-1 text-center">
-                  <div
-                    className={`text-2xs font-medium ${
-                      isToday ? "text-brand-700" : "text-slate-400"
+        {/* Interactive Week Calendar & Agenda */}
+        <Card className="flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <SectionHeading>Esta semana</SectionHeading>
+              <span className="text-2xs text-slate-400 font-medium">Toca un día para ver detalle</span>
+            </div>
+            <div className="flex gap-1.5">
+              {DAYS.map((d, i) => {
+                const dayClasses = mySchedules.filter((s) => s.day_of_week === i);
+                const has = dayClasses.length > 0;
+                const isToday = i === todayDow;
+                const isSelected = i === selectedDow;
+
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedDow(i)}
+                    className={`flex-1 rounded-lg py-1.5 text-center transition-all ${
+                      isSelected
+                        ? "bg-slate-100 ring-2 ring-brand-600 font-semibold"
+                        : "hover:bg-slate-50"
                     }`}
                   >
-                    {d.slice(0, 2)}
-                  </div>
-                  <div
-                    title={
-                      has
-                        ? `${d}: ${dayClasses
-                            .map((s) => `${courseName(s.course_id)} ${formatTime(s.start_time)}`)
-                            .join(", ")}`
-                        : `${d}: sin clase`
-                    }
-                    className={`mt-1 h-7 rounded-md ${
-                      has ? "bg-brand-600" : "bg-slate-100"
-                    } ${isToday ? "ring-2 ring-brand-300 ring-offset-1" : ""}`}
-                  />
+                    <div
+                      className={`text-2xs font-semibold ${
+                        isToday ? "text-brand-700 font-bold" : "text-slate-500"
+                      }`}
+                    >
+                      {d.slice(0, 2)}
+                    </div>
+                    <div
+                      className={`mx-auto mt-1 h-2 w-2 rounded-full ${
+                        has ? "bg-brand-600" : "bg-slate-200"
+                      } ${isToday ? "ring-2 ring-brand-300 ring-offset-1" : ""}`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Agenda of the selected day */}
+          <div className="mt-4 border-t border-slate-100 pt-3 text-xs">
+            <div className="flex items-center justify-between text-slate-500 mb-2">
+              <span className="font-semibold text-slate-700">
+                {DAYS[selectedDow]} {selectedDow === todayDow && "(Hoy)"}
+              </span>
+              {(() => {
+                const count = mySchedules.filter((s) => s.day_of_week === selectedDow).length;
+                return (
+                  <span className="text-2xs text-slate-400">
+                    {count === 0 ? "Sin clases" : count === 1 ? "1 clase" : `${count} clases`}
+                  </span>
+                );
+              })()}
+            </div>
+
+            {(() => {
+              // Check if selected day this week is a holiday
+              const d = new Date();
+              const currDow = localDow();
+              const diff = selectedDow - currDow;
+              d.setDate(d.getDate() + diff);
+              const dateStr = d.toISOString().slice(0, 10);
+              const holiday = holidays.find((h) => h.date === dateStr);
+
+              const dayClasses = mySchedules.filter((s) => s.day_of_week === selectedDow);
+
+              return (
+                <div className="space-y-2">
+                  {holiday && (
+                    <div className="rounded-lg bg-amber-50 p-2 border border-amber-200 text-amber-900 text-2xs">
+                      🎉 <strong>Feriado escolar:</strong> {holiday.name}
+                    </div>
+                  )}
+                  {dayClasses.length === 0 ? (
+                    <p className="text-slate-400 italic py-2 text-center">
+                      No tienes clases programadas para este día.
+                    </p>
+                  ) : (
+                    dayClasses.map((s) => {
+                      const cName = courseName(s.course_id);
+                      const tName = teacherName(s.teacher_id);
+                      const rName = roomName(s.room_id);
+
+                      return (
+                        <div
+                          key={s.id}
+                          className="flex items-center justify-between rounded-lg p-2 border border-slate-100 bg-slate-50/70 transition"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-semibold text-slate-800 truncate">{cName}</div>
+                            <div className="text-2xs text-slate-500">
+                              {formatTime(s.start_time)} – {formatTime(s.end_time)} · Prof. {tName}
+                              {rName ? ` · Aula ${rName}` : s.modality === "virtual" ? " · En línea" : ""}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               );
-            })}
+            })()}
           </div>
         </Card>
       </div>
@@ -318,13 +398,12 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
               nextClass={nextClassForCourse(e.course_id)}
               gradesHidden={isOverdue}
               modality={modalityOf(e.course_id)}
+              onSelect={() => setSelectedCourseForModal(e)}
             />
           ))}
         </div>
       )}
 
-      {/* Finished and abandoned courses keep their grades and certificates, so
-          they are worth keeping — just not mixed in with the live ones. */}
       {history.length > 0 && (
         <details className="mt-6 group">
           <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 hover:text-slate-900">
@@ -343,11 +422,151 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
                 nextClass={null}
                 gradesHidden={isOverdue}
                 modality={modalityOf(e.course_id)}
+                onSelect={() => setSelectedCourseForModal(e)}
               />
             ))}
           </div>
         </details>
       )}
+
+      {/* Course Detail Modal */}
+      {selectedCourseForModal && (() => {
+        const en = selectedCourseForModal;
+        const c = courses.find((co) => co.id === en.course_id);
+        const lvl = levels.find((l) => l.id === c?.level_id);
+        const courseAttendance = attendance.filter((a) => a.enrollment_id === en.id);
+        const presentCount = courseAttendance.filter((a) => a.status === "present" || a.status === "late").length;
+        const excusedCount = courseAttendance.filter((a) => a.status === "excused").length;
+        const absentCount = courseAttendance.filter((a) => a.status === "absent").length;
+        const totalCounted = presentCount + absentCount;
+        const coursePct = totalCounted > 0 ? Math.round((presentCount / totalCounted) * 100) : 100;
+        const courseGrades = grades.filter((g) => g.enrollment_id === en.id);
+        const courseSchedules = schedules.filter((s) => s.course_id === en.course_id);
+        const modalMod = modalityOf(en.course_id);
+
+        return (
+          <Modal
+            title={c?.name ?? `Curso #${en.course_id}`}
+            description={lvl ? `${lvl.code} — ${lvl.name}` : "Detalles académicos de tu curso"}
+            onClose={() => setSelectedCourseForModal(null)}
+            maxWidth="max-w-xl"
+            footer={
+              <ModalActions>
+                <Link
+                  to="/?m=tareas"
+                  className="rounded-lg bg-brand-50 px-3.5 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100 transition"
+                  onClick={() => setSelectedCourseForModal(null)}
+                >
+                  Ver tareas del curso →
+                </Link>
+                <Button variant="secondary" onClick={() => setSelectedCourseForModal(null)}>
+                  Cerrar
+                </Button>
+              </ModalActions>
+            }
+          >
+            <div className="space-y-5">
+              {/* General Course Info */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                <div className="rounded-lg bg-slate-50 p-2.5 border border-slate-100">
+                  <span className="text-slate-400 block text-2xs uppercase font-medium">Código Matrícula</span>
+                  <span className="font-mono font-semibold text-brand-700">{en.enrollment_code}</span>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-2.5 border border-slate-100">
+                  <span className="text-slate-400 block text-2xs uppercase font-medium">Modalidad</span>
+                  <span className="font-semibold text-slate-800">
+                    {modalMod ? courseModalityLabel(modalMod) : "Por definir"}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-2.5 border border-slate-100">
+                  <span className="text-slate-400 block text-2xs uppercase font-medium">Estado Matrícula</span>
+                  <span className="font-semibold text-slate-800">
+                    {ENROLLMENT_LABELS[en.status] ?? en.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Attendance Details Breakdown */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-semibold text-slate-900 text-sm">Resumen de Asistencia</span>
+                  <span className="font-bold text-sm text-brand-700">{coursePct}% asistencia</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div className="rounded-lg bg-emerald-50 p-2 text-emerald-800 border border-emerald-100">
+                    <div className="text-base font-bold">{presentCount}</div>
+                    <div className="text-2xs text-emerald-600">Asistencias</div>
+                  </div>
+                  <div className="rounded-lg bg-amber-50 p-2 text-amber-800 border border-amber-100">
+                    <div className="text-base font-bold">
+                      {courseAttendance.filter((a) => a.status === "late").length}
+                    </div>
+                    <div className="text-2xs text-amber-600">Tardanzas</div>
+                  </div>
+                  <div className="rounded-lg bg-indigo-50 p-2 text-indigo-800 border border-indigo-100">
+                    <div className="text-base font-bold">{excusedCount}</div>
+                    <div className="text-2xs text-indigo-600">Justificadas</div>
+                  </div>
+                  <div className="rounded-lg bg-red-50 p-2 text-red-800 border border-red-100">
+                    <div className="text-base font-bold">{absentCount}</div>
+                    <div className="text-2xs text-red-600">Faltas</div>
+                  </div>
+                </div>
+                <p className="mt-2 text-2xs text-slate-400 text-center">
+                  * Las faltas justificadas no penalizan tu tasa de asistencia.
+                </p>
+              </div>
+
+              {/* Schedules & Teachers */}
+              <div>
+                <span className="font-semibold text-slate-900 text-xs block mb-2">Horarios & Docentes</span>
+                <div className="space-y-1.5">
+                  {courseSchedules.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs border border-slate-100"
+                    >
+                      <span className="font-medium text-slate-800">
+                        {DAYS[s.day_of_week]}: {formatTime(s.start_time)} – {formatTime(s.end_time)}
+                      </span>
+                      <span className="text-slate-500">
+                        Prof. {teacherName(s.teacher_id)} {s.room_id ? `(Aula ${roomName(s.room_id)})` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Evaluations & Grades */}
+              {!isOverdue && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-slate-900 text-xs">Evaluaciones del Curso</span>
+                    <span className="text-2xs text-slate-500">Mínimo para aprobar: {c?.passing_score ?? 6.0}</span>
+                  </div>
+                  {courseGrades.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">
+                      Aún no hay calificaciones registradas por el profesor.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {courseGrades.map((g) => (
+                        <div
+                          key={g.id}
+                          className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs border border-slate-100"
+                        >
+                          <span className="text-slate-700">{g.evaluation_name}</span>
+                          <span className="font-bold text-slate-900">{g.score} / 10</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
   );
 }
@@ -361,17 +580,17 @@ function NextClassHero({
   opensAt,
   sessionId,
   tz,
+  topic,
 }: {
   courseName: string;
   teacher: string;
-  // `Modality`, no `string`: escrito así, el compilador no podía avisar de que
-  // esta pantalla estaba doblando las tres modalidades en dos.
   modality: Modality;
   room: string | null;
   start: number;
   opensAt: number;
   sessionId: number;
   tz?: string;
+  topic?: string | null;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -393,8 +612,15 @@ function NextClassHero({
 
   return (
     <div className="flex h-full flex-col rounded-xl bg-slate-900 p-6 text-slate-100">
-      <div className="text-xs font-semibold uppercase tracking-wider text-brand-300">
-        {countLabel}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wider text-brand-300">
+          {countLabel}
+        </div>
+        {topic && (
+          <span className="rounded-full bg-brand-500/20 px-2.5 py-0.5 text-xs font-medium text-brand-200 border border-brand-500/30">
+            Tema: {topic}
+          </span>
+        )}
       </div>
 
       <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">{courseName}</h2>
@@ -407,9 +633,6 @@ function NextClassHero({
         <span aria-hidden="true">·</span>
         <span>Prof. {teacher}</span>
         <span aria-hidden="true">·</span>
-        {/* La modalidad se nombra por su nombre. Escrito a mano como
-            `virtual ? … : …`, una semi presencial sin aula asignada se
-            anunciaba como "Presencial" — la mitad de la verdad. */}
         <span>{locationSummary(modality, room)}</span>
       </div>
 
@@ -468,6 +691,7 @@ function CourseCard({
   nextClass,
   gradesHidden,
   modality,
+  onSelect,
 }: {
   enrollment: Enrollment;
   name: string;
@@ -477,6 +701,7 @@ function CourseCard({
   gradesHidden: boolean;
   /** Deducida de las franjas del curso; `null` si todavía no tiene ninguna. */
   modality: Modality | "mixta" | null;
+  onSelect?: () => void;
 }) {
   const payColor =
     enrollment.payment_status === "paid"
@@ -564,6 +789,18 @@ function CourseCard({
         <div className="mt-3 text-xs text-slate-500">Próxima clase: {nextClass}</div>
       )}
       {!gradesHidden && <FinalGradeRow enrollmentId={enrollment.id} />}
+
+      {onSelect && (
+        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end">
+          <button
+            type="button"
+            onClick={onSelect}
+            className="text-xs font-semibold text-brand-700 hover:text-brand-900 hover:underline transition"
+          >
+            Ver expediente del curso →
+          </button>
+        </div>
+      )}
     </Card>
   );
 }

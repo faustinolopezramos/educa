@@ -433,6 +433,21 @@ function StudentPanel({
   return (
     <Card>
       <div className="text-sm text-slate-500">Tu clase · inicio {formatDateTime(startIso)}</div>
+
+      {session.topic && (
+        <div className="mt-2.5 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 text-xs text-brand-900">
+          <span className="font-semibold text-brand-700">Tema de hoy: </span>
+          <span className="font-medium">{session.topic}</span>
+        </div>
+      )}
+
+      {session.status === "cancelled" && (
+        <div className="mt-2.5 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+          <span className="font-semibold block">Esta clase fue cancelada.</span>
+          {session.cancel_reason && <p className="mt-0.5">{session.cancel_reason}</p>}
+        </div>
+      )}
+
       <div className="my-5">
         {isGracePeriod ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -546,6 +561,12 @@ function StudentPanel({
       <p className="mt-2 text-center text-xs text-slate-400">
         Se abrirá Zoom / Meet / Teams en una pestaña nueva.
       </p>
+      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+        <span className="text-slate-500">¿Tienes tareas pendientes?</span>
+        <Link to="/?m=tareas" className="font-semibold text-brand-600 hover:text-brand-700 hover:underline">
+          Ver Tareas →
+        </Link>
+      </div>
     </Card>
   );
 }

@@ -14,6 +14,7 @@ from app.core.deps import (
 )
 from app.models import Notification, Permission, User, UserRole
 from app.schemas.notification import NotificationRead
+from app.services.audit import record
 from app.services.notifications import notify_teacher_of_at_risk
 from app.services.reports import build_report
 
@@ -100,5 +101,18 @@ def raise_at_risk_alerts(
             f"{r.student_name} ({', '.join(r.reasons)})"
         )
     created = notify_teacher_of_at_risk(db, by_course)
+    if created:
+        record(
+            db,
+            current_user,
+            "create",
+            "at_risk_alert_sweep",
+            0,
+            after={
+                "alerts_sent": created,
+                "period": period,
+                "anchor": str(anchor or academy_today()),
+            },
+        )
     db.commit()
     return {"alerts": created}

@@ -5,6 +5,7 @@ import type {
   Course,
   CourseStatus,
   CourseTeacher,
+  DeleteImpact,
   Language,
   Level,
   Nationality,
@@ -228,5 +229,33 @@ export function useChangeCourseStatus() {
       qc.invalidateQueries({ queryKey: ["courses"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
+  });
+}
+
+// ---- Delete Impact ----
+export function useLanguageDeleteImpact(languageId?: number) {
+  return useQuery({
+    queryKey: ["language-delete-impact", languageId],
+    enabled: !!languageId,
+    queryFn: async () =>
+      (await api.get<DeleteImpact>(`/catalog/languages/${languageId}/delete-impact`)).data,
+  });
+}
+
+export function useLevelDeleteImpact(levelId?: number) {
+  return useQuery({
+    queryKey: ["level-delete-impact", levelId],
+    enabled: !!levelId,
+    queryFn: async () =>
+      (await api.get<DeleteImpact>(`/catalog/levels/${levelId}/delete-impact`)).data,
+  });
+}
+
+export function useCourseDeleteImpact(courseId?: number) {
+  return useQuery({
+    queryKey: ["course-delete-impact", courseId],
+    enabled: !!courseId,
+    queryFn: async () =>
+      (await api.get<DeleteImpact>(`/catalog/courses/${courseId}/delete-impact`)).data,
   });
 }

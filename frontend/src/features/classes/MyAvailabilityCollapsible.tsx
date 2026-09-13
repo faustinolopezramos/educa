@@ -134,10 +134,10 @@ function AvailabilityContent({ teacherId }: { teacherId: number }) {
       {load && (
         <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 flex flex-wrap items-center justify-between text-xs gap-2">
           <span>
-            <strong>Carga semanal declarada:</strong> {load.availability_hours}h / {load.max_hours}h máximas
+            <strong>Disponibilidad declarada:</strong> {load.availability_hours}h (tope lectivo: {load.max_hours}h/sem)
           </span>
           <Badge color={load.percentage > 90 ? "amber" : "green"}>
-            {load.assigned_hours}h asignadas a cursos
+            {load.assigned_hours}h asignadas a cursos ({load.percentage}%)
           </Badge>
         </div>
       )}

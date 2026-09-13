@@ -358,6 +358,7 @@ export function AssignmentsPanel() {
             const subs = submissions[a.id] || [];
             const studentSub = subs.find((s) => s.student_id === user?.id);
             const roster = rosterMap[a.id] || [];
+            const pendingGradingCount = isStaff ? subs.filter((s) => s.status !== "graded").length : 0;
 
             return (
               <Card key={a.id} className="flex flex-col justify-between transition-all hover:shadow-md">
@@ -367,7 +368,14 @@ export function AssignmentsPanel() {
                       <span className="text-xs font-semibold text-brand-600">{courseName}</span>
                       <h4 className="font-semibold text-slate-900 text-base">{a.title}</h4>
                     </div>
-                    {getDueBadge(a, studentSub)}
+                    <div className="flex flex-col items-end gap-1">
+                      {getDueBadge(a, studentSub)}
+                      {isStaff && pendingGradingCount > 0 && (
+                        <Badge color="amber">
+                          {pendingGradingCount} por calificar
+                        </Badge>
+                      )}
+                    </div>
                   </div>
 
                   {a.description && (
@@ -385,6 +393,38 @@ export function AssignmentsPanel() {
                     >
                       📎 Ver recurso adjunto ↗
                     </a>
+                  )}
+
+                  {isStaff && (
+                    <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-600 border border-slate-100">
+                      <span>Entregas registradas:</span>
+                      <span className="font-semibold text-slate-900">
+                        {subs.length} / {roster.length} alumnos ({roster.length > 0 ? Math.round((subs.length / roster.length) * 100) : 0}%)
+                      </span>
+                    </div>
+                  )}
+
+                  {!isStaff && studentSub && (
+                    <div className="mt-3 rounded-lg border border-slate-200/80 bg-slate-50/70 p-3 text-xs">
+                      <div className="flex items-center justify-between font-medium">
+                        <span className="text-slate-700">Tu entrega:</span>
+                        {studentSub.status === "graded" ? (
+                          <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            Calificación: {studentSub.score}/10
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 italic">Pendiente de calificación</span>
+                        )}
+                      </div>
+                      {studentSub.feedback && (
+                        <div className="mt-2 rounded-md bg-emerald-50/60 p-2.5 border border-emerald-100 text-emerald-950">
+                          <span className="font-semibold text-2xs uppercase tracking-wider text-emerald-800 block mb-1">
+                            Retroalimentación del profesor:
+                          </span>
+                          <p className="italic leading-relaxed">{studentSub.feedback}</p>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -406,7 +446,7 @@ export function AssignmentsPanel() {
                     </Button>
                   ) : (
                     <Button
-                      variant="secondary"
+                      variant={pendingGradingCount > 0 ? "primary" : "secondary"}
                       onClick={() => {
                         setManagingAssignment(a);
                         setSubFilterTab("todos");
@@ -496,44 +536,83 @@ export function AssignmentsPanel() {
       )}
 
       {/* Modal: Entregar Tarea (Student) */}
-      {submittingAssignment && (
-        <Modal
-          title="Entregar tarea"
-          description={submittingAssignment.title}
-          onClose={() => setSubmittingAssignment(null)}
-          onSubmit={handleSubmitWork}
-          maxWidth="max-w-xl"
-          footer={
-            <ModalActions hint="Basta con un texto o un enlace.">
-              <Button variant="secondary" onClick={() => setSubmittingAssignment(null)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={saving || (!subContent && !subUrl)}>
-                {saving ? "Enviando…" : "Enviar entrega"}
-              </Button>
-            </ModalActions>
-          }
-        >
-          <div className="space-y-4">
-            <Field label="Respuesta / Explicación">
-              <textarea
-                rows={4}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                placeholder="Escribe tu respuesta o resumen del trabajo…"
-                value={subContent}
-                onChange={(e) => setSubContent(e.target.value)}
-              />
-            </Field>
-            <Field label="Enlace del trabajo (Drive, GitHub, Figma, etc.)">
-              <Input
-                placeholder="Ej. https://github.com/..."
-                value={subUrl}
-                onChange={(e) => setSubUrl(e.target.value)}
-              />
-            </Field>
-          </div>
-        </Modal>
-      )}
+      {submittingAssignment && (() => {
+        const studentSub = (submissions[submittingAssignment.id] || []).find((s) => s.student_id === user?.id);
+        const isPastDue = submittingAssignment.due_date && new Date(submittingAssignment.due_date).getTime() < Date.now();
+
+        return (
+          <Modal
+            title={studentSub ? "Detalle de tu entrega" : "Entregar tarea"}
+            description={submittingAssignment.title}
+            onClose={() => setSubmittingAssignment(null)}
+            onSubmit={handleSubmitWork}
+            maxWidth="max-w-xl"
+            footer={
+              <ModalActions hint={studentSub?.status === "graded" ? undefined : "Basta con un texto o un enlace."}>
+                <Button variant="secondary" onClick={() => setSubmittingAssignment(null)}>
+                  {studentSub?.status === "graded" ? "Cerrar" : "Cancelar"}
+                </Button>
+                {studentSub?.status !== "graded" && (
+                  <Button type="submit" disabled={saving || (!subContent && !subUrl)}>
+                    {saving ? "Enviando…" : studentSub ? "Actualizar entrega" : "Enviar entrega"}
+                  </Button>
+                )}
+              </ModalActions>
+            }
+          >
+            <div className="space-y-4">
+              {studentSub?.status === "graded" && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-950">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-base text-emerald-900">
+                      Calificación: {studentSub.score} / 10
+                    </span>
+                    <Badge color="green">Revisada</Badge>
+                  </div>
+                  {studentSub.feedback && (
+                    <div className="mt-2 text-xs">
+                      <span className="font-semibold text-emerald-800">Comentario del docente:</span>
+                      <p className="mt-0.5 italic">{studentSub.feedback}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isPastDue && !studentSub && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  ⚠️ La fecha límite de esta tarea ya concluyó. La entrega se registrará fuera de plazo.
+                </div>
+              )}
+
+              {submittingAssignment.description && (
+                <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 border border-slate-100">
+                  <span className="font-semibold text-slate-700 block mb-1">Instrucciones:</span>
+                  <p className="whitespace-pre-line">{submittingAssignment.description}</p>
+                </div>
+              )}
+
+              <Field label="Respuesta / Explicación">
+                <textarea
+                  rows={4}
+                  disabled={studentSub?.status === "graded"}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-600"
+                  placeholder="Escribe tu respuesta o resumen del trabajo…"
+                  value={subContent}
+                  onChange={(e) => setSubContent(e.target.value)}
+                />
+              </Field>
+              <Field label="Enlace del trabajo (Drive, GitHub, Figma, etc.)">
+                <Input
+                  disabled={studentSub?.status === "graded"}
+                  placeholder="Ej. https://github.com/..."
+                  value={subUrl}
+                  onChange={(e) => setSubUrl(e.target.value)}
+                />
+              </Field>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Modal: Calificar Entrega (Teacher) */}
       {gradingStudentStatus && (

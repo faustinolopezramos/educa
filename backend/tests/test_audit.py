@@ -132,3 +132,41 @@ def test_creating_an_account_is_audited(client, world):
     assert rows[0]["actor_id"] == world["admin"].id
     # snapshot() redacts secrets, so the trail never carries the new password.
     assert rows[0]["after"]["password_hash"] == "***"
+
+
+def test_upsert_provider_is_audited(client, world):
+    admin = auth(client, "admin@test.com")
+    res = client.put(
+        "/meetings/providers",
+        headers=admin,
+        json={"name": "zoom", "is_active": True, "credentials": {"api_key": "123"}},
+    )
+    assert res.status_code == 200
+    rows = _audit(client, admin, entity="meeting_provider")
+    assert len(rows) >= 1
+    assert rows[0]["action"] in ("create", "update")
+    assert rows[0]["after"]["name"] == "zoom"
+    # Credentials must be redacted
+    assert rows[0]["after"]["api_credentials_encrypted"] == "***"
+
+
+def test_assignment_creation_is_audited(client, world):
+    teacher = auth(client, "teacher_a@test.com")
+    admin = auth(client, "admin@test.com")
+    res = client.post(
+        "/assignments",
+        headers=teacher,
+        json={
+            "course_id": world["course_a"].id,
+            "title": "Tarea Auditada",
+            "description": "Detalle de tarea",
+        },
+    )
+    assert res.status_code == 201
+    assignment_id = res.json()["id"]
+
+    rows = _audit(client, admin, entity="assignment", entity_id=assignment_id)
+    assert len(rows) == 1
+    assert rows[0]["action"] == "create"
+    assert rows[0]["after"]["title"] == "Tarea Auditada"
+

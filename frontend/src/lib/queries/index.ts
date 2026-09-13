@@ -128,6 +128,7 @@ export {
 } from "./teachers";
 export {
   useUsers,
+  useStudentKardex,
   useCreateUser,
   useUpdateUser,
   useDeleteUser,

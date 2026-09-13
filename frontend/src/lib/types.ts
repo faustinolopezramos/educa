@@ -511,3 +511,53 @@ export interface TeacherLiveAssignment {
   course_name: string;
   schedule_count: number;
 }
+
+export interface DeleteImpact {
+  can_delete: boolean;
+  reason?: string | null;
+  levels_count: number;
+  courses_count: number;
+  enrollments_count: number;
+  attendance_count: number;
+  grades_count: number;
+  certificates_count: number;
+  payments_count: number;
+  invoices_count: number;
+  message: string;
+}
+
+export interface KardexSummary {
+  global_gpa: number;
+  overall_attendance_rate: number;
+  total_courses_passed: number;
+  total_courses_failed: number;
+  total_certificates_earned: number;
+  person_status: string;
+  person_status_label: string;
+  outstanding_balance: number;
+}
+
+export interface KardexCourseEntry {
+  enrollment_id: number;
+  course_id: number;
+  course_title: string;
+  level_name: string;
+  status: string;
+  status_label: string;
+  enrollment_code: string;
+  final_score?: number | null;
+  passed?: boolean | null;
+  certificate_id?: number | null;
+  certificate_code?: string | null;
+  balance: number;
+}
+
+export interface StudentKardexResponse {
+  student_id: number;
+  student_name: string;
+  student_email: string;
+  phone?: string | null;
+  nationality?: string | null;
+  summary: KardexSummary;
+  history: KardexCourseEntry[];
+}

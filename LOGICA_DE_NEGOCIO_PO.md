@@ -203,7 +203,7 @@ Estos son comportamientos que **el sistema ya tiene implementados de una forma c
 
 2. **Reactivar una matrícula.** Si se reactiva una inscripción que estaba en "Desistió", el sistema **no vuelve a revisar** si hay cupo disponible ni si hay choque de horario (esa revisión solo pasa la primera vez que se inscribe). ¿Debería revisarse de nuevo al reactivar?
 
-3. **Reprogramar una clase no revisa choques reales de horario.** Al mover una clase a otra fecha, el sistema no verifica si el profesor o el aula ya tienen otro compromiso ese día/horario (sí lo verifica al crear un horario nuevo, pero no al reprogramar una clase puntual). ¿Debe agregarse esa validación?
+3. **Reprogramar una clase SÍ revisa choques reales de horario.** Al mover una clase a otra fecha, el sistema verifica: disponibilidad del profesor, otros horarios semanales del profesor que caen ese día, disponibilidad del aula, y sesiones concretas ya existentes en esa fecha/hora (protegido además por constraint de exclusión GiST en `ClassSession`). ✅ **Resuelto**
 
 4. **Acceso al enlace de la clase virtual.** Hoy cualquier alumno inscrito puede acceder al enlace de la clase en cualquier momento (no solo durante el horario de clase), y es el mismo enlace tanto para el profesor como para los alumnos. ¿Es necesario restringir el acceso a la ventana horaria de la clase, y/o tener un enlace distinto para el profesor?
 
@@ -211,7 +211,7 @@ Estos son comportamientos que **el sistema ya tiene implementados de una forma c
 
 6. **Criterio de "alumno en riesgo".** Hoy solo mira la nota de participación diaria, no exámenes ni la nota final. ¿Debería incluir también esas notas para reflejar mejor el desempeño real del alumno?
 
-7. **Trazabilidad de cancelaciones y reprogramaciones.** Hoy no queda ningún registro de quién canceló o reprogramó una clase (solo se le avisa al alumno). ¿Es necesario poder consultarlo después, por ejemplo ante un reclamo?
+7. **Trazabilidad de cancelaciones y reprogramaciones.** Ambas operaciones quedan registradas en la auditoría (`entity=class_session`, actions `cancel` y `reschedule`) con actor, timestamp y before/after. ✅ **Resuelto**
 
 ### Prioridad media
 

@@ -64,30 +64,41 @@ export function StudentGrades() {
     <div className="grid gap-4 lg:grid-cols-2">
       <Card>
         <SectionHeading>Progreso por evaluación</SectionHeading>
-        <div className="space-y-5">
+        <div className="space-y-6">
           {byCourse
             .filter((c) => c.rows.length > 0)
-            .map((c) => (
-              <div key={c.enrollmentId}>
-                <div className="mb-2 flex items-baseline justify-between gap-2">
-                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
-                    {courseName(c.courseId)}
-                  </span>
-                  <span className="tabular flex-none text-xs text-slate-500">
-                    Promedio {c.avg.toFixed(1)}/{MAX_SCORE}
-                  </span>
+            .map((c) => {
+              const courseObj = courses.find((co) => co.id === c.courseId);
+              const passingScore = courseObj?.passing_score ?? 6.0;
+
+              return (
+                <div key={c.enrollmentId} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3.5">
+                  <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-2">
+                    <div>
+                      <span className="font-semibold text-slate-900 text-sm">
+                        {courseName(c.courseId)}
+                      </span>
+                      <span className="ml-2 text-2xs text-slate-500 font-medium">
+                        (Mín. aprobación: {passingScore})
+                      </span>
+                    </div>
+                    <span className="tabular flex-none text-xs font-semibold text-brand-700">
+                      Promedio {c.avg.toFixed(1)}/{MAX_SCORE}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {c.rows.map((g) => (
+                      <ProgressBar
+                        key={g.id}
+                        label={g.evaluation_name}
+                        score={g.score}
+                        passingScore={passingScore}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {c.rows.map((g) => (
-                    <ProgressBar
-                      key={g.id}
-                      label={g.evaluation_name}
-                      score={g.score}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
         </div>
       </Card>
 
@@ -129,21 +140,42 @@ export function StudentGrades() {
   );
 }
 
-function ProgressBar({ label, score }: { label: string; score: number }) {
+function ProgressBar({
+  label,
+  score,
+  passingScore = 6.0,
+}: {
+  label: string;
+  score: number;
+  passingScore?: number;
+}) {
   const pct = Math.max(0, Math.min(100, (score / MAX_SCORE) * 100));
-  const passing = score >= MAX_SCORE / 2;
+  const passPct = Math.max(0, Math.min(100, (passingScore / MAX_SCORE) * 100));
+  const passing = score >= passingScore;
+
   return (
     <div>
-      <div className="mb-0.5 flex items-center justify-between text-xs">
-        <span className="text-slate-600">{label}</span>
-        <span className={passing ? "text-slate-700" : "text-red-600"}>
-          {score}/{MAX_SCORE}
-        </span>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="text-slate-700 font-medium">{label}</span>
+        <div className="flex items-center gap-1.5">
+          <span className={passing ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
+            {score}/{MAX_SCORE}
+          </span>
+          <span className="text-2xs text-slate-400">
+            ({passing ? "Aprobada" : "Por mejorar"})
+          </span>
+        </div>
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-slate-200">
         <div
-          className="h-full rounded-full"
+          className="h-full rounded-full transition-all duration-300"
           style={{ width: `${pct}%`, backgroundColor: passing ? SERIES : FAIL }}
+        />
+        {/* Subtle passing threshold indicator */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-slate-400/70"
+          style={{ left: `${passPct}%` }}
+          title={`Mínimo de aprobación: ${passingScore}`}
         />
       </div>
     </div>

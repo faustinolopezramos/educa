@@ -103,3 +103,15 @@ def test_there_is_no_expediente_for_someone_who_is_not_a_student(client, world):
     # An empty kardex would read as "this student has no history"; 404 says the
     # right thing, which is that there was no student here to begin with.
     assert _kardex(client, "admin@test.com", world["teacher_a"].id).status_code == 404
+
+
+def test_student_with_no_enrollments_can_read_expediente(client, db):
+    new_student = make_user(db, "new_student@test.com", UserRole.student)
+    db.commit()
+    res = _kardex(client, "new_student@test.com", new_student.id)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["student_id"] == new_student.id
+    assert data["summary"]["person_status"] == "prospect"
+    assert data["summary"]["person_status_label"] == "Prospecto / Sin Curso"
+    assert len(data["history"]) == 0
