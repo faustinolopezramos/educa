@@ -12,7 +12,7 @@ import {
   Stat,
 } from "../../components/ui";
 import { notify } from "../../lib/toast";
-import { downloadReport, useReport } from "../../lib/queries";
+import { downloadReport, useRaiseAtRiskAlerts, useReport } from "../../lib/queries";
 import type { ReportPeriod } from "../../lib/types";
 
 import { ConsolidatedPerformanceView } from "./ConsolidatedPerformanceView";
@@ -32,6 +32,7 @@ export function ReportView() {
   const [period, setPeriod] = useState<ReportPeriod>("month");
   const [anchor, setAnchor] = useState<string>("");
   const { data: report, isLoading } = useReport(period, anchor || undefined);
+  const raiseAlerts = useRaiseAtRiskAlerts();
 
   return (
     <div>
@@ -107,6 +108,40 @@ export function ReportView() {
             <Stat label="Promedio de notas" value={report.grade_average ?? "—"} />
           </div>
 
+          {report.skills_overview && Object.keys(report.skills_overview).length > 0 && (
+            <Card className="border-slate-200 bg-white">
+              <SectionHeading>Promedios por Competencia Lingüística (MCER)</SectionHeading>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                {Object.entries(report.skills_overview).map(([skill, score]) => (
+                  <div key={skill} className="rounded-lg bg-slate-50 p-3 border border-slate-200">
+                    <div className="text-2xs font-semibold uppercase tracking-wider text-slate-500 capitalize">
+                      {skill === "speaking"
+                        ? "Speaking"
+                        : skill === "listening"
+                          ? "Listening"
+                          : skill === "reading"
+                            ? "Reading"
+                            : skill === "writing"
+                              ? "Writing"
+                              : skill === "grammar"
+                                ? "Grammar"
+                                : skill === "use_of_language"
+                                  ? "Use of Lang"
+                                  : skill}
+                    </div>
+                    <div
+                      className={`mt-1 text-xl font-bold tabular ${
+                        score < 6.0 ? "text-red-600" : "text-slate-900"
+                      }`}
+                    >
+                      {score.toFixed(1)} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <Card>
               <SectionHeading>Asistencia por curso</SectionHeading>
@@ -133,7 +168,33 @@ export function ReportView() {
             </Card>
 
             <Card>
-              <SectionHeading>Alumnos en riesgo</SectionHeading>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <SectionHeading className="!mb-0">
+                  Alumnos en riesgo ({report.at_risk.length})
+                </SectionHeading>
+                {report.at_risk.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={raiseAlerts.isPending}
+                    onClick={() =>
+                      raiseAlerts.mutate(
+                        { period, anchor: anchor || undefined },
+                        {
+                          onSuccess: (data) =>
+                            notify(
+                              `Se enviaron ${data.alerts} alertas tempranas a docentes y coordinación`,
+                              "success",
+                            ),
+                          onError: () => notify("No se pudieron enviar las alertas", "error"),
+                        },
+                      )
+                    }
+                  >
+                    {raiseAlerts.isPending ? "Notificando…" : "🔔 Notificar alertas"}
+                  </Button>
+                )}
+              </div>
               {report.at_risk.length === 0 ? (
                 <p className="text-sm text-slate-500">
                   Nadie en riesgo en este periodo.

@@ -49,6 +49,7 @@ class Grade(Base):
     )
     evaluation_name: Mapped[str] = mapped_column(String(150))
     score: Mapped[float] = mapped_column(Float)
+    skill: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     # When the score was entered. A session grade can be dated through its
     # session, but a course-level one (exam, final) hangs off no date at all —
     # which left period reports unable to tell this month's exam from last

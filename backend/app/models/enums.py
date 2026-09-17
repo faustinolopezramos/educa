@@ -337,3 +337,44 @@ class ProposalStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+
+
+class SkillCategory(str, enum.Enum):
+    """Marco Común Europeo de Referencia (MCER) - Habilidades lingüísticas."""
+
+    speaking = "speaking"
+    listening = "listening"
+    reading = "reading"
+    writing = "writing"
+    grammar = "grammar"
+    use_of_language = "use_of_language"
+
+
+SKILL_LABELS: dict[SkillCategory, str] = {
+    SkillCategory.speaking: "Speaking / Expresión Oral",
+    SkillCategory.listening: "Listening / Comprensión Auditiva",
+    SkillCategory.reading: "Reading / Comprensión Lectora",
+    SkillCategory.writing: "Writing / Expresión Escrita",
+    SkillCategory.grammar: "Grammar & Vocabulary",
+    SkillCategory.use_of_language: "Use of Language",
+}
+
+
+class MakeUpStatus(str, enum.Enum):
+    """Lifecycle of a student make-up recovery credit."""
+
+    available = "available"
+    booked = "booked"
+    attended = "attended"
+    expired = "expired"
+    cancelled = "cancelled"
+
+
+MAKEUP_STATUS_LABELS: dict[MakeUpStatus, str] = {
+    MakeUpStatus.available: "Disponible",
+    MakeUpStatus.booked: "Reservada",
+    MakeUpStatus.attended: "Completada",
+    MakeUpStatus.expired: "Expirada",
+    MakeUpStatus.cancelled: "Cancelada",
+}
+

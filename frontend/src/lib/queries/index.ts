@@ -3,6 +3,7 @@ export {
   useAttendance,
   useVisibleAttendance,
   useCreateAttendance,
+  useBulkAttendance,
 } from "./attendance";
 export {
   useAudit,
@@ -45,10 +46,6 @@ export {
   useCourseEvaluations,
   useAddEvaluation,
   useDeleteEvaluation,
-  useEnrollmentCertificate,
-  useIssueCertificate,
-  useCertificateByCode,
-  downloadCertificatePdf,
 } from "./grades";
 export {
   useHolidays,
@@ -70,6 +67,7 @@ export {
   useUnreadCount,
   useMarkNotificationRead,
   useMarkAllRead,
+  useRaiseAtRiskAlerts,
 } from "./notifications";
 export {
   useEnrollmentLedger,
@@ -135,3 +133,15 @@ export {
   useUpdateMe,
 } from "./users";
 export type { ProfilePatch } from "./users";
+export {
+  useMakeUpCredits,
+  useCandidateSessions,
+  useBookMakeUp,
+  useCancelMakeUpBooking,
+  useCreateMakeUpCredit,
+} from "./makeups";
+export {
+  useTeacherPayroll,
+  useAcademyPayrollSummary,
+  useUpdateTeacherRate,
+} from "./payroll";

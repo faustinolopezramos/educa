@@ -2,6 +2,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.enums import SkillCategory
 from app.schemas.base import PatchModel
 
 # The academy grades on a 0–10 scale, which the gradebook UI also advertises.
@@ -15,12 +16,14 @@ class GradeCreate(BaseModel):
     score: float = Field(ge=SCORE_MIN, le=SCORE_MAX)
     # None = course-level (exam/final); set = a grade for that class day.
     session_id: int | None = None
+    skill: SkillCategory | None = None
 
 
 class GradeUpdate(PatchModel):
     NON_NULLABLE: ClassVar[tuple[str, ...]] = ("evaluation_name", "score")
     evaluation_name: str | None = None
     score: float | None = Field(default=None, ge=SCORE_MIN, le=SCORE_MAX)
+    skill: SkillCategory | None = None
 
 
 class GradeRead(BaseModel):
@@ -30,3 +33,5 @@ class GradeRead(BaseModel):
     session_id: int | None
     evaluation_name: str
     score: float
+    skill: SkillCategory | None = None
+

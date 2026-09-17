@@ -37,6 +37,7 @@ const ADMIN_GROUPS: NavGroup[] = [
       { id: "students", label: "Alumnos" },
       { id: "courses", label: "Cursos" },
       { id: "teachers", label: "Profesores" },
+      { id: "nomina", label: "Nómina Docente" },
       { id: "reports", label: "Reportes" },
     ],
   },
@@ -84,6 +85,7 @@ export const NAV: Record<Role, NavGroup[]> = {
       items: [
         { id: "clases", label: "Mis clases" },
         { id: "tareas", label: "Tareas" },
+        { id: "nomina", label: "Mis Horas / Nómina" },
         { id: "reportes", label: "Reporte" },
       ],
     },
@@ -145,6 +147,8 @@ export function canSeeSection(user: User | null, sectionId: string): boolean {
   if (sectionId === "users")
     return perms.has("manage_teachers") || perms.has("manage_students");
   if (sectionId === "teachers") return perms.has("manage_teachers");
+  if (sectionId === "nomina")
+    return perms.has("manage_teachers") || perms.has("view_reports");
   if (sectionId === "students") return perms.has("manage_students");
   if (sectionId === "courses" || sectionId === "schedules")
     return perms.has("manage_schedules") || perms.has("manage_catalog");

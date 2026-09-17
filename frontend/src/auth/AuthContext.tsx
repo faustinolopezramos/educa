@@ -8,13 +8,14 @@ import {
 } from "react";
 
 import { api, getRefreshToken, getToken, LOGOUT_EVENT, setToken } from "../lib/api";
+import { supabase, signIn, signOut } from "../lib/supabase";
 import { queryClient } from "../lib/queryClient";
-import type { LoginResponse, Permission, Role, User } from "../lib/types";
+import type { Permission, Role, User } from "../lib/types";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string, tenantSlug?: string) => Promise<User>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   hasRole: (...roles: Role[]) => boolean;
   hasPermission: (permission: Permission) => boolean;
@@ -48,6 +49,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Listen for Supabase auth state changes and sync with backend
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        // Login en tu backend con token de Supabase
+        try {
+          const res = await api.post('/auth/supabase-login', {
+            supabase_token: session.access_token
+          })
+          setToken(res.data.access_token, res.data.refresh_token)
+          setUser(res.data.user)
+        } catch (e) {
+          console.error('Backend sync failed', e)
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setToken(null, null)
+        setUser(null)
+        queryClient.clear()
+      }
+    })
+    
+    return () => subscription.unsubscribe()
+  }, [])
+
   // Listen for forced logout (refresh failed).
   useEffect(() => {
     function handler() {
@@ -58,37 +83,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(LOGOUT_EVENT, handler);
   }, []);
 
-  async function login(email: string, password: string, tenantSlug?: string): Promise<User> {
-    const form = new URLSearchParams();
-    form.set("username", email);
-    form.set("password", password);
-    if (tenantSlug) {
-      form.set("client_id", tenantSlug);
+  async function login(email: string, password: string): Promise<User> {
+    // Usar Supabase Auth para login - signIn lanza error si falla
+    const data = await signIn(email, password)
+    
+    // El listener onAuthStateChange se encarga de sincronizar con backend
+    // y setear el user en el contexto
+    if (data.user) {
+      // Esperar a que el listener procese la sesión
+      await new Promise(resolve => setTimeout(resolve, 100))
+      return data.user as unknown as User
     }
-    const headers: Record<string, string> = {
-      "Content-Type": "application/x-www-form-urlencoded",
-    };
-    if (tenantSlug) {
-      headers["X-Tenant-Slug"] = tenantSlug;
-    }
-    const res = await api.post<LoginResponse>("/auth/login", form, { headers });
-    setToken(res.data.access_token, res.data.refresh_token);
-    setUser(res.data.user);
-    return res.data.user;
+    throw new Error('Login failed')
   }
 
   function logout() {
-    // Read the refresh token before clearing it locally, and best-effort ask
-    // the server to revoke it — a "logged out" refresh token shouldn't still
-    // be able to mint new access tokens. Never blocks the local logout: it
-    // must succeed even if this request fails or the backend is unreachable.
+    // Usar Supabase Auth para logout
+    signOut()
+    
+    // Limpiar tokens locales y usuario inmediatamente
     const refreshToken = getRefreshToken();
     setToken(null, null);
     setUser(null);
-    // Every cached query was fetched as the user who just left. On a shared
-    // machine the next person to sign in would see their predecessor's roster,
-    // grades and ledger rendered from cache before the refetch lands.
     queryClient.clear();
+    
+    // Best-effort revoke refresh token en backend
     if (refreshToken) {
       try {
         api.post("/auth/logout", { refresh_token: refreshToken })?.catch?.(() => {});

@@ -87,6 +87,7 @@ def _ensure_enrollment_is_live(enrollment: Enrollment) -> None:
 @router.get("", response_model=list[GradeRead])
 def list_grades(
     enrollment_id: int | None = None,
+    skill: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Grade]:
@@ -102,6 +103,8 @@ def list_grades(
     )
     if enrollment_id is not None:
         stmt = stmt.where(Grade.enrollment_id == enrollment_id)
+    if skill is not None:
+        stmt = stmt.where(Grade.skill == skill)
     # Students only see their own grades.
     if current_user.role == UserRole.student:
         # 403 rather than an empty list: the same financial-solvency policy the
@@ -168,7 +171,10 @@ def create_grade(
         .on_conflict_do_update(
             index_elements=index_elements,
             index_where=index_where,
-            set_={"score": payload.score},
+            set_={
+                "score": payload.score,
+                "skill": payload.skill.value if payload.skill else None,
+            },
         )
         .returning(Grade)
     )

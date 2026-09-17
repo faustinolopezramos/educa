@@ -20,7 +20,6 @@ from app.models import (
     ENROLLMENT_OPENING_STATES,
     ENROLLMENT_STATUS_LABELS,
     Attendance,
-    Certificate,
     Course,
     Enrollment,
     Grade,
@@ -399,10 +398,7 @@ def delete_enrollment(
             Attendance.enrollment_id == enrollment.id
         )
     )
-    certificate = db.scalar(
-        select(Certificate.id).where(Certificate.enrollment_id == enrollment.id)
-    )
-    if grades or marks or certificate:
+    if grades or marks:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -414,7 +410,6 @@ def delete_enrollment(
                 "reason": "has_academic_record",
                 "grades": grades or 0,
                 "attendance": marks or 0,
-                "certificate": certificate is not None,
             },
         )
 

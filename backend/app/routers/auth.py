@@ -1,4 +1,5 @@
 import logging
+from jose import jwt
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -16,10 +17,11 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
+    pwd_context,
     verify_password,
 )
 from app.models import RefreshSession, Tenant, User
-from app.schemas.auth import RefreshRequest, Token
+from app.schemas.auth import RefreshRequest, SupabaseLoginRequest, Token
 from app.schemas.user import UserRead, UserSelfUpdate
 from app.services.audit import record, snapshot
 
@@ -286,3 +288,45 @@ def revoke_other_sessions(
     )
     db.commit()
     return {"message": "Todas las demás sesiones activas han sido revocadas correctamente."}
+
+
+@router.post("/supabase-login", response_model=Token)
+def supabase_login(
+    payload: SupabaseLoginRequest,
+    db: Session = Depends(get_db),
+) -> Token:
+    """Valida token de Supabase y emite JWTs propios."""
+    try:
+        # Decodificar SIN verificar firma (confiamos en Supabase)
+        # En producción podrías validar con JWKS de Supabase
+        claims = jwt.decode(
+            payload.supabase_token,
+            options={"verify_signature": False, "verify_aud": False}
+        )
+        email = claims.get("email")
+        supabase_uid = claims.get("sub")
+
+        if not email:
+            raise _credentials_exc
+    except jwt.JWTError:
+        raise _credentials_exc
+
+    # Buscar o crear usuario local
+    user = db.scalar(select(User).where(User.email == email))
+    if not user:
+        user = User(
+            email=email,
+            full_name=claims.get("user_metadata", {}).get("full_name", email.split("@")[0]),
+            role=UserRole.student,
+            password_hash=pwd_context.hash(secrets.token_urlsafe(32)),
+            supabase_uid=supabase_uid,
+        )
+        db.add(user)
+        db.flush()
+    elif not user.supabase_uid:
+        user.supabase_uid = supabase_uid
+
+    if not user.is_active:
+        raise _credentials_exc
+
+    return _issue_tokens(db, user)

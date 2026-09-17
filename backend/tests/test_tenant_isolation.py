@@ -441,16 +441,10 @@ def test_evaluation_weights_are_per_academy(client, academies):
     )
 
 
-def test_a_certificate_cannot_be_issued_for_another_academys_student(client, academies):
-    """Every *read* path in grading.py went through `_visible_enrollment`; the
-    one that mints a certificate used a bare `db.get`."""
+def test_final_grade_cannot_be_read_for_another_academys_student(client, academies):
     headers = auth(client, "admin@alfa.com")
     foreign = academies["b"]["enrollment"].id
 
-    assert (
-        client.post(f"/enrollments/{foreign}/certificate", headers=headers).status_code
-        == 404
-    )
     assert (
         client.get(f"/enrollments/{foreign}/final-grade", headers=headers).status_code
         == 404

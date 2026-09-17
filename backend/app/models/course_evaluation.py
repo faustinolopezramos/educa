@@ -25,3 +25,5 @@ class CourseEvaluation(Base):
     )
     name: Mapped[str] = mapped_column(String(150))
     weight: Mapped[float] = mapped_column(Float, default=1.0)
+    skill: Mapped[str | None] = mapped_column(String(50), nullable=True)
+

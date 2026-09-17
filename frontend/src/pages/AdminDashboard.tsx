@@ -18,6 +18,7 @@ import { RoomsPanel } from "../features/admin/RoomsPanel";
 import { TenantsPanel } from "../features/admin/TenantsPanel";
 import { StudentsPanel } from "../features/admin/StudentsPanel";
 import { TeachersPanel } from "../features/admin/TeachersPanel";
+import { TeacherPayrollPanel } from "../features/admin/TeacherPayrollPanel";
 import { UsersPanel } from "../features/admin/UsersPanel";
 import { VideoProvidersPanel } from "../features/admin/VideoProvidersPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
@@ -46,6 +47,7 @@ export default function AdminDashboard() {
     enrollments: <EnrollmentsPanel />,
     users: <UsersPanel />,
     teachers: <TeachersPanel />,
+    nomina: <TeacherPayrollPanel />,
     students: <StudentsPanel />,
     rooms: <RoomsPanel />,
     video_providers: <VideoProvidersPanel />,

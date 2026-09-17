@@ -29,6 +29,7 @@ export interface User {
   role: Role;
   timezone: string;
   max_weekly_hours: number | null;
+  hourly_rate?: number | null;
   phone: string | null;
   address: string | null;
   cui_passport?: string | null;
@@ -104,17 +105,36 @@ export interface Course {
   schedule_count: number;
 }
 
+export type SkillCategory =
+  | "speaking"
+  | "listening"
+  | "reading"
+  | "writing"
+  | "grammar"
+  | "use_of_language";
+
+export const SKILL_LABELS: Record<SkillCategory, string> = {
+  speaking: "Speaking / Expresión Oral",
+  listening: "Listening / Comprensión Auditiva",
+  reading: "Reading / Comprensión Lectora",
+  writing: "Writing / Expresión Escrita",
+  grammar: "Grammar & Vocabulary",
+  use_of_language: "Use of Language",
+};
+
 export interface CourseEvaluation {
   id: number;
   course_id: number;
   name: string;
   weight: number;
+  skill?: SkillCategory | null;
 }
 
 export interface FinalGradeComponent {
   name: string;
   score: number;
   weight: number;
+  skill?: SkillCategory | null;
 }
 
 export interface FinalGrade {
@@ -123,15 +143,6 @@ export interface FinalGrade {
   passing_score: number;
   passed: boolean;
   components: FinalGradeComponent[];
-}
-
-export interface Certificate {
-  id: number;
-  enrollment_id: number;
-  level_id: number;
-  final_score: number;
-  code: string;
-  issued_at: string;
 }
 
 export interface Room {
@@ -326,6 +337,24 @@ export interface Grade {
   session_id: number | null;
   evaluation_name: string;
   score: number;
+  skill?: SkillCategory | null;
+}
+
+export interface BulkAttendanceItem {
+  enrollment_id: number;
+  status: AttendanceStatus;
+}
+
+export interface BulkAttendanceRequest {
+  items: BulkAttendanceItem[];
+}
+
+export interface BulkAttendanceResponse {
+  session_id: number;
+  total_processed: number;
+  created_count: number;
+  updated_count: number;
+  records: Attendance[];
 }
 
 export interface ConflictInfo {
@@ -391,6 +420,7 @@ export interface Report {
   attendance_by_course: CourseAttendance[];
   grades_recorded: number;
   grade_average: number | null;
+  skills_overview?: Record<string, number>;
   at_risk: AtRiskStudent[];
   consolidated_students?: ConsolidatedStudentReport[];
 }
@@ -520,7 +550,6 @@ export interface DeleteImpact {
   enrollments_count: number;
   attendance_count: number;
   grades_count: number;
-  certificates_count: number;
   payments_count: number;
   invoices_count: number;
   message: string;
@@ -531,10 +560,10 @@ export interface KardexSummary {
   overall_attendance_rate: number;
   total_courses_passed: number;
   total_courses_failed: number;
-  total_certificates_earned: number;
   person_status: string;
   person_status_label: string;
   outstanding_balance: number;
+  skills_breakdown?: Record<string, number>;
 }
 
 export interface KardexCourseEntry {
@@ -547,9 +576,8 @@ export interface KardexCourseEntry {
   enrollment_code: string;
   final_score?: number | null;
   passed?: boolean | null;
-  certificate_id?: number | null;
-  certificate_code?: string | null;
   balance: number;
+  skills?: Record<string, number>;
 }
 
 export interface StudentKardexResponse {
@@ -560,4 +588,96 @@ export interface StudentKardexResponse {
   nationality?: string | null;
   summary: KardexSummary;
   history: KardexCourseEntry[];
+}
+
+export type MakeUpStatus = "available" | "booked" | "attended" | "expired" | "cancelled";
+
+export const MAKEUP_STATUS_LABELS: Record<MakeUpStatus, string> = {
+  available: "Disponible",
+  booked: "Reservada",
+  attended: "Completada",
+  expired: "Expirada",
+  cancelled: "Cancelada",
+};
+
+export interface MakeUpCredit {
+  id: number;
+  student_id: number;
+  enrollment_id: number;
+  origin_session_id?: number | null;
+  target_session_id?: number | null;
+  status: MakeUpStatus;
+  issued_at: string;
+  expires_at: string;
+  notes?: string | null;
+  student_name?: string | null;
+  course_name?: string | null;
+  level_name?: string | null;
+  origin_session_date?: string | null;
+  target_session_date?: string | null;
+  target_session_time?: string | null;
+  target_course_name?: string | null;
+}
+
+export interface CandidateSession {
+  session_id: number;
+  course_id: number;
+  course_name: string;
+  level_id: number;
+  level_name: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  teacher_name: string;
+  modality: Modality;
+  room_name?: string | null;
+  max_students: number;
+  occupied_seats: number;
+  available_seats: number;
+}
+
+export interface TeacherPayrollSessionItem {
+  session_id: number;
+  course_id: number;
+  course_name: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  duration_hours: number;
+  status: string;
+  register_closed: boolean;
+  hourly_rate: number;
+  amount: number;
+}
+
+export interface TeacherPayrollReport {
+  teacher_id: number;
+  teacher_name: string;
+  email: string;
+  hourly_rate: number;
+  date_from: string;
+  date_to: string;
+  total_sessions: number;
+  total_hours: number;
+  total_amount: number;
+  sessions: TeacherPayrollSessionItem[];
+}
+
+export interface TeacherPayrollSummary {
+  teacher_id: number;
+  teacher_name: string;
+  email: string;
+  hourly_rate: number;
+  total_sessions: number;
+  total_hours: number;
+  total_amount: number;
+}
+
+export interface AcademyPayrollSummary {
+  date_from: string;
+  date_to: string;
+  total_teachers: number;
+  total_hours: number;
+  total_amount: number;
+  teachers: TeacherPayrollSummary[];
 }

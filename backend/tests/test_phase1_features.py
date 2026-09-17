@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from app.models import Tenant, User, Enrollment, EnrollmentStatus
 from app.schemas.tenant import TenantCreate, TenantRead, TenantUpdate
 from app.services.enrollments import check_tenant_student_quota
-from app.routers.public import verify_certificate_public, PublicCertificateVerification
 
 
 def test_tenant_schema_defaults_and_custom_fields():
@@ -49,15 +48,3 @@ def test_tenant_model_columns():
     assert tenant.primary_color == "#10B981"
     assert tenant.custom_domain == "gt.educa.app"
     assert tenant.tax_id == "1234567-8"
-
-
-def test_public_certificate_verification_not_found_handling():
-    # Calling public endpoint with non-existent code should raise 404
-    class MockDb:
-        def scalar(self, stmt):
-            return None
-
-    mock_db = MockDb()
-    with pytest.raises(HTTPException) as exc_info:
-        verify_certificate_public("INVALID-CODE-999", db=mock_db)
-    assert exc_info.value.status_code == 404

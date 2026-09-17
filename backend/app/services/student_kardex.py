@@ -8,7 +8,6 @@ from app.models import (
     Attendance,
     ATTENDANCE_COUNTS_TOWARD_RATE,
     ATTENDANCE_IS_PRESENT,
-    Certificate,
     Course,
     ENROLLMENT_OCCUPIES_SEAT,
     ENROLLMENT_OWES,
@@ -64,23 +63,23 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
     total_failed = 0
     scores: list[float] = []
     total_balance = 0.0
+    all_skills_acc: dict[str, list[float]] = {}
 
     for en in enrollments:
         course = db.get(Course, en.course_id)
         level = db.get(Level, course.level_id) if course else None
-        cert = db.scalar(
-            select(Certificate).where(Certificate.enrollment_id == en.id)
-        )
 
         # Compute course grade / evaluation score
-        final_score = cert.final_score if cert else None
-        passed = None
-        if final_score is not None and course:
-            passed = final_score >= course.passing_score
-            if passed:
-                total_passed += 1
-            else:
-                total_failed += 1
+        from app.services.grading import compute_final_grade
+        grade_res = compute_final_grade(db, en)
+        final_score = grade_res.final_score
+        passed = grade_res.passed if final_score is not None else None
+        if passed:
+            total_passed += 1
+        elif passed is False:
+            total_failed += 1
+
+        if final_score is not None:
             scores.append(final_score)
         elif en.status == EnrollmentStatus.certified:
             total_passed += 1
@@ -88,12 +87,20 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
         bal = getattr(en, "balance", 0.0)
         total_balance += bal
 
+        course_skills_acc: dict[str, list[float]] = {}
+        for c in grade_res.components:
+            if c.skill:
+                course_skills_acc.setdefault(c.skill, []).append(c.score)
+                all_skills_acc.setdefault(c.skill, []).append(c.score)
+        course_skills = {
+            s: round(sum(vals) / len(vals), 1)
+            for s, vals in sorted(course_skills_acc.items())
+        }
+
         history.append(
             KardexCourseEntry(
                 enrollment_id=en.id,
                 course_id=en.course_id,
-                # `Course.name`, not `.title` — the second attribute that did
-                # not exist on the row it was read from.
                 course_title=course.name if course else f"Curso #{en.course_id}",
                 level_name=level.name if level else "Nivel General",
                 status=en.status.value,
@@ -101,17 +108,12 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
                 enrollment_code=en.enrollment_code,
                 final_score=final_score,
                 passed=passed,
-                certificate_id=cert.id if cert else None,
-                certificate_code=cert.code if cert else None,
                 balance=bal,
+                skills=course_skills,
             )
         )
 
     # Compute overall attendance rate.
-    # Denominador y numerador salen del mismo sitio que el reporte y que el
-    # panel del alumno. Antes esto sumaba la justificada al numerador y la
-    # dejaba en el denominador, así que la misma persona tenía una tasa aquí y
-    # otra distinta en su propia pantalla.
     counted_records = db.scalar(
         select(func.count(Attendance.id))
         .join(Enrollment, Attendance.enrollment_id == Enrollment.id)
@@ -135,13 +137,6 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
         if counted_records > 0
         else 100.0
     )
-
-    # Compute total certificates earned
-    total_certificates = db.scalar(
-        select(func.count(Certificate.id))
-        .join(Enrollment, Certificate.enrollment_id == Enrollment.id)
-        .where(Enrollment.student_id == student_id)
-    ) or 0
 
     # Person operational status calculation
     active_enrollments = [en for en in enrollments if en.status in ENROLLMENT_OCCUPIES_SEAT]
@@ -167,16 +162,20 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
         person_status_label = "Prospecto / Sin Curso"
 
     global_gpa = round(sum(scores) / len(scores), 2) if scores else 0.0
+    global_skills = {
+        s: round(sum(vals) / len(vals), 1)
+        for s, vals in sorted(all_skills_acc.items())
+    }
 
     summary = KardexSummary(
         global_gpa=global_gpa,
         overall_attendance_rate=attendance_rate,
         total_courses_passed=total_passed,
         total_courses_failed=total_failed,
-        total_certificates_earned=total_certificates,
         person_status=person_status,
         person_status_label=person_status_label,
         outstanding_balance=total_balance,
+        skills_breakdown=global_skills,
     )
 
     return StudentKardexResponse(

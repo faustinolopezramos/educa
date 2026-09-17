@@ -18,6 +18,8 @@ from app.models import (
     Enrollment,
     Notification,
     Schedule,
+    User,
+    UserRole,
 )
 
 
@@ -98,3 +100,24 @@ def notify_teacher_of_at_risk(
             db, teacher_ids, "at_risk", "Alumnos en riesgo en tu curso", body
         )
     return created
+
+
+def notify_directors_of_at_risk(
+    db: Session, total_students: int, affected_courses_count: int
+) -> int:
+    """Notify academic directors/coordinators (admins and assistants) about the global at-risk count."""
+    if total_students == 0:
+        return 0
+    directors = list(
+        db.scalars(
+            select(User.id).where(
+                User.role.in_([UserRole.admin, UserRole.superadmin, UserRole.assistant])
+            )
+        ).all()
+    )
+    if not directors:
+        return 0
+    title = "Alerta Académica: Alumnos en riesgo detectados"
+    body = f"Se han detectado {total_students} alumno(s) en riesgo académico en {affected_courses_count} curso(s)."
+    return notify(db, directors, "at_risk_management", title, body)
+

@@ -29,6 +29,8 @@ from app.models import (
     Course,
     ENROLLMENT_HAS_ACCESS,
     Enrollment,
+    MakeUpCredit,
+    MakeUpStatus,
     MeetingProvider,
     Permission,
     ProviderName,
@@ -60,7 +62,7 @@ staff_only = require_staff_permission(Permission.manage_schedules)
 # A meeting is the door into a live classroom, so access follows the academic
 # relationship rather than the role alone: admins see everything, a teacher sees
 # the meetings of the schedules they teach, and a student sees the meetings of
-# the courses they are actively enrolled in.
+# the courses they are actively enrolled in, or where they hold a make-up seat.
 def _visible_meetings(db: Session, user: User) -> Select:
     # Even an admin only ever sees their own academy's classrooms.
     stmt = apply_tenant(
@@ -74,8 +76,18 @@ def _visible_meetings(db: Session, user: User) -> Select:
         return stmt
     if user.role == UserRole.teacher:
         return stmt.where(Schedule.teacher_id == user.id)
-    course_ids = student_course_ids(db, user.id)
-    return stmt.where(Schedule.course_id.in_(course_ids or [-1]))
+    course_ids = student_course_ids(db, user.id) or []
+    makeup_schedule_ids = (
+        select(ClassSession.schedule_id)
+        .join(MakeUpCredit, MakeUpCredit.target_session_id == ClassSession.id)
+        .where(
+            MakeUpCredit.student_id == user.id,
+            MakeUpCredit.status.in_([MakeUpStatus.booked, MakeUpStatus.attended]),
+        )
+    )
+    return stmt.where(
+        (Schedule.course_id.in_(course_ids or [-1])) | (Schedule.id.in_(makeup_schedule_ids))
+    )
 
 
 def _get_visible_meeting(db: Session, user: User, meeting_id: int) -> VirtualMeeting:
@@ -447,8 +459,17 @@ def get_session_lobby_info(
             )
         )
         if enrollment is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-        if enrollment.attendance_blocked:
+            # Check if student has an active make-up booking for this session
+            makeup = db.scalar(
+                select(MakeUpCredit).where(
+                    MakeUpCredit.student_id == current_user.id,
+                    MakeUpCredit.target_session_id == session.id,
+                    MakeUpCredit.status.in_([MakeUpStatus.booked, MakeUpStatus.attended]),
+                )
+            )
+            if makeup is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        elif enrollment.attendance_blocked:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 "Tu acceso a clases está restringido. Contacta a administración.",

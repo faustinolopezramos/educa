@@ -1,0 +1,63 @@
+# Production Docker Compose for Fly.io + Supabase + Vercel
+# 
+# This file is for local testing of the production setup.
+# In production:
+# - Backend runs on Fly.io (uses fly.toml)
+# - Frontend runs on Vercel (uses vercel.json)
+# - Database is Supabase (PostgreSQL with PgBouncer)
+#
+# Local usage:
+# 1. Set your Supabase DATABASE_URL in .env
+# 2. docker compose -f docker-compose.prod.yml up --build
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - FERNET_KEY=${FERNET_KEY}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+      - TRUST_PROXY_HEADERS=true
+      - ACADEMY_TIMEZONE=America/Guatemala
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres  # Only for local testing; in prod use Supabase
+
+  # Local Postgres for testing only (remove in real prod)
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: educa
+      POSTGRES_PASSWORD: educa
+      POSTGRES_DB: educa
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U educa -d educa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:

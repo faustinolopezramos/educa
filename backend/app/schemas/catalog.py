@@ -140,7 +140,6 @@ class DeleteImpact(BaseModel):
     enrollments_count: int = 0
     attendance_count: int = 0
     grades_count: int = 0
-    certificates_count: int = 0
     payments_count: int = 0
     invoices_count: int = 0
     message: str

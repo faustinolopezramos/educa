@@ -13,3 +13,7 @@ class Token(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class SupabaseLoginRequest(BaseModel):
+    supabase_token: str

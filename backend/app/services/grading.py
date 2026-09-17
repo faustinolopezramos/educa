@@ -22,6 +22,7 @@ class Component:
     name: str
     score: float
     weight: float
+    skill: str | None = None
 
 
 @dataclass
@@ -36,34 +37,28 @@ def compute_final_grade(db: Session, enrollment: Enrollment) -> FinalGrade:
     course = db.get(Course, enrollment.course_id)
     passing = course.passing_score if course else 6.0
 
-    weights = {
-        name: weight
-        for name, weight in db.execute(
-            select(CourseEvaluation.name, CourseEvaluation.weight).where(
-                CourseEvaluation.course_id == enrollment.course_id
-            )
-        ).all()
-    }
+    eval_rows = db.execute(
+        select(CourseEvaluation.name, CourseEvaluation.weight, CourseEvaluation.skill).where(
+            CourseEvaluation.course_id == enrollment.course_id
+        )
+    ).all()
+    weights = {name: weight for name, weight, _ in eval_rows}
+    eval_skills = {name: skill for name, _, skill in eval_rows if skill}
 
     grades = db.scalars(select(Grade).where(Grade.enrollment_id == enrollment.id)).all()
 
     # Average the grades that share an evaluation name into one component score.
     by_name: dict[str, list[float]] = {}
+    grade_skills: dict[str, str] = {}
     for g in grades:
         by_name.setdefault(g.evaluation_name, []).append(g.score)
+        if g.skill:
+            grade_skills[g.evaluation_name] = g.skill
 
     # An evaluation the course explicitly configured but the student has no
     # grade for is work that was not delivered, so it scores 0 rather than
     # vanishing from the average. Without this, a student holding a single 10
     # in "Participación" and no exam finishes the course with a 10.
-    #
-    # Only *configured* evaluations count this way: a course that configures
-    # nothing still gets a plain average of whatever was actually graded, which
-    # is the behaviour every ad-hoc evaluation name relies on.
-    #
-    # And only once the student has at least one grade. A student with nothing
-    # recorded has not failed the missing evaluations, they simply have not been
-    # graded yet — that case still reports no final grade at all.
     if by_name:
         for name in weights:
             by_name.setdefault(name, [0.0])
@@ -73,6 +68,7 @@ def compute_final_grade(db: Session, enrollment: Enrollment) -> FinalGrade:
             name=name,
             score=sum(scores) / len(scores),
             weight=weights.get(name, 1.0),
+            skill=eval_skills.get(name) or grade_skills.get(name),
         )
         for name, scores in sorted(by_name.items())
     ]
@@ -84,3 +80,4 @@ def compute_final_grade(db: Session, enrollment: Enrollment) -> FinalGrade:
     final = sum(c.score * c.weight for c in components) / total_weight
     final = round(final, 2)
     return FinalGrade(final, passing, final >= passing, components)
+

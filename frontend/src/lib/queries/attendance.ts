@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { Attendance, AttendanceStatus } from "../types";
+import type { Attendance, AttendanceStatus, BulkAttendanceResponse } from "../types";
 import { useList } from "./common";
 
 export const useAttendance = (enrollmentId?: number) =>
@@ -67,3 +67,30 @@ export function useCreateAttendance() {
     },
   });
 }
+
+export function useBulkAttendance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      items,
+    }: {
+      sessionId: number;
+      items: { enrollment_id: number; status: AttendanceStatus }[];
+    }) =>
+      (
+        await api.post<BulkAttendanceResponse>(
+          `/attendance/sessions/${sessionId}/bulk`,
+          { items },
+        )
+      ).data,
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ATTENDANCE_VISIBLE_KEY });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["report"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+}
+

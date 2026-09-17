@@ -16,10 +16,10 @@ interface KardexSummary {
   overall_attendance_rate: number;
   total_courses_passed: number;
   total_courses_failed: number;
-  total_certificates_earned: number;
   person_status: string;
   person_status_label: string;
   outstanding_balance: number;
+  skills_breakdown?: Record<string, number>;
 }
 
 interface KardexCourseEntry {
@@ -32,8 +32,8 @@ interface KardexCourseEntry {
   enrollment_code: string;
   final_score: number | null;
   passed: boolean | null;
-  certificate_code: string | null;
   balance: number;
+  skills?: Record<string, number>;
 }
 
 interface StudentKardexResponse {
@@ -188,7 +188,7 @@ export function Student360Drawer({
               <Card padding="sm">
                 <div className="text-2xs text-slate-500 font-medium">Promedio GPA</div>
                 <div className="text-lg font-bold text-slate-900 mt-0.5">
-                  {summary ? `${summary.global_gpa} / 100` : "—"}
+                  {summary ? `${summary.global_gpa} / 10` : "—"}
                 </div>
               </Card>
               <Card padding="sm">
@@ -214,6 +214,36 @@ export function Student360Drawer({
                 </div>
               </Card>
             </div>
+
+            {/* MCER Skills Competencies */}
+            {summary?.skills_breakdown && Object.keys(summary.skills_breakdown).length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-2xs font-bold uppercase tracking-wider text-slate-700">
+                    Competencias MCER (Marco Común Europeo)
+                  </span>
+                  <span className="text-2xs text-slate-400">Escala 0–10</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {Object.entries(summary.skills_breakdown).map(([skill, score]) => (
+                    <div key={skill} className="rounded bg-white p-2 border border-slate-100 shadow-xs">
+                      <div className="flex justify-between text-2xs font-medium text-slate-600">
+                        <span className="capitalize">{skill}</span>
+                        <span className={`font-bold ${score < 6 ? "text-red-600" : "text-slate-900"}`}>
+                          {score.toFixed(1)}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${score < 6 ? "bg-red-500" : "bg-brand-500"}`}
+                          style={{ width: `${Math.min(100, Math.max(0, (score / 10) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Course History Table */}
             <div className="space-y-2">
@@ -242,6 +272,18 @@ export function Student360Drawer({
                           <Td>
                             <div className="font-medium text-slate-900">{item.course_title}</div>
                             <div className="text-2xs text-slate-500">{item.level_name}</div>
+                            {item.skills && Object.keys(item.skills).length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {Object.entries(item.skills).map(([sk, sc]) => (
+                                  <span
+                                    key={sk}
+                                    className="rounded bg-slate-100 px-1.5 py-0.2 text-2xs text-slate-600"
+                                  >
+                                    {sk}: <strong>{sc.toFixed(1)}</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </Td>
                           <Td>
                             <span className="font-mono text-2xs text-slate-600">

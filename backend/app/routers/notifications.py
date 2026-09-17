@@ -15,7 +15,10 @@ from app.core.deps import (
 from app.models import Notification, Permission, User, UserRole
 from app.schemas.notification import NotificationRead
 from app.services.audit import record
-from app.services.notifications import notify_teacher_of_at_risk
+from app.services.notifications import (
+    notify_directors_of_at_risk,
+    notify_teacher_of_at_risk,
+)
 from app.services.reports import build_report
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -100,7 +103,11 @@ def raise_at_risk_alerts(
         by_course.setdefault(r.course_id, []).append(
             f"{r.student_name} ({', '.join(r.reasons)})"
         )
-    created = notify_teacher_of_at_risk(db, by_course)
+    created_teacher = notify_teacher_of_at_risk(db, by_course)
+    created_director = notify_directors_of_at_risk(
+        db, len(report.at_risk), len(by_course)
+    )
+    created = created_teacher + created_director
     if created:
         record(
             db,
@@ -110,6 +117,8 @@ def raise_at_risk_alerts(
             0,
             after={
                 "alerts_sent": created,
+                "teachers_notified": created_teacher,
+                "directors_notified": created_director,
                 "period": period,
                 "anchor": str(anchor or academy_today()),
             },

@@ -20,6 +20,8 @@ from app.models import (
     Course,
     ENROLLMENT_HAS_ACCESS,
     Enrollment,
+    MakeUpCredit,
+    MakeUpStatus,
     Permission,
     Schedule,
     SessionStatus,
@@ -53,7 +55,8 @@ staff_only = require_staff_permission(Permission.manage_schedules)
 # ---------------- Visibility ----------------
 # A session inherits its course from the schedule, so it follows the same
 # academic-relationship rule as meetings: staff see the sessions of the courses
-# they run, a student sees the sessions of the courses they are enrolled in.
+# they run, a student sees the sessions of the courses they are enrolled in,
+# as well as any make-up sessions they have booked.
 def _visible_sessions(db: Session, user: User) -> Select:
     # A session reaches its academy through schedule → course, which also caps
     # what an admin can see: the whole school, never the whole installation.
@@ -70,7 +73,15 @@ def _visible_sessions(db: Session, user: User) -> Select:
         return stmt.where(
             Schedule.course_id.in_(teacher_course_ids(db, user.id) or [-1])
         )
-    return stmt.where(Schedule.course_id.in_(student_course_ids(db, user.id) or [-1]))
+    course_ids = student_course_ids(db, user.id) or [-1]
+    makeup_session_ids = select(MakeUpCredit.target_session_id).where(
+        MakeUpCredit.student_id == user.id,
+        MakeUpCredit.target_session_id.isnot(None),
+        MakeUpCredit.status.in_([MakeUpStatus.booked, MakeUpStatus.attended]),
+    )
+    return stmt.where(
+        (Schedule.course_id.in_(course_ids)) | (ClassSession.id.in_(makeup_session_ids))
+    )
 
 
 def _owned_schedule_or_404(db: Session, user: User, schedule_id: int) -> Schedule:

@@ -141,6 +141,7 @@ class Report:
     attendance_by_course: list[CourseAttendance] = field(default_factory=list)
     grades_recorded: int = 0
     grade_average: float | None = None
+    skills_overview: dict[str, float] = field(default_factory=dict)
     at_risk: list[AtRiskStudent] = field(default_factory=list)
     consolidated_students: list[ConsolidatedStudent] = field(default_factory=list)
 
@@ -303,6 +304,19 @@ def build_report(
         round(sum(all_scores) / len(all_scores), 2) if all_scores else None
     )
 
+    skill_acc: dict[tuple[int, int], dict[str, list[float]]] = {}
+    period_skills: dict[str, list[float]] = {}
+    for g, cid, sid in list(grade_rows) + list(eval_grade_rows):
+        if g.skill:
+            skill_acc.setdefault((sid, cid), {}).setdefault(g.skill, []).append(g.score)
+            period_skills.setdefault(g.skill, []).append(g.score)
+
+    if period_skills:
+        report.skills_overview = {
+            sk: round(sum(scores) / len(scores), 1)
+            for sk, scores in sorted(period_skills.items())
+        }
+
     # --- At-risk pass ---
     student_name = {
         u.id: u.full_name
@@ -321,6 +335,11 @@ def build_report(
             reasons.append("asistencia baja")
         if average is not None and average < PASSING_AVERAGE:
             reasons.append("promedio bajo")
+        student_skills = skill_acc.get((sid, cid), {})
+        for sk, sk_scores in student_skills.items():
+            sk_avg = sum(sk_scores) / len(sk_scores)
+            if sk_avg < PASSING_AVERAGE:
+                reasons.append(f"{sk} bajo ({round(sk_avg, 1)})")
         if reasons:
             report.at_risk.append(
                 AtRiskStudent(

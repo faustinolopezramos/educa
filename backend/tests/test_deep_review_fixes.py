@@ -13,7 +13,6 @@ from app.core.security import hash_password
 from app.models import (
     Attendance,
     AttendanceStatus,
-    Certificate,
     ClassSession,
     Course,
     Enrollment,
@@ -31,49 +30,7 @@ from tests.conftest import TODAY, auth, make_user
 
 # ---------------------------------------------------------------------------
 # `Course.name`, no `Course.title`
-#
-# Dos endpoints estaban escritos contra un atributo que el modelo nunca tuvo, así
-# que respondían 500 a toda llamada. Ninguno tenía prueba y el frontend todavía
-# no los llamaba, que es exactamente por qué nadie lo había notado.
 # ---------------------------------------------------------------------------
-def test_public_certificate_verification_answers_instead_of_crashing(client, db, world):
-    """El endpoint público que usa un empleador para validar un diploma."""
-    enrollment = world["enrollment"]
-    cert = Certificate(
-        enrollment_id=enrollment.id,
-        level_id=world["course_a"].level_id,
-        code="EDUCA-VERIFY01",
-        final_score=8.5,
-    )
-    db.add(cert)
-    db.flush()
-
-    # Sin token: es deliberadamente público.
-    res = client.get("/public/certificates/verify/EDUCA-VERIFY01")
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body["valid"] is True
-    assert body["course_name"] == world["course_a"].name
-    assert body["student_name"] == world["student"].full_name
-
-
-def test_public_certificate_verification_is_case_insensitive(client, db, world):
-    db.add(
-        Certificate(
-            enrollment_id=world["enrollment"].id,
-            level_id=world["course_a"].level_id,
-            code="EDUCA-LOWER01",
-            final_score=7.0,
-        )
-    )
-    db.flush()
-    assert client.get("/public/certificates/verify/educa-lower01").status_code == 200
-
-
-def test_unknown_certificate_code_is_a_404_not_a_500(client):
-    assert client.get("/public/certificates/verify/NO-EXISTE").status_code == 404
-
-
 def test_next_level_suggestion_answers_instead_of_crashing(client, world):
     headers = auth(client, "admin@test.com")
     res = client.get(

@@ -12,7 +12,6 @@ def test_kardex_response_schema():
         overall_attendance_rate=95.0,
         total_courses_passed=2,
         total_courses_failed=0,
-        total_certificates_earned=1,
         person_status="active",
         person_status_label="Activo",
         outstanding_balance=0.0,
@@ -27,7 +26,6 @@ def test_kardex_response_schema():
         enrollment_code="2026-00001",
         final_score=8.5,
         passed=True,
-        certificate_code="EDUCA-TEST1234",
         balance=0.0,
     )
     response = StudentKardexResponse(

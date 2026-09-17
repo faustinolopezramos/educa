@@ -34,3 +34,25 @@ export function useMarkAllRead() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
   });
 }
+
+export function useRaiseAtRiskAlerts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ period, anchor }: { period?: string; anchor?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (period) params.set("period", period);
+      if (anchor) params.set("anchor", anchor);
+      const query = params.toString();
+      return (
+        await api.post<{ alerts: number }>(
+          query ? `/notifications/alerts/at-risk?${query}` : "/notifications/alerts/at-risk",
+        )
+      ).data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["audit"] });
+    },
+  });
+}
+

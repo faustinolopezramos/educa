@@ -1,9 +1,6 @@
-"""Course evaluation weights, final grades and level certificates."""
-
-import secrets
+"""Course evaluation weights and final grades."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,7 +16,6 @@ from app.core.deps import (
     teacher_teaches_course,
 )
 from app.models import (
-    Certificate,
     Course,
     CourseEvaluation,
     Enrollment,
@@ -30,14 +26,11 @@ from app.models import (
     UserRole,
 )
 from app.schemas.grading import (
-    CertificateRead,
     ComponentRead,
     CourseEvaluationCreate,
     CourseEvaluationRead,
     FinalGradeRead,
 )
-from app.services.audit import record
-from app.services.certificate_pdf import build_certificate_pdf
 from app.services.grading import compute_final_grade
 
 router = APIRouter(tags=["grading"])
@@ -76,7 +69,12 @@ def add_evaluation(
     current_user: User = Depends(admin_only),
 ) -> CourseEvaluation:
     course_in_scope_or_404(db, current_user, course_id)
-    ev = CourseEvaluation(course_id=course_id, name=payload.name, weight=payload.weight)
+    ev = CourseEvaluation(
+        course_id=course_id,
+        name=payload.name,
+        weight=payload.weight,
+        skill=payload.skill.value if payload.skill else None,
+    )
     db.add(ev)
     try:
         db.commit()
@@ -148,137 +146,4 @@ def get_final_grade(
         passing_score=result.passing_score,
         passed=result.passed,
         components=[ComponentRead.model_validate(c) for c in result.components],
-    )
-
-
-# ---------------- Certificates ----------------
-def _course_level(db: Session, course_id: int) -> Level:
-    course = db.get(Course, course_id)
-    level = db.get(Level, course.level_id) if course else None
-    if level is None:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "El curso no tiene un nivel válido; no se puede emitir el certificado",
-        )
-    return level
-
-
-@router.post(
-    "/enrollments/{enrollment_id}/certificate",
-    response_model=CertificateRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def issue_certificate(
-    enrollment_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
-) -> Certificate:
-    """Issue a level certificate — only if the student has actually passed."""
-    # Every read path in this module goes through `_visible_enrollment`; the one
-    # that mints a certificate used a bare `db.get`, so an admin could award one
-    # to another academy's student.
-    enrollment = _visible_enrollment(db, current_user, enrollment_id)
-    if db.scalar(select(Certificate).where(Certificate.enrollment_id == enrollment_id)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "El certificado ya fue emitido")
-
-    # Enforce Financial Solvency Policy (no overdue/delinquent payments allowed)
-    if enrollment.payment_status == PaymentStatus.overdue or not student_is_solvent(
-        db, enrollment.student_id
-    ):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            {
-                "message": "No se puede emitir el certificado: El alumno tiene pagos en mora pendientes",
-                "reason": "unpaid_balance",
-            },
-        )
-
-    result = compute_final_grade(db, enrollment)
-    if not result.passed:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            {
-                "message": "El alumno no ha aprobado el curso",
-                "reason": "not_passed",
-            },
-        )
-    level = _course_level(db, enrollment.course_id)
-    certificate = Certificate(
-        enrollment_id=enrollment.id,
-        level_id=level.id,
-        final_score=result.final_score,
-        code="EDUCA-" + secrets.token_hex(5).upper(),
-        issued_by=current_user.id,
-    )
-    db.add(certificate)
-    record(db, current_user, "create", "certificate", enrollment.id)
-    db.commit()
-    db.refresh(certificate)
-    return certificate
-
-
-@router.get(
-    "/enrollments/{enrollment_id}/certificate", response_model=CertificateRead | None
-)
-def enrollment_certificate(
-    enrollment_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Certificate | None:
-    """The certificate of an enrolment, or null if none issued yet.
-
-    Visible to the student (their own), the course's teacher, or an admin.
-    """
-    enrollment = _visible_enrollment(db, current_user, enrollment_id)
-    return db.scalar(
-        select(Certificate).where(Certificate.enrollment_id == enrollment.id)
-    )
-
-
-@router.get("/certificates/{code}", response_model=CertificateRead)
-def verify_certificate(
-    code: str,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-) -> Certificate:
-    """Look up a certificate by its code (verification)."""
-    certificate = db.scalar(select(Certificate).where(Certificate.code == code))
-    if certificate is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Certificate not found")
-    return certificate
-
-
-@router.get("/certificates/{certificate_id}/pdf")
-def certificate_pdf(
-    certificate_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> StreamingResponse:
-    """The certificate as a print-ready PDF.
-
-    Visible to the student (their own), the course's teacher, or an admin —
-    same scoping as `enrollment_certificate` and `get_final_grade`.
-    """
-    certificate = db.get(Certificate, certificate_id)
-    if certificate is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Certificate not found")
-    enrollment = _visible_enrollment(db, current_user, certificate.enrollment_id)
-
-    course = db.get(Course, enrollment.course_id)
-    level = db.get(Level, certificate.level_id)
-    student = db.get(User, enrollment.student_id)
-    pdf = build_certificate_pdf(
-        student_name=student.full_name,
-        course_name=course.name,
-        level_label=f"{level.code} — {level.name}",
-        final_score=certificate.final_score,
-        code=certificate.code,
-        issued_at=certificate.issued_at,
-    )
-    return StreamingResponse(
-        iter([pdf]),
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="certificado_{certificate.code}.pdf"'
-        },
     )

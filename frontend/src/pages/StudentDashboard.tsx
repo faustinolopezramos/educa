@@ -29,14 +29,13 @@ import {
 import { attendancePct } from "../lib/attendance";
 import { isCurrentEnrollment, isDelinquent } from "../lib/enrollment";
 import {
-  downloadCertificatePdf,
   useCourses,
-  useEnrollmentCertificate,
   useEnrollments,
   useFinalGrade,
   useGrades,
   useHolidays,
   useLevels,
+  useMakeUpCredits,
   useMySessions,
   usePublicTeachers,
   useRooms,
@@ -44,9 +43,9 @@ import {
   useVisibleAttendance,
 } from "../lib/queries";
 import { LOBBY_WINDOW_MIN, GRACE_MS } from "../lib/constants";
-import { notify } from "../lib/toast";
 import { Modal, ModalActions } from "../components/ui";
-import type { Enrollment, Modality } from "../lib/types";
+import { MakeUpBookingModal } from "../features/classes/MakeUpBookingModal";
+import type { Enrollment, MakeUpCredit, Modality } from "../lib/types";
 
 function sessionStartMs(date: string, time: string): number {
   return new Date(`${date}T${time}`).getTime();
@@ -166,11 +165,13 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
   const { data: attendance = [] } = useVisibleAttendance();
   const { data: holidays = [] } = useHolidays();
   const { data: grades = [] } = useGrades(undefined, !isOverdue);
+  const { data: makeups = [] } = useMakeUpCredits();
 
   const now = Date.now();
   const todayDow = localDow();
   const [selectedDow, setSelectedDow] = useState<number>(todayDow);
   const [selectedCourseForModal, setSelectedCourseForModal] = useState<Enrollment | null>(null);
+  const [selectedMakeUp, setSelectedMakeUp] = useState<MakeUpCredit | null>(null);
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
   const teacherName = (id: number) =>
@@ -236,6 +237,98 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
         title="Pendientes"
         emptyMessage="No tienes pendientes. Todo al día."
       />
+
+      {makeups.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-brand-200/80 bg-linear-to-r from-brand-50/70 via-indigo-50/40 to-white p-4 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-brand-900 text-sm flex items-center gap-2">
+                <span>🎟️</span> Pases de Recuperación de Clase ({makeups.length})
+              </h3>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {makeups.filter((m) => m.status === "available").length > 0
+                  ? `Tienes ${makeups.filter((m) => m.status === "available").length} pase(s) disponible(s) para agendar en clases paralelas de tu nivel.`
+                  : "Todas tus recuperaciones están agendadas o completadas."}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+            {makeups.map((m) => (
+              <div
+                key={m.id}
+                className="rounded-xl border border-slate-200 bg-white p-3 shadow-2xs flex items-center justify-between gap-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800">
+                      Pase #{m.id} · {m.level_name ?? "Nivel MCER"}
+                    </span>
+                    <span
+                      className={`text-3xs font-semibold px-2 py-0.5 rounded-full ${
+                        m.status === "available"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : m.status === "booked"
+                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                            : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {m.status === "available"
+                        ? "Disponible"
+                        : m.status === "booked"
+                          ? "Agendada"
+                          : m.status === "attended"
+                            ? "Completada"
+                            : m.status}
+                    </span>
+                  </div>
+                  {m.status === "booked" ? (
+                    <p className="text-2xs text-blue-800 font-medium mt-1">
+                      📅 {m.target_session_date} {m.target_session_time && `· ${m.target_session_time}`}
+                      {m.target_course_name && ` (${m.target_course_name})`}
+                    </p>
+                  ) : (
+                    <p className="text-2xs text-slate-500 mt-1">
+                      Vence: {m.expires_at} {m.notes && `· ${m.notes}`}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex-none">
+                  {m.status === "available" && (
+                    <Button
+                      size="sm"
+                      className="text-xs bg-brand-600 hover:bg-brand-700 text-white font-medium"
+                      onClick={() => setSelectedMakeUp(m)}
+                    >
+                      Agendar →
+                    </Button>
+                  )}
+                  {m.status === "booked" && m.target_session_id && (
+                    <div className="flex items-center gap-1.5">
+                      <Link
+                        to={`/lobby/${m.target_session_id}`}
+                        className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 transition"
+                      >
+                        Entrar al Aula →
+                      </Link>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="text-2xs text-slate-500"
+                        onClick={() => setSelectedMakeUp(m)}
+                        title="Ver o cancelar reserva"
+                      >
+                        Gestionar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -567,6 +660,13 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
           </Modal>
         );
       })()}
+
+      {selectedMakeUp && (
+        <MakeUpBookingModal
+          credit={selectedMakeUp}
+          onClose={() => setSelectedMakeUp(null)}
+        />
+      )}
     </div>
   );
 }
@@ -807,7 +907,6 @@ function CourseCard({
 
 function FinalGradeRow({ enrollmentId }: { enrollmentId: number }) {
   const { data: final } = useFinalGrade(enrollmentId);
-  const { data: certificate } = useEnrollmentCertificate(enrollmentId);
 
   if (!final || final.final_score == null) return null;
 
@@ -823,18 +922,6 @@ function FinalGradeRow({ enrollmentId }: { enrollmentId: number }) {
       <Badge color={final.passed ? "green" : "red"}>
         {final.passed ? "Aprobado" : "No aprobado"}
       </Badge>
-      {certificate && (
-        <Button
-          size="sm"
-          onClick={() =>
-            downloadCertificatePdf(certificate.id, certificate.code).catch(() =>
-              notify("No se pudo descargar el certificado", "error"),
-            )
-          }
-        >
-          Descargar certificado
-        </Button>
-      )}
     </div>
   );
 }

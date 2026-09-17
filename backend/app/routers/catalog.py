@@ -32,7 +32,6 @@ from app.models import (
     ClassSession,
     Attendance,
     Grade,
-    Certificate,
     Payment,
     Invoice,
 )
@@ -323,14 +322,6 @@ def language_delete_impact(
         .where(Enrollment.course_id.in_(course_ids))
     ) or 0
     
-    # Count certificates
-    certificates_count = db.scalar(
-        select(func.count())
-        .select_from(Certificate)
-        .join(Enrollment, Certificate.enrollment_id == Enrollment.id)
-        .where(Enrollment.course_id.in_(course_ids))
-    ) or 0
-    
     # Count payments
     payments_count = db.scalar(
         select(func.count())
@@ -355,15 +346,13 @@ def language_delete_impact(
         enrollments_count=enrollments_count,
         attendance_count=attendance_count,
         grades_count=grades_count,
-        certificates_count=certificates_count,
         payments_count=payments_count,
         invoices_count=invoices_count,
         message=(
             f"Eliminar este idioma borrará en cascada: {levels_count} nivel(es), "
             f"{courses_count} curso(s), {enrollments_count} matrícula(s), "
             f"{attendance_count} registro(s) de asistencia, {grades_count} nota(s), "
-            f"{certificates_count} certificado(s), {payments_count} pago(s), "
-            f"{invoices_count} factura(s). Esta acción es irreversible."
+            f"{payments_count} pago(s), {invoices_count} factura(s). Esta acción es irreversible."
         ),
     )
 
@@ -417,14 +406,6 @@ def level_delete_impact(
         .where(Enrollment.course_id.in_(course_ids))
     ) or 0
     
-    # Count certificates
-    certificates_count = db.scalar(
-        select(func.count())
-        .select_from(Certificate)
-        .join(Enrollment, Certificate.enrollment_id == Enrollment.id)
-        .where(Enrollment.course_id.in_(course_ids))
-    ) or 0
-    
     # Count payments
     payments_count = db.scalar(
         select(func.count())
@@ -448,14 +429,12 @@ def level_delete_impact(
         enrollments_count=enrollments_count,
         attendance_count=attendance_count,
         grades_count=grades_count,
-        certificates_count=certificates_count,
         payments_count=payments_count,
         invoices_count=invoices_count,
         message=(
             f"Eliminar este nivel borrará en cascada: {courses_count} curso(s), "
             f"{enrollments_count} matrícula(s), {attendance_count} registro(s) de asistencia, "
-            f"{grades_count} nota(s), {certificates_count} certificado(s), "
-            f"{payments_count} pago(s), {invoices_count} factura(s). "
+            f"{grades_count} nota(s), {payments_count} pago(s), {invoices_count} factura(s). "
             "Esta acción es irreversible."
         ),
     )
@@ -498,14 +477,6 @@ def course_delete_impact(
         .where(Enrollment.course_id == course_id)
     ) or 0
     
-    # Count certificates
-    certificates_count = db.scalar(
-        select(func.count())
-        .select_from(Certificate)
-        .join(Enrollment, Certificate.enrollment_id == Enrollment.id)
-        .where(Enrollment.course_id == course_id)
-    ) or 0
-    
     # Count payments
     payments_count = db.scalar(
         select(func.count())
@@ -528,14 +499,12 @@ def course_delete_impact(
         enrollments_count=enrollments_count,
         attendance_count=attendance_count,
         grades_count=grades_count,
-        certificates_count=certificates_count,
         payments_count=payments_count,
         invoices_count=invoices_count,
         message=(
             f"Eliminar este curso borrará en cascada: {enrollments_count} matrícula(s), "
             f"{attendance_count} registro(s) de asistencia, {grades_count} nota(s), "
-            f"{certificates_count} certificado(s), {payments_count} pago(s), "
-            f"{invoices_count} factura(s). Esta acción es irreversible."
+            f"{payments_count} pago(s), {invoices_count} factura(s). Esta acción es irreversible."
         ),
     )
 

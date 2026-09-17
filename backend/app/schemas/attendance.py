@@ -26,3 +26,21 @@ class AttendanceRead(BaseModel):
     # Carried from the session for convenience (read-only).
     date: date_type
     status: AttendanceStatus
+
+
+class BulkAttendanceItem(BaseModel):
+    enrollment_id: int
+    status: AttendanceStatus = AttendanceStatus.present
+
+
+class BulkAttendanceRequest(BaseModel):
+    items: list[BulkAttendanceItem]
+
+
+class BulkAttendanceResponse(BaseModel):
+    session_id: int
+    total_processed: int
+    created_count: int
+    updated_count: int
+    records: list[AttendanceRead]
+

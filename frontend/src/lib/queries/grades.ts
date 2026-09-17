@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { Certificate, CourseEvaluation, FinalGrade, Grade } from "../types";
+import type { CourseEvaluation, FinalGrade, Grade, SkillCategory } from "../types";
 import { useList } from "./common";
 
 // ---- Grades ----
@@ -45,6 +45,7 @@ export function useCreateGrade() {
       evaluation_name: string;
       score: number;
       session_id?: number | null;
+      skill?: SkillCategory | null;
     }) => (await api.post<Grade>("/grades", payload)).data,
     onMutate: async (payload) => {
       const key = GRADES_ALL_KEY;
@@ -57,6 +58,7 @@ export function useCreateGrade() {
           session_id: payload.session_id ?? null,
           evaluation_name: payload.evaluation_name,
           score: payload.score,
+          skill: payload.skill ?? null,
         };
         qc.setQueryData<Grade[]>(key, [...prev, optimistic]);
       }
@@ -83,6 +85,7 @@ export function useUpdateGrade() {
       id: number;
       evaluation_name?: string;
       score?: number;
+      skill?: SkillCategory | null;
     }) => (await api.patch<Grade>(`/grades/${id}`, patch)).data,
     onMutate: async ({ id, ...patch }) => {
       const key = GRADES_ALL_KEY;
@@ -131,12 +134,20 @@ export function useAddEvaluation() {
       courseId,
       name,
       weight,
+      skill,
     }: {
       courseId: number;
       name: string;
       weight: number;
+      skill?: SkillCategory | null;
     }) =>
-      (await api.post(`/catalog/courses/${courseId}/evaluations`, { name, weight })).data,
+      (
+        await api.post(`/catalog/courses/${courseId}/evaluations`, {
+          name,
+          weight,
+          skill,
+        })
+      ).data,
     onSuccess: (_d, v) =>
       qc.invalidateQueries({ queryKey: ["course-evaluations", v.courseId] }),
   });
@@ -150,39 +161,4 @@ export function useDeleteEvaluation() {
     onSuccess: (_d, v) =>
       qc.invalidateQueries({ queryKey: ["course-evaluations", v.courseId] }),
   });
-}
-
-export const useEnrollmentCertificate = (enrollmentId?: number) =>
-  useQuery({
-    queryKey: ["certificate", enrollmentId],
-    enabled: !!enrollmentId,
-    queryFn: async () =>
-      (await api.get<Certificate | null>(`/enrollments/${enrollmentId}/certificate`)).data,
-  });
-
-export function useIssueCertificate() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (enrollmentId: number) =>
-      (await api.post<Certificate>(`/enrollments/${enrollmentId}/certificate`)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["certificate"] }),
-  });
-}
-
-export const useCertificateByCode = (code?: string) =>
-  useQuery({
-    queryKey: ["certificate", code],
-    enabled: !!code,
-    queryFn: async () =>
-      (await api.get<Certificate>(`/certificates/${code}`)).data,
-  });
-
-export async function downloadCertificatePdf(id: number, code: string) {
-  const res = await api.get(`/certificates/${id}/pdf`, { responseType: "blob" });
-  const url = URL.createObjectURL(res.data as Blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `certificado_${code}.pdf`;
-  a.click();
-  URL.revokeObjectURL(url);
 }

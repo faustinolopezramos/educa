@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clock import academy_today
 from app.core.database import get_db
 from app.core.deps import (
     apply_tenant,
     get_current_user,
+    has_user_permission,
     in_tenant,
+    is_admin,
     require_permission,
     require_role,
 )
@@ -32,8 +36,18 @@ from app.schemas.teacher import (
     TeacherReassignRequest,
     TeacherReassignResult,
 )
+from app.schemas.teacher_payroll import (
+    AcademyPayrollSummary,
+    TeacherHourlyRateUpdate,
+    TeacherPayrollReport,
+    TeacherPayrollSummary,
+)
 from app.services import teacher_service
 from app.services.staff import live_assignments, reassign_teacher
+from app.services.teacher_payroll import (
+    calculate_academy_payroll,
+    calculate_teacher_payroll,
+)
 
 router = APIRouter(prefix="/teachers", tags=["teachers"])
 
@@ -273,3 +287,83 @@ def reassign(
             for o in outcomes
         ],
     )
+
+
+# ---------------- Payroll & Hourly Settlement ----------------
+@router.get("/payroll/summary", response_model=AcademyPayrollSummary)
+def get_academy_payroll_summary(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AcademyPayrollSummary:
+    """Consolidated teaching hours and remuneration summary for all teachers in the tenant."""
+    if not (
+        is_admin(current_user)
+        or has_user_permission(current_user, Permission.manage_teachers)
+        or has_user_permission(current_user, Permission.view_reports)
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Requiere permisos de nómina o dirección")
+
+    today = academy_today()
+    start = date_from or date(today.year, today.month, 1)
+    end = date_to or today
+
+    return calculate_academy_payroll(db, current_user, start, end)
+
+
+@router.get("/{teacher_id}/payroll", response_model=TeacherPayrollReport)
+def get_teacher_payroll(
+    teacher_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TeacherPayrollReport:
+    """Detailed payroll and session-by-session teaching hours for a teacher."""
+    teacher = _require_teacher(db, teacher_id, current_user)
+
+    can_view = (
+        (current_user.role == UserRole.teacher and current_user.id == teacher_id)
+        or is_admin(current_user)
+        or has_user_permission(current_user, Permission.manage_teachers)
+        or has_user_permission(current_user, Permission.view_reports)
+    )
+    if not can_view:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No tienes permiso para ver esta liquidación")
+
+    today = academy_today()
+    start = date_from or date(today.year, today.month, 1)
+    end = date_to or today
+
+    return calculate_teacher_payroll(db, teacher, start, end)
+
+
+@router.patch("/{teacher_id}/rate", response_model=dict)
+def update_teacher_hourly_rate(
+    teacher_id: int,
+    payload: TeacherHourlyRateUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+) -> dict:
+    """Set or update the hourly compensation rate for a teacher."""
+    teacher = _require_teacher(db, teacher_id, current_user)
+    before = snapshot(teacher)
+    teacher.hourly_rate = payload.hourly_rate
+
+    record(
+        db,
+        current_user,
+        "update",
+        "user_hourly_rate",
+        teacher.id,
+        before=before,
+        after=snapshot(teacher),
+    )
+    db.commit()
+    db.refresh(teacher)
+    return {
+        "teacher_id": teacher.id,
+        "hourly_rate": teacher.hourly_rate,
+        "message": f"Tarifa horaria actualizada a {teacher.hourly_rate:.2f}",
+    }

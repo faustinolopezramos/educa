@@ -6,10 +6,10 @@ class KardexSummary(BaseModel):
     overall_attendance_rate: float
     total_courses_passed: int
     total_courses_failed: int
-    total_certificates_earned: int
     person_status: str
     person_status_label: str
     outstanding_balance: float
+    skills_breakdown: dict[str, float] = {}
 
 
 class KardexCourseEntry(BaseModel):
@@ -22,9 +22,8 @@ class KardexCourseEntry(BaseModel):
     enrollment_code: str
     final_score: float | None = None
     passed: bool | None = None
-    certificate_id: int | None = None
-    certificate_code: str | None = None
     balance: float = 0.0
+    skills: dict[str, float] = {}
     # Deliberately no `created_at`: `Enrollment` has no such column, and the
     # field only ever existed here — declared, never rendered by the panel that
     # consumes it, and impossible to fill. Ordering by the serial key gives the

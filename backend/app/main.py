@@ -19,10 +19,10 @@ from app.routers import (
     grading,
     holidays,
     locations,
+    makeups,
     meetings,
     notifications,
     payments,
-    public,
     reports,
     rooms,
     schedules,
@@ -156,11 +156,11 @@ app.include_router(assignments.router)
 app.include_router(attendance.router)
 app.include_router(grades.router)
 app.include_router(grading.router)
+app.include_router(makeups.router)
 app.include_router(meetings.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
 app.include_router(payments.router)
-app.include_router(public.router)
 app.include_router(audit.router)
 app.include_router(dashboard.router)
 app.include_router(webhooks.router)

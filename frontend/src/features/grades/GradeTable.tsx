@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { PromptModal } from "../../components/PromptModal";
-import { Button, Card, EmptyState, Input, SectionHeading } from "../../components/ui";
+import { Button, Card, EmptyState, Input, Modal, ModalActions, SectionHeading, Select } from "../../components/ui";
 import {
   useCreateGrade,
   useGrades,
   useUpdateGrade,
 } from "../../lib/queries";
 import { SCORE_MAX, SCORE_MIN } from "../../lib/constants";
-import type { Enrollment, Grade, UserBrief } from "../../lib/types";
+import type { Enrollment, Grade, SkillCategory, UserBrief } from "../../lib/types";
+
+const SKILL_BADGE: Record<string, { label: string; bg: string }> = {
+  speaking: { label: "Speaking", bg: "bg-purple-100 text-purple-800 border-purple-200" },
+  listening: { label: "Listening", bg: "bg-sky-100 text-sky-800 border-sky-200" },
+  reading: { label: "Reading", bg: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+  writing: { label: "Writing", bg: "bg-amber-100 text-amber-800 border-amber-200" },
+  grammar: { label: "Grammar", bg: "bg-rose-100 text-rose-800 border-rose-200" },
+  use_of_language: { label: "Use of Lang", bg: "bg-indigo-100 text-indigo-800 border-indigo-200" },
+};
 
 interface Props {
   enrollments: Enrollment[];
@@ -39,12 +47,45 @@ export function GradeTable({ enrollments, students }: Props) {
     [allGrades, enrollmentIds],
   );
 
+  const [extraColumnSkills, setExtraColumnSkills] = useState<Record<string, SkillCategory | null>>({});
+
   // Evaluation columns = existing names ∪ locally-added ones.
   const columns = useMemo(() => {
     const names = new Set<string>(grades.map((g) => g.evaluation_name));
     extraColumns.forEach((c) => names.add(c));
     return [...names];
   }, [grades, extraColumns]);
+
+  const columnSkillsMap = useMemo(() => {
+    const map = new Map<string, SkillCategory | null>();
+    for (const g of grades) {
+      if (g.skill && !map.has(g.evaluation_name)) {
+        map.set(g.evaluation_name, g.skill);
+      }
+    }
+    for (const [col, sk] of Object.entries(extraColumnSkills)) {
+      if (!map.has(col)) map.set(col, sk);
+    }
+    return map;
+  }, [grades, extraColumnSkills]);
+
+  const groupSkills = useMemo(() => {
+    const acc: Record<string, number[]> = {};
+    for (const g of grades) {
+      const sk = g.skill || columnSkillsMap.get(g.evaluation_name);
+      if (sk && g.score != null) {
+        if (!acc[sk]) acc[sk] = [];
+        acc[sk].push(g.score);
+      }
+    }
+    const res: Record<string, number> = {};
+    for (const [sk, scores] of Object.entries(acc)) {
+      if (scores.length > 0) {
+        res[sk] = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+      }
+    }
+    return res;
+  }, [grades, columnSkillsMap]);
 
   const studentAverages = useMemo(() => {
     const map = new Map<number, { avg: number | null; count: number }>();
@@ -73,8 +114,13 @@ export function GradeTable({ enrollments, students }: Props) {
     });
   }, [enrollments, students, search]);
 
-  function addColumn(name: string) {
-    if (name && !columns.includes(name)) setExtraColumns((c) => [...c, name]);
+  function addColumn(name: string, skill: SkillCategory | null) {
+    if (name && !columns.includes(name)) {
+      setExtraColumns((c) => [...c, name]);
+      if (skill) {
+        setExtraColumnSkills((prev) => ({ ...prev, [name]: skill }));
+      }
+    }
     setAdding(false);
   }
 
@@ -108,6 +154,27 @@ export function GradeTable({ enrollments, students }: Props) {
           + Nueva Evaluación
         </Button>
       </div>
+      {Object.keys(groupSkills).length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 p-2.5">
+          <span className="text-2xs font-semibold uppercase tracking-wider text-slate-500">
+            Competencias MCER (Promedio del Grupo):
+          </span>
+          {Object.entries(groupSkills).map(([sk, avg]) => {
+            const badge = SKILL_BADGE[sk];
+            return (
+              <span
+                key={sk}
+                className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-semibold ${
+                  badge?.bg || "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                <span>{badge?.label || sk}:</span>
+                <span className="tabular font-bold">{avg.toFixed(1)}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="min-w-full border-separate border-spacing-0 text-sm">
           <thead>
@@ -115,14 +182,27 @@ export function GradeTable({ enrollments, students }: Props) {
               <th className="sticky left-0 bg-slate-50 px-3 py-2 text-left font-medium text-slate-500 border-b border-slate-200">
                 Alumno
               </th>
-              {columns.map((col) => (
-                <th
-                  key={col}
-                  className="px-3 py-2 text-left font-medium text-slate-500 border-b border-slate-200"
-                >
-                  {col}
-                </th>
-              ))}
+              {columns.map((col) => {
+                const sk = columnSkillsMap.get(col);
+                const badge = sk ? SKILL_BADGE[sk] : null;
+                return (
+                  <th
+                    key={col}
+                    className="border-b border-slate-200 px-3 py-2 text-left font-medium text-slate-600"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span>{col}</span>
+                      {badge && (
+                        <span
+                          className={`w-fit rounded border px-1.5 py-0.2 text-2xs font-semibold ${badge.bg}`}
+                        >
+                          {badge.label}
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
               {columns.length === 0 && (
                 <th className="px-3 py-2 text-left text-xs text-slate-300 border-b border-slate-200">
                   Añade una evaluación →
@@ -153,6 +233,7 @@ export function GradeTable({ enrollments, students }: Props) {
                       <GradeCell
                         enrollmentId={e.id}
                         evaluation={col}
+                        skill={columnSkillsMap.get(col)}
                         grade={grades.find(
                           (g) =>
                             g.enrollment_id === e.id && g.evaluation_name === col,
@@ -188,12 +269,7 @@ export function GradeTable({ enrollments, students }: Props) {
         de la celda.
       </p>
       {adding && (
-        <PromptModal
-          title="Nueva evaluación"
-          label="Nombre de la evaluación"
-          placeholder="Ej. Examen Unidad 2"
-          confirmLabel="Añadir"
-          required
+        <AddEvaluationModal
           onClose={() => setAdding(false)}
           onSubmit={addColumn}
         />
@@ -206,10 +282,12 @@ function GradeCell({
   enrollmentId,
   evaluation,
   grade,
+  skill,
 }: {
   enrollmentId: number;
   evaluation: string;
   grade?: Grade;
+  skill?: SkillCategory | null;
 }) {
   const create = useCreateGrade();
   const update = useUpdateGrade();
@@ -243,9 +321,14 @@ function GradeCell({
     }
     if (grade) {
       if (score === grade.score) return;
-      update.mutate({ id: grade.id, score });
+      update.mutate({ id: grade.id, score, skill: skill ?? undefined });
     } else {
-      create.mutate({ enrollment_id: enrollmentId, evaluation_name: evaluation, score });
+      create.mutate({
+        enrollment_id: enrollmentId,
+        evaluation_name: evaluation,
+        score,
+        skill: skill ?? undefined,
+      });
     }
     setSaved(true);
     setTimeout(() => setSaved(false), 1200);
@@ -272,3 +355,70 @@ function GradeCell({
     </div>
   );
 }
+
+function AddEvaluationModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (name: string, skill: SkillCategory | null) => void;
+}) {
+  const [name, setName] = useState("");
+  const [skill, setSkill] = useState<string>("");
+
+  return (
+    <Modal
+      title="Nueva evaluación"
+      onClose={onClose}
+      maxWidth="max-w-md"
+      onSubmit={() => {
+        if (name.trim()) {
+          onSubmit(name.trim(), (skill as SkillCategory) || null);
+        }
+      }}
+      footer={
+        <ModalActions hint="Enter para confirmar">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={!name.trim()}>
+            Añadir evaluación
+          </Button>
+        </ModalActions>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            Nombre de la evaluación *
+          </label>
+          <Input
+            autoFocus
+            required
+            value={name}
+            placeholder="Ej. Speaking Midterm / Examen Unidad 1"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            Competencia MCER (Opcional)
+          </label>
+          <Select value={skill} onChange={(e) => setSkill(e.target.value)}>
+            <option value="">General (Sin competencia específica)</option>
+            <option value="speaking">Speaking / Expresión Oral</option>
+            <option value="listening">Listening / Comprensión Auditiva</option>
+            <option value="reading">Reading / Comprensión Lectora</option>
+            <option value="writing">Writing / Expresión Escrita</option>
+            <option value="grammar">Grammar & Vocabulary</option>
+            <option value="use_of_language">Use of Language</option>
+          </Select>
+          <p className="mt-1 text-2xs text-slate-500">
+            Asociar la evaluación a una destreza lingüística alimenta el desglose pedagógico en el Kardex.
+          </p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+

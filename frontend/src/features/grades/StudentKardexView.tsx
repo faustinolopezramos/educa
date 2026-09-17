@@ -1,8 +1,7 @@
 import { useAuth } from "../../auth/AuthContext";
 import { Badge, Button, Card, EmptyState, SkeletonRows } from "../../components/ui";
 import { IconCap, IconLock } from "../../components/icons";
-import { downloadCertificatePdf, useStudentKardex } from "../../lib/queries";
-import { notify } from "../../lib/toast";
+import { useStudentKardex } from "../../lib/queries";
 
 export function StudentKardexView() {
   const { user } = useAuth();
@@ -107,17 +106,66 @@ export function StudentKardexView() {
               : "0 reprobados"}
           </div>
         </Card>
-
-        <Card className="p-4 border-slate-200 bg-white">
-          <div className="text-2xs font-semibold uppercase tracking-wider text-slate-500">
-            Certificados Obtenidos
-          </div>
-          <div className="mt-1 text-2xl font-bold text-amber-700">
-            {summary.total_certificates_earned}
-          </div>
-          <div className="mt-0.5 text-xs text-slate-400">Diplomas emitidos</div>
-        </Card>
       </div>
+
+      {/* MCER Competencies Breakdown */}
+      {summary.skills_breakdown && Object.keys(summary.skills_breakdown).length > 0 && (
+        <Card className="border-slate-200 bg-white p-5 print:border print:border-slate-300">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Desglose de Competencias Comunicativas (MCER)
+              </h3>
+              <p className="text-2xs text-slate-500">
+                Promedios consolidados por habilidad lingüística a lo largo del expediente
+              </p>
+            </div>
+            <span className="rounded bg-brand-50 px-2 py-0.5 text-2xs font-semibold text-brand-700 border border-brand-200">
+              Marco Común Europeo
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {Object.entries(summary.skills_breakdown).map(([skill, avg]) => {
+              const label =
+                skill === "speaking"
+                  ? "Speaking / Expresión Oral"
+                  : skill === "listening"
+                    ? "Listening / Comprensión Auditiva"
+                    : skill === "reading"
+                      ? "Reading / Comprensión Lectora"
+                      : skill === "writing"
+                        ? "Writing / Expresión Escrita"
+                        : skill === "grammar"
+                          ? "Grammar & Vocabulary"
+                          : skill === "use_of_language"
+                            ? "Use of Language"
+                            : skill;
+              const pct = Math.min(100, Math.max(0, (avg / 10) * 100));
+              const isLow = avg < 6.0;
+
+              return (
+                <div key={skill} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-700">{label}</span>
+                    <span className={`font-bold tabular ${isLow ? "text-red-600" : "text-slate-900"}`}>
+                      {avg.toFixed(1)} <span className="text-2xs font-normal text-slate-400">/ 10</span>
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        isLow ? "bg-red-500" : avg >= 8.5 ? "bg-emerald-500" : "bg-brand-500"
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Delinquency Alert if any */}
       {summary.outstanding_balance > 0 && (
@@ -156,7 +204,6 @@ export function StudentKardexView() {
                   <th className="px-5 py-3">Estado</th>
                   <th className="px-5 py-3 text-center">Nota Final</th>
                   <th className="px-5 py-3 text-center">Resultado</th>
-                  <th className="px-5 py-3 text-right">Certificado / Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -168,6 +215,18 @@ export function StudentKardexView() {
                     <td className="px-5 py-3.5">
                       <div className="font-medium text-slate-900">{entry.course_title}</div>
                       <div className="text-2xs text-slate-500">{entry.level_name}</div>
+                      {entry.skills && Object.keys(entry.skills).length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {Object.entries(entry.skills).map(([sk, sc]) => (
+                            <span
+                              key={sk}
+                              className="rounded bg-slate-100 px-1.5 py-0.5 text-2xs font-medium text-slate-600"
+                            >
+                              {sk}: <strong className="text-slate-800">{sc.toFixed(1)}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3.5">
                       <Badge
@@ -208,33 +267,6 @@ export function StudentKardexView() {
                         </span>
                       ) : (
                         <span className="text-xs text-slate-400">Cursando</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      {entry.certificate_code ? (
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="font-mono text-2xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                            {entry.certificate_code}
-                          </span>
-                          {entry.certificate_id && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                downloadCertificatePdf(
-                                  entry.certificate_id!,
-                                  entry.certificate_code!,
-                                ).catch(() =>
-                                  notify("No se pudo descargar el certificado", "error"),
-                                )
-                              }
-                              className="text-2xs font-semibold text-brand-600 hover:text-brand-800 hover:underline print:hidden"
-                            >
-                              Descargar PDF ↓
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-2xs text-slate-400">—</span>
                       )}
                     </td>
                   </tr>

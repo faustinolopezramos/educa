@@ -48,24 +48,28 @@ import {
   usesRoom,
 } from "../lib/format";
 import { notify } from "../lib/toast";
+import { useAuth } from "../auth/AuthContext";
 import {
   useCancelSession,
   useCloseRegister,
   useCourseStudents,
   useCourses,
   useCreateAttendance,
+  useBulkAttendance,
   useCreateGrade,
   useEnrollments,
   useEnsureSession,
   useGenerateSessions,
   useGrades,
   useLocationProposals,
+  useMakeUpCredits,
   useProposeLocation,
   useReopenRegister,
   useRescheduleSession,
   useRooms,
   useSchedules,
   useSessions,
+  useTeacherPayroll,
   useVisibleAttendance,
 } from "../lib/queries";
 import type {
@@ -143,7 +147,129 @@ export default function TeacherDashboard() {
   if (section === "tareas") return <AssignmentsPanel />;
   if (section === "reportes") return <ReportView />;
   if (section === "perfil") return <ProfilePanel />;
+  if (section === "nomina") return <TeacherSelfPayrollView />;
   return <ClassesView />;
+}
+
+function TeacherSelfPayrollView() {
+  const { user } = useAuth();
+  const now = new Date();
+  const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const today = now.toISOString().slice(0, 10);
+  const [dateFrom, setDateFrom] = useState(firstDay);
+  const [dateTo, setDateTo] = useState(today);
+
+  const { data: payroll, isLoading, isError } = useTeacherPayroll(user?.id, dateFrom, dateTo);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Mis Horas & Liquidación"
+        description="Detalle de clases impartidas, horas lectivas acumuladas y remuneración del período."
+      />
+
+      {/* Date Filter */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-600">Desde:</span>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="max-w-[10rem] text-xs"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-600">Hasta:</span>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="max-w-[10rem] text-xs"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+            Tarifa Asignada
+          </span>
+          <div className="mt-1 text-2xl font-bold text-slate-900">
+            ${payroll?.hourly_rate?.toFixed(2) ?? "0.00"}/h
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+            Horas Impartidas
+          </span>
+          <div className="mt-1 text-2xl font-bold text-brand-600">
+            {payroll?.total_hours?.toFixed(1) ?? "0.0"} h
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+            Total Devengado
+          </span>
+          <div className="mt-1 text-2xl font-bold text-emerald-600">
+            ${payroll?.total_amount?.toFixed(2) ?? "0.00"}
+          </div>
+        </div>
+      </div>
+
+      {/* Sessions list */}
+      <Card>
+        <SectionHeading>Sesiones Impartidas en el Período</SectionHeading>
+        {isLoading ? (
+          <p className="py-8 text-center text-xs text-slate-500">Cargando tus clases impartidas…</p>
+        ) : isError ? (
+          <p className="py-8 text-center text-xs text-red-600">No se pudo cargar la información de horas.</p>
+        ) : !payroll || payroll.sessions.length === 0 ? (
+          <p className="py-8 text-center text-xs text-slate-400">
+            No se han registrado sesiones dadas en este rango de fechas.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50/75 text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Fecha</th>
+                  <th className="px-4 py-3 font-semibold">Curso</th>
+                  <th className="px-4 py-3 font-semibold">Horario</th>
+                  <th className="px-4 py-3 font-semibold text-right">Duración</th>
+                  <th className="px-4 py-3 font-semibold text-right">Tarifa / h</th>
+                  <th className="px-4 py-3 font-semibold text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {payroll.sessions.map((s) => (
+                  <tr key={s.session_id} className="hover:bg-slate-50/50">
+                    <td className="px-4 py-3 font-medium text-slate-900">{s.date}</td>
+                    <td className="px-4 py-3 font-medium text-slate-700">{s.course_name}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-brand-700">
+                      {s.duration_hours.toFixed(1)} h
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-600">
+                      ${s.hourly_rate.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-700">
+                      ${s.amount.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 function ClassesView() {
@@ -675,7 +801,9 @@ function SessionSheet({
   const sessionDate = session?.date;
   const { data: attendance = [] } = useVisibleAttendance();
   const { data: grades = [] } = useGrades();
+  const { data: allMakeups = [] } = useMakeUpCredits();
   const mark = useCreateAttendance();
+  const bulkMark = useBulkAttendance();
   const [markingAll, setMarkingAll] = useState(false);
   const [focused, setFocused] = useState(0);
   const [search, setSearch] = useState("");
@@ -683,6 +811,16 @@ function SessionSheet({
 
   const today = todayLocal();
   const isFuture = sessionDate ? sessionDate > today : false;
+
+  const sessionMakeups = useMemo(
+    () =>
+      allMakeups.filter(
+        (m) =>
+          m.target_session_id === sessionId &&
+          (m.status === "booked" || m.status === "attended"),
+      ),
+    [allMakeups, sessionId],
+  );
 
   const markBySession = useMemo(
     () =>
@@ -748,31 +886,17 @@ function SessionSheet({
     if (pending.length === 0) return;
 
     setMarkingAll(true);
-    const results = await Promise.allSettled(
-      pending.map((e) =>
-        mark.mutateAsync({
-          enrollment_id: e.id,
-          session_id: sessionId,
-          status: "present",
-        }),
-      ),
-    );
-    setMarkingAll(false);
-
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length === 0) {
+    try {
+      await bulkMark.mutateAsync({
+        sessionId,
+        items: pending.map((e) => ({ enrollment_id: e.id, status: "present" as const })),
+      });
       notify("Todos marcados como presentes", "success");
-      return;
+    } catch (err) {
+      notify(apiErrorMessage(err, "No se pudo pasar lista"), "error");
+    } finally {
+      setMarkingAll(false);
     }
-    const first = (failed[0] as PromiseRejectedResult).reason;
-    notify(
-      failed.length === results.length
-        ? apiErrorMessage(first, "No se pudo pasar lista")
-        : `${results.length - failed.length} de ${results.length} marcados; ${
-            failed.length
-          } fallaron: ${apiErrorMessage(first, "error desconocido")}`,
-      "error",
-    );
   }
 
   async function markUnmarkedAbsent() {
@@ -780,23 +904,17 @@ function SessionSheet({
     if (pending.length === 0) return;
 
     setMarkingAll(true);
-    const results = await Promise.allSettled(
-      pending.map((e) =>
-        mark.mutateAsync({
-          enrollment_id: e.id,
-          session_id: sessionId,
-          status: "absent",
-        }),
-      ),
-    );
-    setMarkingAll(false);
-
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length === 0) {
+    try {
+      await bulkMark.mutateAsync({
+        sessionId,
+        items: pending.map((e) => ({ enrollment_id: e.id, status: "absent" as const })),
+      });
       notify(`${pending.length} alumno(s) marcados como ausentes`, "success");
-      return;
+    } catch (err) {
+      notify(apiErrorMessage(err, "No se pudo registrar la ausencia masiva"), "error");
+    } finally {
+      setMarkingAll(false);
     }
-    notify("Hubo errores al marcar algunos alumnos", "error");
   }
 
   if (enrollments.length === 0) {
@@ -859,6 +977,34 @@ function SessionSheet({
         onMarkAll={markEveryonePresent}
         onMarkUnmarkedAbsent={markUnmarkedAbsent}
       />
+
+      {sessionMakeups.length > 0 && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-indigo-900 mb-1.5">
+            <span>🔄</span> Alumnos en Clase de Recuperación ({sessionMakeups.length})
+          </div>
+          <div className="space-y-1.5">
+            {sessionMakeups.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center justify-between text-2xs bg-white rounded-lg px-3 py-2 border border-indigo-100 shadow-2xs"
+              >
+                <div>
+                  <span className="font-semibold text-slate-800">
+                    {m.student_name ?? `Alumno #${m.student_id}`}
+                  </span>
+                  <span className="ml-2 text-indigo-600">
+                    (Nivel {m.level_name ?? "MCER"} · Origen: {m.course_name ?? "Grupo paralelo"})
+                  </span>
+                </div>
+                <span className="inline-flex items-center gap-1 font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                  {m.status === "attended" ? "✓ Asistencia Completada" : "Plaza Reservada (Make-up)"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border border-slate-200/80 bg-slate-50/70 p-2.5">
         <div className="relative min-w-[12rem] flex-1 max-w-xs">

@@ -8,7 +8,6 @@ interface KardexSummary {
   overall_attendance_rate: number;
   total_courses_passed: number;
   total_courses_failed: number;
-  total_certificates_earned: number;
   person_status: string;
   person_status_label: string;
   outstanding_balance: number;
@@ -24,7 +23,6 @@ interface KardexCourseEntry {
   enrollment_code: string;
   final_score: number | null;
   passed: boolean | null;
-  certificate_code: string | null;
   balance: number;
 }
 
@@ -111,11 +109,6 @@ export function StudentKardexModal({
             <div className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Cursos Aprobados</div>
             <div className="text-2xl font-bold text-indigo-400 mt-1">{summary.total_courses_passed}</div>
           </Card>
-
-          <Card className="p-3 bg-slate-800/60 border-slate-700/50">
-            <div className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Certificados</div>
-            <div className="text-2xl font-bold text-amber-400 mt-1">{summary.total_certificates_earned}</div>
-          </Card>
         </div>
 
         {/* Academic History Timeline */}
@@ -142,7 +135,6 @@ export function StudentKardexModal({
                     <th className="p-3">Curso / Nivel</th>
                     <th className="p-3">Estado</th>
                     <th className="p-3">Nota Final</th>
-                    <th className="p-3">Certificado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -165,15 +157,6 @@ export function StudentKardexModal({
                           </span>
                         ) : (
                           <span className="text-slate-500">—</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {item.certificate_code ? (
-                          <span className="font-mono text-xs text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40">
-                            {item.certificate_code}
-                          </span>
-                        ) : (
-                          <span className="text-slate-600 text-xs">Sin emitir</span>
                         )}
                       </td>
                     </tr>

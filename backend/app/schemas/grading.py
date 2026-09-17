@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
+from app.models.enums import SkillCategory
 from app.schemas.base import PatchModel
 
 
@@ -10,12 +10,14 @@ from app.schemas.base import PatchModel
 class CourseEvaluationCreate(BaseModel):
     name: str
     weight: float = 1.0
+    skill: SkillCategory | None = None
 
 
 class CourseEvaluationUpdate(PatchModel):
     NON_NULLABLE: ClassVar[tuple[str, ...]] = ("name", "weight")
     name: str | None = None
     weight: float | None = None
+    skill: SkillCategory | None = None
 
 
 class CourseEvaluationRead(BaseModel):
@@ -24,6 +26,7 @@ class CourseEvaluationRead(BaseModel):
     course_id: int
     name: str
     weight: float
+    skill: SkillCategory | None = None
 
 
 # ---- Final grade ----
@@ -32,6 +35,8 @@ class ComponentRead(BaseModel):
     name: str
     score: float
     weight: float
+    skill: SkillCategory | None = None
+
 
 
 class FinalGradeRead(BaseModel):
@@ -40,14 +45,3 @@ class FinalGradeRead(BaseModel):
     passing_score: float
     passed: bool
     components: list[ComponentRead]
-
-
-# ---- Certificate ----
-class CertificateRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    enrollment_id: int
-    level_id: int
-    final_score: float
-    code: str
-    issued_at: datetime

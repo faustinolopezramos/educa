@@ -29,6 +29,10 @@ from app.models.enums import (
     ProposalStatus,
     ProviderName,
     SessionStatus,
+    SkillCategory,
+    SKILL_LABELS,
+    MakeUpStatus,
+    MAKEUP_STATUS_LABELS,
     TrackKind,
     UserRole,
 )
@@ -49,7 +53,6 @@ from app.models.enrollment import Enrollment
 from app.models.attendance import Attendance
 from app.models.grade import Grade
 from app.models.course_evaluation import CourseEvaluation
-from app.models.certificate import Certificate
 from app.models.meeting_provider import MeetingProvider
 from app.models.virtual_meeting import VirtualMeeting
 from app.models.meeting_log import MeetingLog
@@ -60,6 +63,7 @@ from app.models.invoice import Invoice
 from app.models.tenant import Tenant
 from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.refresh_session import RefreshSession
+from app.models.make_up_credit import MakeUpCredit
 
 __all__ = [
     "COURSE_ACCEPTS_ENROLMENT",
@@ -82,7 +86,6 @@ __all__ = [
     "AttendanceStatus",
     "attendance_rate",
     "AuditLog",
-    "Certificate",
     "ClassSession",
     "Course",
     "course_transition_allowed",
@@ -97,6 +100,9 @@ __all__ = [
     "Language",
     "Level",
     "LocationProposal",
+    "MakeUpCredit",
+    "MakeUpStatus",
+    "MAKEUP_STATUS_LABELS",
     "MeetingLog",
     "MeetingProvider",
     "MeetingStatus",
@@ -116,6 +122,8 @@ __all__ = [
     "Room",
     "Schedule",
     "SessionStatus",
+    "SkillCategory",
+    "SKILL_LABELS",
     "TeacherAvailability",
     "TeacherLanguage",
     "Tenant",

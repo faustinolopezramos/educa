@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String, text
+from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, JSON, String, text
 from sqlalchemy import true as sa_true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,6 +41,8 @@ class User(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
     # Optional weekly teaching-hours cap for teachers (NULL = uncapped).
     max_weekly_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Teacher hourly rate for payroll settlement (NULL or 0 = not configured).
+    hourly_rate: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.0)
     # Bumped on password change so refresh tokens issued before it stop working.
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Whether the account may be used at all. A teacher who leaves the academy
@@ -62,6 +64,10 @@ class User(Base):
         ForeignKey("nationalities.id", ondelete="SET NULL"), nullable=True, index=True
     )
     permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
+    # Supabase Auth user ID for linking with Supabase Auth
+    supabase_uid: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
 
     nationality: Mapped["Nationality | None"] = relationship()
     # A teacher owns many schedules
