@@ -78,12 +78,20 @@ class Settings(BaseSettings):
         return self.environment.strip().lower() == "production"
 
     @model_validator(mode="after")
-    def _reject_placeholder_secrets(self) -> "Settings":
-        """Refuse to start production with the example secrets still in place.
+    def _normalize_and_validate(self) -> "Settings":
+        """Ensure postgresql+psycopg driver is used and validate production secrets."""
+        if self.database_url.startswith("postgresql://"):
+            self.database_url = self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        elif self.database_url.startswith("postgres://"):
+            self.database_url = self.database_url.replace("postgres://", "postgresql+psycopg://", 1)
 
-        Development keeps working with the defaults, but warns, so the failure
-        surfaces long before deploy day.
-        """
+        # Remove invalid query parameter 'pgbouncer' (psycopg 3 rejects it)
+        if "pgbouncer=" in self.database_url:
+            import re
+            self.database_url = re.sub(r'[\?&]pgbouncer=[^&]*', '', self.database_url)
+            if "?" not in self.database_url and "&" in self.database_url:
+                self.database_url = self.database_url.replace("&", "?", 1)
+
         weak = self.jwt_secret.strip() in _PLACEHOLDER_SECRETS
         if not weak:
             return self
