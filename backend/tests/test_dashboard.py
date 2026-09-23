@@ -14,7 +14,6 @@ from datetime import date, timedelta
 import pytest
 
 from app.models import (
-    ClassSession,
     Enrollment,
     Payment,
     PaymentKind,
@@ -24,7 +23,7 @@ from app.models import (
     UserRole,
 )
 from app.services.sequences import next_enrollment_code
-from tests.conftest import TODAY, auth, make_user
+from tests.conftest import TODAY, auth, make_session, make_user
 
 
 def _kinds(client, headers) -> set[str]:
@@ -113,13 +112,7 @@ def test_a_past_class_with_no_register_reaches_the_teacher(client, db, world):
     """`held` is written when a teacher takes attendance, so a past session
     still sitting at `scheduled` is one nobody filed. It belongs to the person
     who can file it."""
-    db.add(
-        ClassSession(
-            schedule_id=world["schedule_a"].id,
-            date=TODAY - timedelta(days=3),
-        )
-    )
-    db.flush()
+    make_session(db, world["schedule_a"], TODAY - timedelta(days=3))
 
     teacher = auth(client, "teacher_a@test.com")
     item = _item(client, teacher, "unregistered_sessions")
@@ -133,38 +126,20 @@ def test_the_admin_is_not_nagged_about_registers_they_cannot_take(client, db, wo
     it on the admin's tray sent them to the course list, where there is nothing
     to do about it, and named neither the teacher nor the course — so even
     chasing whoever did not file had nothing to go on."""
-    db.add(
-        ClassSession(
-            schedule_id=world["schedule_a"].id,
-            date=TODAY - timedelta(days=3),
-        )
-    )
-    db.flush()
+    make_session(db, world["schedule_a"], TODAY - timedelta(days=3))
 
     admin = auth(client, "admin@test.com")
     assert "unregistered_sessions" not in _kinds(client, admin)
 
 
 def test_a_future_class_is_not_a_pending_register(client, db, world):
-    db.add(
-        ClassSession(
-            schedule_id=world["schedule_a"].id,
-            date=TODAY + timedelta(days=3),
-        )
-    )
-    db.flush()
+    make_session(db, world["schedule_a"], TODAY + timedelta(days=3))
     teacher = auth(client, "teacher_a@test.com")
     assert _item(client, teacher, "unregistered_sessions") is None
 
 
 def test_the_teacher_sees_only_their_own_unregistered_classes(client, db, world):
-    db.add(
-        ClassSession(
-            schedule_id=world["schedule_b"].id,  # teacher_b's course
-            date=TODAY - timedelta(days=2),
-        )
-    )
-    db.flush()
+    make_session(db, world["schedule_b"], TODAY - timedelta(days=2))  # teacher_b's course
 
     assert "unregistered_sessions" not in _kinds(client, auth(client, "teacher_a@test.com"))
     assert "unregistered_sessions" in _kinds(client, auth(client, "teacher_b@test.com"))

@@ -21,7 +21,6 @@ from app.models import (
     Assignment,
     Attendance,
     AttendanceStatus,
-    ClassSession,
     Course,
     CourseEvaluation,
     CourseTeacher,
@@ -38,7 +37,7 @@ from app.models import (
     UserRole,
 )
 from app.services.sequences import next_enrollment_code
-from tests.conftest import TODAY, auth
+from tests.conftest import TODAY, auth, make_session
 
 
 def _academy(db, slug: str) -> dict:
@@ -112,9 +111,7 @@ def _academy(db, slug: str) -> dict:
     # exist so the probes below have something real to leak: an endpoint that is
     # not scoped returns *these rows* to the other academy's admin.
     monday = term_start + timedelta(days=(0 - term_start.weekday()) % 7)
-    session = ClassSession(schedule_id=schedule.id, date=monday)
-    db.add(session)
-    db.flush()
+    session = make_session(db, schedule, monday)
 
     grade = Grade(
         enrollment_id=enrollment.id,

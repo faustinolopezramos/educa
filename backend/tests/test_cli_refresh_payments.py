@@ -1,6 +1,8 @@
 import argparse
 from datetime import timedelta
 
+from sqlalchemy.orm import Session
+
 from app.cli import cmd_refresh_payments
 from app.models import (
     Course,
@@ -54,7 +56,7 @@ def test_cli_refresh_payments_updates_overdue(db):
         student_id=student.id,
         course_id=course.id,
         status=EnrollmentStatus.active,
-        enrollment_code=next_enrollment_code(db, tenant.id),
+        enrollment_code=next_enrollment_code(db, year=TODAY.year),
         payment_status=PaymentStatus.pending,
     )
     db.add(enrollment)
@@ -73,7 +75,15 @@ def test_cli_refresh_payments_updates_overdue(db):
 
     # Run CLI command
     args = argparse.Namespace(on=None, tenant_slug="cli-tenant")
-    exit_code = cmd_refresh_payments(args)
+    # El comando abre su propia sesión. Se le da una sobre la misma conexión que
+    # la prueba, para que vea lo que ésta acaba de montar sin salir de la
+    # transacción que se revierte al terminar.
+    exit_code = cmd_refresh_payments(
+        args,
+        session_factory=lambda: Session(
+            bind=db.connection(), join_transaction_mode="create_savepoint"
+        ),
+    )
     assert exit_code == 0
 
     # Refresh from db and assert status updated to overdue

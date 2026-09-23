@@ -19,21 +19,17 @@ from app.models import (
     ATTENDANCE_COUNTS_TOWARD_RATE,
     ATTENDANCE_IS_PRESENT,
     AttendanceStatus,
-    ClassSession,
     Enrollment,
     attendance_rate,
 )
 from app.services.sequences import next_enrollment_code
-from tests.conftest import TODAY, auth
+from tests.conftest import TODAY, auth, make_session
 
 
 @pytest.fixture
 def session_a(client, db, world):
     """Una sesión de hoy en el curso del profesor A."""
-    session = ClassSession(schedule_id=world["schedule_a"].id, date=TODAY)
-    db.add(session)
-    db.flush()
-    return session
+    return make_session(db, world["schedule_a"], TODAY)
 
 
 def _mark(client, headers, enrollment_id, session_id, status="present"):
@@ -258,11 +254,7 @@ def test_the_teachers_pending_tray_counts_open_registers_not_unmarked_ones(
     Antes el contador preguntaba por `status = scheduled`, que el primer marcaje
     ya borraba: la clase desaparecía de los pendientes con la lista sin terminar.
     """
-    past = ClassSession(
-        schedule_id=world["schedule_a"].id, date=TODAY - timedelta(days=7)
-    )
-    db.add(past)
-    db.flush()
+    past = make_session(db, world["schedule_a"], TODAY - timedelta(days=7))
 
     teacher = auth(client, "teacher_a@test.com")
     before = client.get("/dashboard", headers=teacher).json()

@@ -10,9 +10,9 @@ from datetime import date, time, timedelta
 
 import pytest
 
-from app.models import ClassSession, Course, CourseTeacher, Schedule
+from app.models import Course, CourseTeacher, Schedule
 from app.services.sessions import reschedule_session
-from tests.conftest import TODAY
+from tests.conftest import TODAY, make_session
 
 
 def _next_weekday(day_of_week: int, weeks_ahead: int = 2) -> date:
@@ -23,9 +23,7 @@ def _next_weekday(day_of_week: int, weeks_ahead: int = 2) -> date:
 
 
 def test_rescheduling_into_the_past_is_refused(db, world):
-    session = ClassSession(schedule_id=world["schedule_a"].id, date=_next_weekday(0))
-    db.add(session)
-    db.flush()
+    session = make_session(db, world["schedule_a"], _next_weekday(0))
 
     with pytest.raises(ValueError, match="fecha pasada"):
         reschedule_session(db, session, TODAY - timedelta(days=1))
@@ -57,19 +55,15 @@ def test_two_makeups_cannot_double_book_the_same_teacher(db, world):
 
     target = _next_weekday(4)
     # The other schedule already holds a make-up that day, at the same hour.
-    db.add(ClassSession(schedule_id=other.id, date=target))
-    session = ClassSession(schedule_id=world["schedule_a"].id, date=_next_weekday(0))
-    db.add(session)
-    db.flush()
+    make_session(db, other, target)
+    session = make_session(db, world["schedule_a"], _next_weekday(0))
 
     with pytest.raises(ValueError, match="profesor"):
         reschedule_session(db, session, target)
 
 
 def test_a_free_date_still_reschedules(db, world):
-    session = ClassSession(schedule_id=world["schedule_a"].id, date=_next_weekday(0))
-    db.add(session)
-    db.flush()
+    session = make_session(db, world["schedule_a"], _next_weekday(0))
 
     makeup = reschedule_session(db, session, _next_weekday(4))
 
@@ -99,9 +93,7 @@ def test_reschedule_fails_with_409_on_teacher_schedule_conflict(client, db, worl
     db.add(other)
     db.flush()
 
-    session = ClassSession(schedule_id=world["schedule_a"].id, date=_next_weekday(0))
-    db.add(session)
-    db.flush()
+    session = make_session(db, world["schedule_a"], _next_weekday(0))
 
     target_friday = _next_weekday(4)
     headers = auth(client, "teacher_a@test.com")

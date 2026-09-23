@@ -13,7 +13,6 @@ from app.core.security import hash_password
 from app.models import (
     Attendance,
     AttendanceStatus,
-    ClassSession,
     Course,
     Enrollment,
     EnrollmentStatus,
@@ -25,7 +24,7 @@ from app.models import (
     UserRole,
 )
 from app.services.sequences import next_enrollment_code
-from tests.conftest import TODAY, auth, make_user
+from tests.conftest import TODAY, auth, make_session, make_user
 
 
 # ---------------------------------------------------------------------------
@@ -325,11 +324,7 @@ def test_creating_and_editing_an_academy_is_audited(client, db):
 def test_an_enrollment_with_a_record_refuses_to_be_deleted(client, db, world):
     """El `cascade` se llevaba notas y asistencia, y la auditoría sólo guardaba
     la matrícula: el expediente desaparecía sin quedar rastro de qué había."""
-    session = ClassSession(
-        schedule_id=world["schedule_a"].id, date=TODAY
-    )
-    db.add(session)
-    db.flush()
+    session = make_session(db, world["schedule_a"], TODAY)
     db.add(
         Attendance(
             enrollment_id=world["enrollment"].id,

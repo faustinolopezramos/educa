@@ -27,6 +27,7 @@ from app.core.security import hash_password
 from app.main import app
 from app.services.sequences import next_enrollment_code
 from app.models import (
+    ClassSession,
     Course,
     CourseTeacher,
     Enrollment,
@@ -119,6 +120,28 @@ def make_user(
     db.add(user)
     db.flush()
     return user
+
+
+def make_session(db: Session, schedule: Schedule, on: date, **kw) -> ClassSession:
+    """Una sesión de un horario en una fecha, con los datos del horario copiados.
+
+    `class_sessions` desnormaliza profesor, aula y horas para poder imponer las
+    restricciones de exclusión GiST, y esas columnas son NOT NULL. Construir la
+    sesión a mano sólo con `schedule_id` y `date` — como hacían las fixtures —
+    falla contra el esquema real. Copia del horario exactamente lo mismo que
+    `services.sessions.ensure_session`, para que lo que montan las pruebas y lo
+    que crea la aplicación no puedan divergir.
+    """
+    defaults = {
+        "teacher_id": schedule.teacher_id,
+        "room_id": schedule.room_id,
+        "start_time": schedule.start_time,
+        "end_time": schedule.end_time,
+    }
+    session = ClassSession(schedule_id=schedule.id, date=on, **{**defaults, **kw})
+    db.add(session)
+    db.flush()
+    return session
 
 
 def auth(client: TestClient, email: str, password: str = "secret123") -> dict[str, str]:

@@ -8,9 +8,9 @@ earlier.
 
 from datetime import date, datetime, timedelta, timezone
 
-from app.models import ClassSession, Grade
+from app.models import Grade
 from app.services.reports import build_report
-from tests.conftest import TODAY
+from tests.conftest import TODAY, make_session
 
 
 def _grade(db, enrollment_id, name, score, *, when):
@@ -57,9 +57,7 @@ def test_the_headline_average_counts_the_same_grades_as_the_risk_rule(db, world)
     schedule = world["schedule_a"]
     today = TODAY
 
-    session = ClassSession(schedule_id=schedule.id, date=today)
-    db.add(session)
-    db.flush()
+    session = make_session(db, schedule, today)
     db.add(
         Grade(
             enrollment_id=enrollment.id,
