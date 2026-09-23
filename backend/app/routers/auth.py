@@ -1,11 +1,11 @@
 import logging
-from jose import jwt
 import secrets
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -17,12 +17,12 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
-    pwd_context,
     verify_password,
 )
 from app.models import RefreshSession, Tenant, User
 from app.schemas.auth import RefreshRequest, SupabaseLoginRequest, Token
 from app.schemas.user import UserRead, UserSelfUpdate
+from app.services import supabase_auth
 from app.services.audit import record, snapshot
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,41 @@ def _purge_old_revoked_sessions(db: Session, user_id: int) -> None:
     )
 
 
+def _narrow_to_tenant(
+    db: Session, candidates: list[User], tenant_slug: str | None
+) -> list[User]:
+    """Los candidatos que pertenecen a la academia indicada.
+
+    Una academia desconocida deja la lista vacía, que quien llama trata igual
+    que "no hay tal cuenta": decir "esa academia no existe" ya cuenta algo a
+    quien sólo está probando nombres.
+    """
+    if not tenant_slug:
+        return candidates
+    target_tenant = db.scalar(select(Tenant).where(Tenant.slug == tenant_slug))
+    if target_tenant is None:
+        return []
+    return [u for u in candidates if u.tenant_id == target_tenant.id]
+
+
+def _tenant_required_exc(db: Session, users: list[User]) -> HTTPException:
+    """409 pidiendo al cliente que elija academia.
+
+    El mismo correo puede existir en varias academias. Cuando las credenciales
+    valen para más de una, la única forma de saber a cuál entra es preguntar.
+    """
+    tenant_ids = [u.tenant_id for u in users if u.tenant_id is not None]
+    tenants = list(db.scalars(select(Tenant).where(Tenant.id.in_(tenant_ids))).all())
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "tenant_required",
+            "message": "Tu cuenta pertenece a múltiples instituciones. Selecciona una para ingresar.",
+            "tenants": [{"id": t.id, "slug": t.slug, "name": t.name} for t in tenants],
+        },
+    )
+
+
 @router.post("/login", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -97,12 +132,7 @@ def login(
         db.scalars(select(User).where(User.email == form_data.username)).all()
     )
 
-    if tenant_slug:
-        target_tenant = db.scalar(select(Tenant).where(Tenant.slug == tenant_slug))
-        if target_tenant is None:
-            verify_password(form_data.password, _DUMMY_PASSWORD_HASH)
-            raise _credentials_exc
-        candidates = [u for u in candidates if u.tenant_id == target_tenant.id]
+    candidates = _narrow_to_tenant(db, candidates, tenant_slug)
 
     if len(candidates) == 1:
         user = candidates[0]
@@ -116,18 +146,7 @@ def login(
         if len(matching_users) == 1:
             user = matching_users[0]
         elif len(matching_users) > 1:
-            tenant_ids = [u.tenant_id for u in matching_users if u.tenant_id is not None]
-            tenants = list(
-                db.scalars(select(Tenant).where(Tenant.id.in_(tenant_ids))).all()
-            )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "tenant_required",
-                    "message": "Tu cuenta pertenece a múltiples instituciones. Selecciona una para ingresar.",
-                    "tenants": [{"id": t.id, "slug": t.slug, "name": t.name} for t in tenants],
-                },
-            )
+            raise _tenant_required_exc(db, matching_users)
         else:
             raise _credentials_exc
     else:
@@ -293,40 +312,82 @@ def revoke_other_sessions(
 @router.post("/supabase-login", response_model=Token)
 def supabase_login(
     payload: SupabaseLoginRequest,
+    x_tenant_slug: str | None = Header(None, alias="X-Tenant-Slug"),
     db: Session = Depends(get_db),
 ) -> Token:
-    """Valida token de Supabase y emite JWTs propios."""
-    try:
-        # Decodificar SIN verificar firma (confiamos en Supabase)
-        # En producción podrías validar con JWKS de Supabase
-        claims = jwt.decode(
-            payload.supabase_token,
-            options={"verify_signature": False, "verify_aud": False}
-        )
-        email = claims.get("email")
-        supabase_uid = claims.get("sub")
+    """Canjea un token de Supabase Auth por una sesión propia de Educa.
 
-        if not email:
-            raise _credentials_exc
-    except jwt.JWTError:
+    El token se comprueba contra Supabase (ver `services.supabase_auth`), nunca
+    leyéndolo sin más: lo que el cliente manda dice quién *afirma* ser.
+
+    Este endpoint **no crea cuentas**. Da acceso a un usuario que ya existe en
+    la academia y está activo; quién entra y con qué rol se decide dando de alta
+    a la persona, no iniciando sesión. Antes, un correo desconocido se convertía
+    en un alumno nuevo, así que cualquiera que pudiera registrarse en Supabase
+    tenía cuenta aquí.
+    """
+    if not supabase_auth.is_configured():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "El inicio de sesión con Supabase no está configurado en este servidor",
+        )
+
+    try:
+        supabase_user = supabase_auth.fetch_supabase_user(payload.supabase_token)
+    except httpx.HTTPError as exc:
+        # No haber podido preguntar no es lo mismo que un token inválido: un 401
+        # aquí echaría a un usuario legítimo por un corte de red.
+        logger.warning("No se pudo validar el token contra Supabase: %s", exc)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "No se pudo verificar la sesión con Supabase. Inténtalo de nuevo.",
+        )
+
+    if supabase_user is None:
         raise _credentials_exc
 
-    # Buscar o crear usuario local
-    user = db.scalar(select(User).where(User.email == email))
-    if not user:
-        user = User(
-            email=email,
-            full_name=claims.get("user_metadata", {}).get("full_name", email.split("@")[0]),
-            role=UserRole.student,
-            password_hash=pwd_context.hash(secrets.token_urlsafe(32)),
-            supabase_uid=supabase_uid,
+    # Enlazar por correo sólo tiene sentido si Supabase confirmó que la persona
+    # lo controla. Sin esta comprobación, registrarse con el correo de otro basta
+    # para quedarse con su cuenta de Educa.
+    if not supabase_user.email_confirmed:
+        logger.info("Token de Supabase con correo sin confirmar: %s", supabase_user.email)
+        raise _credentials_exc
+
+    # Primero por el identificador de Supabase, que es el vínculo estable y ya
+    # tiene índice único; el correo sólo para el primer enlace.
+    user = db.scalar(select(User).where(User.supabase_uid == supabase_user.uid))
+
+    if user is None:
+        tenant_slug = (x_tenant_slug or "").strip() or None
+        candidates = list(
+            db.scalars(
+                select(User).where(func.lower(User.email) == supabase_user.email)
+            ).all()
         )
-        db.add(user)
-        db.flush()
-    elif not user.supabase_uid:
-        user.supabase_uid = supabase_uid
+        candidates = _narrow_to_tenant(db, candidates, tenant_slug)
+
+        if len(candidates) > 1:
+            raise _tenant_required_exc(db, candidates)
+        if not candidates:
+            logger.info("Supabase validó a %s, que no tiene cuenta local", supabase_user.email)
+            raise _credentials_exc
+
+        user = candidates[0]
+        if user.supabase_uid and user.supabase_uid != supabase_user.uid:
+            # La cuenta ya está enlazada a otra identidad de Supabase. Reenlazar
+            # en silencio dejaría entrar a quien registre ese mismo correo.
+            logger.warning("Cuenta %s ya enlazada a otro usuario de Supabase", user.id)
+            raise _credentials_exc
+        user.supabase_uid = supabase_user.uid
 
     if not user.is_active:
+        logger.info("Refused Supabase login for deactivated account %s", user.id)
         raise _credentials_exc
 
-    return _issue_tokens(db, user)
+    _purge_old_revoked_sessions(db, user.id)
+    token = _issue_tokens(db, user)
+    # Sin este commit la sesión de refresh nunca llegaba a la base: el usuario
+    # recibía un refresh token cuyo `jti` no existía, y el primer intento de
+    # renovar la sesión lo echaba fuera.
+    db.commit()
+    return token

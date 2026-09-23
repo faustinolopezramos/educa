@@ -8,14 +8,14 @@ import {
 } from "react";
 
 import { api, getRefreshToken, getToken, LOGOUT_EVENT, setToken } from "../lib/api";
-import { supabase, signIn, signOut } from "../lib/supabase";
+import { isSupabaseConfigured, signInWithSupabase, signOutFromSupabase } from "../lib/supabase";
 import { queryClient } from "../lib/queryClient";
-import type { Permission, Role, User } from "../lib/types";
+import type { LoginResponse, Permission, Role, User } from "../lib/types";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password: string, tenantSlug?: string) => Promise<User>;
   logout: () => void;
   hasRole: (...roles: Role[]) => boolean;
   hasPermission: (permission: Permission) => boolean;
@@ -49,30 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  // Listen for Supabase auth state changes and sync with backend
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        // Login en tu backend con token de Supabase
-        try {
-          const res = await api.post('/auth/supabase-login', {
-            supabase_token: session.access_token
-          })
-          setToken(res.data.access_token, res.data.refresh_token)
-          setUser(res.data.user)
-        } catch (e) {
-          console.error('Backend sync failed', e)
-        }
-      } else if (event === 'SIGNED_OUT') {
-        setToken(null, null)
-        setUser(null)
-        queryClient.clear()
-      }
-    })
-    
-    return () => subscription.unsubscribe()
-  }, [])
-
   // Listen for forced logout (refresh failed).
   useEffect(() => {
     function handler() {
@@ -83,31 +59,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(LOGOUT_EVENT, handler);
   }, []);
 
-  async function login(email: string, password: string): Promise<User> {
-    // Usar Supabase Auth para login - signIn lanza error si falla
-    const data = await signIn(email, password)
-    
-    // El listener onAuthStateChange se encarga de sincronizar con backend
-    // y setear el user en el contexto
-    if (data.user) {
-      // Esperar a que el listener procese la sesión
-      await new Promise(resolve => setTimeout(resolve, 100))
-      return data.user as unknown as User
+  function applySession(data: LoginResponse): User {
+    setToken(data.access_token, data.refresh_token);
+    setUser(data.user);
+    return data.user;
+  }
+
+  async function login(email: string, password: string, tenantSlug?: string): Promise<User> {
+    const form = new URLSearchParams();
+    form.set("username", email);
+    form.set("password", password);
+    if (tenantSlug) {
+      form.set("client_id", tenantSlug);
     }
-    throw new Error('Login failed')
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (tenantSlug) {
+      headers["X-Tenant-Slug"] = tenantSlug;
+    }
+
+    try {
+      const res = await api.post<LoginResponse>("/auth/login", form, { headers });
+      return applySession(res.data);
+    } catch (err) {
+      // Sólo una credencial rechazada justifica probar con Supabase. Un 409
+      // ("elige academia"), un 429 o un error del servidor tienen que llegar
+      // tal cual a la pantalla de login, no convertirse en "clave incorrecta".
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status !== 401 || !isSupabaseConfigured) throw err;
+
+      // Quien tenga la cuenta en Supabase entra por aquí: se canjea su token
+      // por una sesión propia de Educa, que es la que usa toda la aplicación.
+      // El canje es explícito, no un listener con una espera a ciegas.
+      let supabaseToken: string;
+      try {
+        supabaseToken = await signInWithSupabase(email, password);
+      } catch {
+        // Si Supabase tampoco la reconoce, manda el error del backend.
+        throw err;
+      }
+      const exchanged = await api.post<LoginResponse>(
+        "/auth/supabase-login",
+        { supabase_token: supabaseToken },
+        tenantSlug ? { headers: { "X-Tenant-Slug": tenantSlug } } : undefined,
+      );
+      return applySession(exchanged.data);
+    }
   }
 
   function logout() {
-    // Usar Supabase Auth para logout
-    signOut()
-    
-    // Limpiar tokens locales y usuario inmediatamente
+    // Read the refresh token before clearing it locally, and best-effort ask
+    // the server to revoke it — a "logged out" refresh token shouldn't still
+    // be able to mint new access tokens. Never blocks the local logout: it
+    // must succeed even if this request fails or the backend is unreachable.
     const refreshToken = getRefreshToken();
+    // La sesión de Supabase, si la hubo, se cierra también; nunca bloquea.
+    void signOutFromSupabase();
     setToken(null, null);
     setUser(null);
+    // Every cached query was fetched as the user who just left. On a shared
+    // machine the next person to sign in would see their predecessor's roster,
+    // grades and ledger rendered from cache before the refetch lands.
     queryClient.clear();
-    
-    // Best-effort revoke refresh token en backend
     if (refreshToken) {
       try {
         api.post("/auth/logout", { refresh_token: refreshToken })?.catch?.(() => {});

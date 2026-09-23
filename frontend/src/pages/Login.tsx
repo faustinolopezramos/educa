@@ -17,10 +17,18 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+interface TenantOption {
+  id: number;
+  slug: string;
+  name: string;
+}
+
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [availableTenants, setAvailableTenants] = useState<TenantOption[] | null>(null);
+  const [selectedTenantSlug, setSelectedTenantSlug] = useState<string>("");
 
   const {
     register,
@@ -31,14 +39,27 @@ export default function Login() {
   async function onSubmit(values: FormValues) {
     setError(null);
     try {
-      await login(values.email, values.password);
+      if (selectedTenantSlug) {
+        await login(values.email, values.password, selectedTenantSlug);
+      } else {
+        await login(values.email, values.password);
+      }
       navigate("/");
     } catch (err: any) {
-      setError(
-        typeof err.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : "Credenciales incorrectas"
-      );
+      if (err.response?.status === 409 && err.response?.data?.detail?.code === "tenant_required") {
+        const tenants: TenantOption[] = err.response.data.detail.tenants || [];
+        setAvailableTenants(tenants);
+        if (tenants.length > 0) {
+          setSelectedTenantSlug(tenants[0].slug);
+        }
+        setError("Este correo está registrado en varias academias. Por favor selecciona a cuál deseas ingresar.");
+      } else {
+        setError(
+          typeof err.response?.data?.detail === "string"
+            ? err.response.data.detail
+            : "Credenciales incorrectas"
+        );
+      }
     }
   }
 
@@ -66,6 +87,9 @@ export default function Login() {
                 type="email"
                 placeholder="admin@educa.com"
                 {...register("email")}
+                onChange={() => {
+                  if (availableTenants) setAvailableTenants(null);
+                }}
               />
               {errors.email && (
                 <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>
@@ -80,6 +104,25 @@ export default function Login() {
                 <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
               )}
             </div>
+
+            {availableTenants && availableTenants.length > 0 && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Institución / Academia
+                </label>
+                <select
+                  value={selectedTenantSlug}
+                  onChange={(e) => setSelectedTenantSlug(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  {availableTenants.map((t) => (
+                    <option key={t.slug} value={t.slug}>
+                      {t.name} ({t.slug})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="submit" className="w-full" disabled={isSubmitting}>

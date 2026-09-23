@@ -4,6 +4,15 @@ import { AuthProvider, useAuth } from "../AuthContext";
 import * as api from "../../lib/api";
 import { createLoginResponse } from "../../test/fixtures";
 
+// La sesión de Supabase sólo existe para obtener un token que se canjea; aquí
+// se sustituye ese único paso para no salir a la red.
+vi.mock("../../lib/supabase", () => ({
+  isSupabaseConfigured: true,
+  signInWithSupabase: vi.fn(async () => "token-supabase"),
+  signOutFromSupabase: vi.fn(async () => undefined),
+  supabase: null,
+}));
+
 vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
   return {
@@ -36,6 +45,53 @@ describe("AuthContext", () => {
 
       expect(result.current.user).toEqual(mockResponse.user);
       expect(localStorage.getItem("educa_token")).toBe(mockResponse.access_token);
+    });
+
+    it("canjea el token de Supabase cuando el backend no conoce la contraseña", async () => {
+      // Quien tiene la cuenta en Supabase entra por la segunda puerta: se
+      // canjea su token por una sesión propia de Educa, que es la única que
+      // usan las llamadas a la API.
+      const mockResponse = createLoginResponse();
+      const rejected = Object.assign(new Error("401"), {
+        response: { status: 401 },
+      });
+      const post = vi
+        .spyOn(api.api, "post")
+        .mockRejectedValueOnce(rejected)
+        .mockResolvedValueOnce({ data: mockResponse } as any);
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider>{children}</AuthProvider>
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await result.current.login("profe@educa.com", "password123");
+      });
+
+      expect(post.mock.calls[1][0]).toBe("/auth/supabase-login");
+      expect(post.mock.calls[1][1]).toEqual({ supabase_token: "token-supabase" });
+      // Lo que se guarda es el token de Educa, nunca el de Supabase.
+      expect(localStorage.getItem("educa_token")).toBe(mockResponse.access_token);
+    });
+
+    it("no intenta Supabase cuando el backend pide elegir academia", async () => {
+      // Un 409 es "dime cuál de tus academias", no "clave incorrecta": tiene
+      // que llegar intacto a la pantalla de login.
+      const conflict = Object.assign(new Error("409"), {
+        response: { status: 409, data: { detail: { code: "tenant_required" } } },
+      });
+      const post = vi.spyOn(api.api, "post").mockRejectedValueOnce(conflict);
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider>{children}</AuthProvider>
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await expect(
+        act(() => result.current.login("dos@educa.com", "password123")),
+      ).rejects.toMatchObject({ response: { status: 409 } });
+      expect(post).toHaveBeenCalledTimes(1);
     });
 
     it("should handle login errors", async () => {
