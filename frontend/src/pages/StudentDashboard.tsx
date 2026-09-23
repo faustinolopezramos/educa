@@ -28,8 +28,10 @@ import {
 } from "../lib/format";
 import { attendancePct } from "../lib/attendance";
 import { isCurrentEnrollment, isDelinquent } from "../lib/enrollment";
+import { nextClassStatusLine } from "../lib/studentHome";
 import {
   useCourses,
+  useDashboard,
   useEnrollments,
   useFinalGrade,
   useGrades,
@@ -231,15 +233,23 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
 
   return (
     <div>
-      <PageHeader title={`Hola, ${user?.full_name?.split(" ")[0] ?? ""}`} />
+      <PageHeader
+        title={`Hola, ${user?.full_name?.split(" ")[0] ?? ""}`}
+        description={nextClassStatusLine(next?.start ?? null, now)}
+      />
+
+      <DebtBanner />
 
       <ActionTray
         title="Pendientes"
         emptyMessage="No tienes pendientes. Todo al día."
+        // El aviso de cuota vencida sale aparte, con más espacio: aquí sería
+        // una fila más del mismo peso que "una tarea sin entregar".
+        exclude={["payment_overdue"]}
       />
 
       {makeups.length > 0 && (
-        <div className="mb-6 rounded-2xl border border-brand-200/80 bg-linear-to-r from-brand-50/70 via-indigo-50/40 to-white p-4 shadow-xs">
+        <div className="mb-6 rounded-2xl border border-brand-200/80 bg-gradient-to-r from-brand-50/70 via-indigo-50/40 to-white p-4 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="font-semibold text-brand-900 text-sm flex items-center gap-2">
@@ -671,6 +681,34 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
   );
 }
 
+/**
+ * La cuota vencida, con su monto y su consecuencia — no "Oculto por pago
+ * pendiente" sin más. El texto es el que ya arma `_student_items` en el
+ * backend (`app/services/dashboard.py`): una sola fuente para la frase, en
+ * vez de inventarla de nuevo aquí y arriesgar que las dos digan cosas
+ * distintas.
+ */
+function DebtBanner() {
+  const { data } = useDashboard();
+  const item = data?.items.find((i) => i.kind === "payment_overdue");
+  if (!item) return null;
+
+  return (
+    <div className="mb-5 flex items-start gap-3.5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <IconLock className="mt-0.5 h-5 w-5 flex-none text-amber-700" />
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-amber-900">
+          {item.count === 1 ? "Tienes una cuota vencida" : `Tienes ${item.count} cuotas vencidas`}
+          {item.amount != null && item.amount > 0 && (
+            <span className="tabular"> · Q{item.amount.toFixed(2)}</span>
+          )}
+        </p>
+        {item.detail && <p className="mt-1 text-xs text-amber-800">{item.detail}</p>}
+      </div>
+    </div>
+  );
+}
+
 function NextClassHero({
   courseName,
   teacher,
@@ -711,13 +749,17 @@ function NextClassHero({
         : `Empieza ${formatDateTime(startIso, tz)}`;
 
   return (
-    <div className="flex h-full flex-col rounded-xl bg-slate-900 p-6 text-slate-100">
+    // El alumno no opera esta clase, sólo la espera: el mismo negro casi puro
+    // que usa el profesor para "estoy dando esta clase ahora" aquí se leería
+    // como una urgencia que no existe. Un gradiente en el verde institucional
+    // mantiene la prioridad visual sin pedirle al alumno que se ponga alerta.
+    <div className="flex h-full flex-col rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-6 text-white">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-wider text-brand-300">
+        <div className="text-xs font-semibold uppercase tracking-wider text-brand-200">
           {countLabel}
         </div>
         {topic && (
-          <span className="rounded-full bg-brand-500/20 px-2.5 py-0.5 text-xs font-medium text-brand-200 border border-brand-500/30">
+          <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-brand-100 border border-white/15">
             Tema: {topic}
           </span>
         )}
@@ -725,7 +767,7 @@ function NextClassHero({
 
       <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">{courseName}</h2>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-400">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-brand-100">
         <span className="tabular">
           {formatDateTime(startIso, tz)}
           {tz && ` (${timeZoneLabel(startIso, tz)})`}
@@ -741,21 +783,21 @@ function NextClassHero({
             botón de entrar en vivo y una cuenta atrás le dice que espere
             delante de la pantalla una clase que ocurre en el centro. */}
         {modality === "presencial" ? (
-          <span className="inline-flex items-center gap-2 text-sm text-slate-300">
-            <IconPin className="h-4 w-4 text-brand-400" />
+          <span className="inline-flex items-center gap-2 text-sm text-brand-100">
+            <IconPin className="h-4 w-4 text-brand-300" />
             {room ? `Te esperamos en ${room}` : "Aula por asignar"}
           </span>
         ) : lobbyOpen ? (
           <Link
             to={`/lobby/${sessionId}`}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-all shadow-lg shadow-brand-600/30 hover:bg-brand-500 hover:scale-105"
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-brand-800 transition-all shadow-lg shadow-black/10 hover:bg-brand-50 hover:scale-105"
           >
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping" />
             Entrar a la clase en vivo
           </Link>
         ) : (
-          <span className="inline-flex items-center gap-2 text-sm text-slate-400">
-            <IconClock className="h-4 w-4 text-brand-400" />
+          <span className="inline-flex items-center gap-2 text-sm text-brand-100">
+            <IconClock className="h-4 w-4 text-brand-300" />
             El acceso al aula virtual se abre {LOBBY_WINDOW_MIN} min antes del inicio
           </span>
         )}
@@ -867,12 +909,16 @@ function CourseCard({
                 }}
               />
             </div>
-            {/* Sin esta línea, un promedio oculto por deuda se lee igual que uno
-                que todavía no existe, y el alumno va a preguntarle al profesor
-                por algo que sólo administración puede resolver. */}
+            {/* "Oculto por pago pendiente" no decía cuánto ni por qué curso: el
+                alumno iba a preguntarle al profesor algo que sólo
+                administración resuelve. La deuda es del alumno, no del curso
+                — una matrícula al día puede tener las notas ocultas por otra
+                que no lo está — así que se nombra la causa real de cada caso. */}
             {gradesHidden && (
-              <p className="mt-1 text-2xs text-amber-800">
-                Oculto por pago pendiente
+              <p className="tabular mt-1 text-2xs font-medium text-amber-800">
+                {enrollment.payment_status === "overdue" && enrollment.balance > 0
+                  ? `Debe Q${enrollment.balance.toFixed(2)} · notas ocultas`
+                  : "Notas ocultas por una cuota vencida en otro curso"}
               </p>
             )}
           </div>

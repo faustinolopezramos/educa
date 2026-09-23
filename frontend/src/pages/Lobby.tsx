@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { Badge, Button, Card, Input, PageTitle } from "../components/ui";
+import { IconLock } from "../components/icons";
 import { apiErrorMessage } from "../lib/api";
 import {
   formatDateTime,
@@ -77,16 +78,21 @@ export default function Lobby() {
       <div>
         <PageTitle subtitle="Aula virtual">Lobby</PageTitle>
         <Card>
-          <div className="rounded-xl border border-red-100 bg-red-50 p-6 text-center">
-            <p className="font-semibold text-red-700">
-              Tu acceso a clases está restringido
-            </p>
-            <p className="mt-2 text-sm text-red-600/90">
-              Contacta a administración para regularizar tu situación.
-            </p>
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-red-100 bg-red-50 p-8 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-700">
+              <IconLock className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-red-800">
+                Tu acceso a clases está restringido
+              </p>
+              <p className="mt-1.5 text-sm text-red-700/90">
+                Contacta a administración para regularizar tu situación.
+              </p>
+            </div>
             <Link
               to="/"
-              className="mt-4 inline-block text-sm text-brand-600 hover:underline"
+              className="mt-1.5 text-sm font-semibold text-brand-600 hover:underline"
             >
               ← Volver al inicio
             </Link>

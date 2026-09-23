@@ -40,9 +40,17 @@ const COUNT_STYLES: Record<ActionItem["severity"], string> = {
 export function ActionTray({
   title = "Requiere tu atención",
   emptyMessage = "No hay nada pendiente. Todo al día.",
+  exclude,
 }: {
   title?: string;
   emptyMessage?: string;
+  /**
+   * Kinds a caller draws itself, so they don't say the same thing twice. La
+   * pantalla del alumno saca `payment_overdue` de aquí para dárselo un aviso
+   * propio con más espacio — enseñarlo también aquí como una fila más lo
+   * dejaba al mismo peso que "una tarea sin entregar".
+   */
+  exclude?: string[];
 }) {
   const { data, isLoading } = useDashboard();
   const [, setParams] = useSearchParams();
@@ -51,9 +59,15 @@ export function ActionTray({
   // a problem that resolved itself, which is worse than arriving a beat late.
   if (isLoading) return null;
 
-  const items = [...(data?.items ?? [])].sort(
-    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
-  );
+  const all = data?.items ?? [];
+  const items = all
+    .filter((item) => !exclude?.includes(item.kind))
+    .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+
+  // Todo excluido no es lo mismo que no haber nada: si lo único pendiente era
+  // lo que el caller ya muestra por su cuenta, la bandeja no dice "todo al
+  // día" junto a un aviso que dice justo lo contrario.
+  if (items.length === 0 && all.length > 0) return null;
 
   if (items.length === 0) {
     return (
