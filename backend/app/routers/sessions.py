@@ -30,6 +30,8 @@ from app.models import (
 )
 from app.schemas.session import (
     ClassSessionRead,
+    MakeUpVisitorMark,
+    MakeUpVisitorRead,
     SessionCancel,
     SessionEnsure,
     SessionGenerate,
@@ -50,6 +52,9 @@ from app.services.sessions import (
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 staff_only = require_staff_permission(Permission.manage_schedules)
+# Pasar lista es la misma potestad que tomar asistencia, no la de editar la
+# franja: el profesor que da la clase marca, aunque no sea el titular.
+attendance_staff = require_staff_permission(Permission.manage_grades)
 
 
 # ---------------- Visibility ----------------
@@ -383,3 +388,118 @@ def update_session(
     db.commit()
     db.refresh(session)
     return session
+
+
+# ---------------- Alumnos en recuperación ----------------
+#
+# Un alumno que viene a recuperar no tiene matrícula en este curso, así que no
+# sale en la lista de asistencia: ésta se construye sobre `enrollments`. Antes,
+# su presencia no podía registrarse en ninguna parte y su pase se quedaba en
+# "reservado" para siempre. Aquí se le pone al lado de la lista normal, que es
+# donde el profesor lo tiene delante.
+def _session_for_register_or_404(
+    db: Session, user: User, session_id: int
+) -> ClassSession:
+    session = db.get(ClassSession, session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    _owned_schedule_or_404(db, user, session.schedule_id)
+    return session
+
+
+@router.get("/{session_id}/makeup-visitors", response_model=list[MakeUpVisitorRead])
+def list_makeup_visitors(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(attendance_staff),
+) -> list[MakeUpVisitorRead]:
+    """Quién viene a esta sesión recuperando una clase de otro grupo."""
+    session = _session_for_register_or_404(db, current_user, session_id)
+
+    rows = db.execute(
+        select(MakeUpCredit, User, Course)
+        .join(User, MakeUpCredit.student_id == User.id)
+        .join(Enrollment, MakeUpCredit.enrollment_id == Enrollment.id)
+        .join(Course, Enrollment.course_id == Course.id)
+        .where(
+            MakeUpCredit.target_session_id == session.id,
+            MakeUpCredit.status.in_([MakeUpStatus.booked, MakeUpStatus.attended]),
+        )
+        .order_by(User.full_name.asc())
+    ).all()
+
+    return [
+        MakeUpVisitorRead(
+            credit_id=credit.id,
+            student_id=student.id,
+            student_name=student.full_name,
+            origin_course_name=course.name if course else None,
+            status=credit.status,
+        )
+        for credit, student, course in rows
+    ]
+
+
+@router.post(
+    "/{session_id}/makeup-visitors/{credit_id}/attendance",
+    response_model=MakeUpVisitorRead,
+)
+def mark_makeup_visitor(
+    session_id: int,
+    credit_id: int,
+    payload: MakeUpVisitorMark,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(attendance_staff),
+) -> MakeUpVisitorRead:
+    """Marcar si el alumno en recuperación se presentó.
+
+    Presente cierra el pase (`attended`). Ausente lo consume igualmente
+    (`cancelled`): la plaza se reservó y se le quitó a otro, así que devolverlo
+    sin más convertiría el pase en un derecho ilimitado a no presentarse. Para
+    devolverlo hay que emitir uno nuevo, que es una decisión de la academia.
+    """
+    session = _session_for_register_or_404(db, current_user, session_id)
+    if session.register_closed_at is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "La lista de esta sesión está cerrada; reábrela para corregirla",
+        )
+
+    credit = db.get(MakeUpCredit, credit_id)
+    if credit is None or credit.target_session_id != session.id:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Ese pase no está reservado en esta sesión"
+        )
+    if credit.status not in (MakeUpStatus.booked, MakeUpStatus.attended):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"El pase está en estado '{credit.status.value}'",
+        )
+
+    before = snapshot(credit)
+    credit.status = MakeUpStatus.attended if payload.present else MakeUpStatus.cancelled
+    if not payload.present:
+        credit.notes = ((credit.notes or "") + " · No se presentó").strip(" ·")
+
+    record(
+        db,
+        current_user,
+        "update",
+        "make_up_credits",
+        credit.id,
+        before=before,
+        after=snapshot(credit),
+    )
+    db.commit()
+    db.refresh(credit)
+
+    student = db.get(User, credit.student_id)
+    enrollment = db.get(Enrollment, credit.enrollment_id)
+    origin_course = db.get(Course, enrollment.course_id) if enrollment else None
+    return MakeUpVisitorRead(
+        credit_id=credit.id,
+        student_id=credit.student_id,
+        student_name=student.full_name if student else "",
+        origin_course_name=origin_course.name if origin_course else None,
+        status=credit.status,
+    )

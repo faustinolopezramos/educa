@@ -35,8 +35,12 @@ class MakeUpCredit(Base):
     target_session_id: Mapped[int | None] = mapped_column(
         ForeignKey("class_sessions.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # La columna es VARCHAR(32) en la migración que creó la tabla, no un ENUM
+    # nativo de Postgres. El modelo declaraba un `make_up_status` que no existe
+    # en la base: funcionaba de casualidad y cualquier autogeneración de Alembic
+    # habría intentado "arreglar" la diferencia. Se declara como lo que es.
     status: Mapped[MakeUpStatus] = mapped_column(
-        SqlEnum(MakeUpStatus, name="make_up_status"),
+        SqlEnum(MakeUpStatus, native_enum=False, length=32),
         default=MakeUpStatus.available,
         index=True,
     )

@@ -157,6 +157,16 @@ def mark_held(db: Session, session: ClassSession) -> ClassSession:
     return session
 
 
+def session_course_id(db: Session, session: ClassSession) -> int | None:
+    """El curso al que pertenece una sesión, a través de su horario.
+
+    Una sesión no lleva `course_id` propio, así que la pregunta "¿esta sesión es
+    de este curso?" siempre da este rodeo. Tenerla en un sitio evita que cada
+    router lo resuelva a su manera — o que se olvide de preguntarlo.
+    """
+    return db.scalar(select(Schedule.course_id).where(Schedule.id == session.schedule_id))
+
+
 def roster_coverage(db: Session, session: ClassSession) -> tuple[int, int]:
     """`(marcados, total)` de la lista de una sesión.
 

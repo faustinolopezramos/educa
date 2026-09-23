@@ -69,19 +69,6 @@ def _handle_excused_makeup_credit(db: Session, enrollment: Enrollment, session_i
         db.add(credit)
 
 
-def _check_and_complete_makeup(db: Session, student_id: int, session_id: int) -> None:
-    """If the student had a booked make-up for this session, mark it completed."""
-    makeup = db.scalar(
-        select(MakeUpCredit).where(
-            MakeUpCredit.student_id == student_id,
-            MakeUpCredit.target_session_id == session_id,
-            MakeUpCredit.status == MakeUpStatus.booked,
-        )
-    )
-    if makeup:
-        makeup.status = MakeUpStatus.attended
-
-
 def _ensure_teacher_owns_enrollment(
     db: Session, user: User, enrollment: Enrollment
 ) -> None:
@@ -214,7 +201,6 @@ def create_attendance(
 
     if payload.status == AttendanceStatus.excused:
         _handle_excused_makeup_credit(db, enrollment, payload.session_id)
-    _check_and_complete_makeup(db, enrollment.student_id, payload.session_id)
 
     record_audit(
         db,
@@ -327,7 +313,6 @@ def bulk_attendance(
         if enr:
             if item.status == AttendanceStatus.excused:
                 _handle_excused_makeup_credit(db, enr, session_id)
-            _check_and_complete_makeup(db, enr.student_id, session_id)
 
     mark_held(db, session)
     record_audit(

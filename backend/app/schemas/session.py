@@ -3,7 +3,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.enums import SessionStatus
+from app.models.enums import MakeUpStatus, SessionStatus
 from app.schemas.base import PatchModel
 
 
@@ -46,3 +46,23 @@ class SessionUpdate(PatchModel):
     status: SessionStatus | None = None
     topic: str | None = None
     recording_url: str | None = None
+
+
+class MakeUpVisitorRead(BaseModel):
+    """Un alumno que asiste a esta sesión recuperando una clase de otro grupo.
+
+    No tiene matrícula en este curso, así que no aparece en la lista normal: su
+    presencia cuelga del pase de recuperación, y por eso se identifica por él.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    credit_id: int
+    student_id: int
+    student_name: str
+    origin_course_name: str | None = None
+    status: MakeUpStatus
+
+
+class MakeUpVisitorMark(BaseModel):
+    present: bool

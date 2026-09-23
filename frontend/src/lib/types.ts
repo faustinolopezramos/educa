@@ -619,6 +619,19 @@ export interface MakeUpCredit {
   target_course_name?: string | null;
 }
 
+/**
+ * Un alumno que asiste a una sesión recuperando una clase de otro grupo. No
+ * tiene matrícula en ese curso, así que no sale en la lista normal: su presencia
+ * cuelga del pase de recuperación.
+ */
+export interface MakeUpVisitor {
+  credit_id: number;
+  student_id: number;
+  student_name: string;
+  origin_course_name?: string | null;
+  status: MakeUpStatus;
+}
+
 export interface CandidateSession {
   session_id: number;
   course_id: number;

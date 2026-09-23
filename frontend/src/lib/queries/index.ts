@@ -106,6 +106,8 @@ export {
   useEnsureSession,
   useCloseRegister,
   useReopenRegister,
+  useMakeupVisitors,
+  useMarkMakeupVisitor,
 } from "./sessions";
 export {
   useTenants,

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { ClassSession, SessionStatus } from "../types";
+import type { ClassSession, MakeUpVisitor, SessionStatus } from "../types";
 import { useList } from "./common";
 
 export const useSessions = (scheduleId?: number) =>
@@ -131,5 +131,34 @@ export function useEnsureSession() {
       (await api.post<ClassSession>("/sessions/ensure", { schedule_id, date })).data,
     onSuccess: (_d, v) =>
       qc.invalidateQueries({ queryKey: ["sessions", v.schedule_id] }),
+  });
+}
+
+// ---------------- Alumnos en recuperación ----------------
+//
+// Van aparte de la lista de asistencia porque no tienen matrícula en este curso:
+// se les identifica por su pase, no por su matrícula.
+export const useMakeupVisitors = (sessionId?: number) =>
+  useQuery({
+    queryKey: ["session-makeup-visitors", sessionId],
+    enabled: !!sessionId,
+    queryFn: async () =>
+      (await api.get<MakeUpVisitor[]>(`/sessions/${sessionId}/makeup-visitors`)).data,
+  });
+
+export function useMarkMakeupVisitor(sessionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ creditId, present }: { creditId: number; present: boolean }) =>
+      (
+        await api.post<MakeUpVisitor>(
+          `/sessions/${sessionId}/makeup-visitors/${creditId}/attendance`,
+          { present },
+        )
+      ).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["session-makeup-visitors", sessionId] });
+      qc.invalidateQueries({ queryKey: ["makeups"] });
+    },
   });
 }
