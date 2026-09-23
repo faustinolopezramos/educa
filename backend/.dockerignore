@@ -1,0 +1,28 @@
+# El Dockerfile hace `COPY . .`, así que todo lo que no esté aquí acaba dentro
+# de la imagen. Sin este archivo se colaban los secretos locales (.env,
+# .env.local con el token de Vercel) y el .venv de macOS, que además no sirve
+# para nada dentro del contenedor Linux.
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+.vercel/
+
+# Entornos virtuales y caché de Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Pruebas: no viajan a producción
+tests/
+
+# Git y utilidades del editor
+.git/
+.gitignore
+.DS_Store
+.idea/
+.vscode/

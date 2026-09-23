@@ -49,12 +49,22 @@ class Settings(BaseSettings):
     # on a UTC host it shifted the whole lobby window by six hours.
     academy_timezone: str = "America/Guatemala"
 
+    # Supabase Auth. Sólo se usan para validar contra Supabase el token que el
+    # navegador presenta en /auth/supabase-login; si faltan, ese endpoint queda
+    # deshabilitado y el login propio sigue funcionando igual.
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+
     # CORS
     cors_origins: str = (
         "http://localhost:5173,http://127.0.0.1:5173,"
         "http://localhost:3000,http://127.0.0.1:3000,"
         "http://localhost:5174,http://127.0.0.1:5174"
     )
+    # Patrón adicional de orígenes permitidos, para los despliegues de vista
+    # previa. Vacío por defecto: un comodín como `https://.*\.vercel\.app` deja
+    # entrar a cualquiera que publique en ese dominio, que es de quien sea.
+    cors_origin_regex: str | None = None
 
     # Set to true only when the API genuinely sits behind a reverse proxy that
     # rewrites `X-Forwarded-For`. Left false, the login rate limiter counts by
@@ -91,6 +101,14 @@ class Settings(BaseSettings):
             self.database_url = re.sub(r'[\?&]pgbouncer=[^&]*', '', self.database_url)
             if "?" not in self.database_url and "&" in self.database_url:
                 self.database_url = self.database_url.replace("&", "?", 1)
+
+        # El SSL es una propiedad del destino, no del código: en producción la
+        # base vive en Supabase y la conexión debe ir cifrada, mientras que el
+        # Postgres local ni siquiera habla SSL. Se decide aquí, sobre la URL, en
+        # vez de en `connect_args`, que aplicaba a los tres entornos por igual.
+        if self.is_production and "sslmode=" not in self.database_url:
+            sep = "&" if "?" in self.database_url else "?"
+            self.database_url = f"{self.database_url}{sep}sslmode=require"
 
         weak = self.jwt_secret.strip() in _PLACEHOLDER_SECRETS
         if not weak:

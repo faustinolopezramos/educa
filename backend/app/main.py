@@ -51,6 +51,9 @@ LOGIN_RATE_WINDOW = 60  # seconds
 _RATE_LIMITED_PATHS: dict[str, int] = {
     "/auth/login": LOGIN_RATE_LIMIT,
     "/auth/refresh": 20,
+    # Canjear un token de Supabase por uno propio es otra puerta de entrada a
+    # una cuenta, así que cuesta lo mismo que la principal.
+    "/auth/supabase-login": LOGIN_RATE_LIMIT,
 }
 
 
@@ -122,14 +125,35 @@ async def cache_middleware(request: Request, call_next):
     return response
 
 
-app = FastAPI(title="Educa — Control Académico y Aula Virtual", version="0.1.0")
+# En producción no se publica el esquema de la API. No es un secreto que la
+# proteja, pero es el mapa completo de endpoints y formas de petición servido a
+# cualquiera que pase; en desarrollo sigue estando, que es donde hace falta.
+_docs_enabled = not settings.is_production
+
+app = FastAPI(
+    title="Educa — Control Académico y Aula Virtual",
+    version="0.1.0",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 app.middleware("http")(rate_limit_middleware)
 app.middleware("http")(cache_middleware)
+
+# En producción sólo entran los orígenes declarados en CORS_ORIGINS, más el
+# patrón opcional CORS_ORIGIN_REGEX para las vistas previas del propio proyecto.
+# El comodín anterior, `https://.*\.vercel\.app`, abría la API a cualquier sitio
+# publicado en Vercel, que puede ser el de cualquiera.
+_origin_regex = (
+    settings.cors_origin_regex
+    if settings.is_production
+    else r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?" if not settings.is_production else None,
+    allow_origin_regex=_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

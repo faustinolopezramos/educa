@@ -35,6 +35,10 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Sin sentencias preparadas, por el pooler de Supabase. El SSL viaja en
+        # la URL (ver app.core.config), no aquí: fijarlo dejaba las migraciones
+        # sin poder correr contra el Postgres local ni contra el del CI.
+        connect_args={"prepare_threshold": None},
     )
     with connectable.connect() as connection:
         context.configure(

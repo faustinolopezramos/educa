@@ -4,6 +4,12 @@ primary_region = "dfw"
 [build]
   dockerfile = "Dockerfile"
 
+# Las migraciones corren una sola vez por despliegue, antes de que entre tráfico
+# a la versión nueva. Si fallan, el despliegue se detiene y la versión anterior
+# sigue sirviendo.
+[deploy]
+  release_command = "alembic upgrade head"
+
 [env]
   PORT = "8080"
   PYTHONUNBUFFERED = "1"

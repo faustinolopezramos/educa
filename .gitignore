@@ -11,6 +11,9 @@ env/
 # Env
 .env
 *.env
+.env*
+# La excepción va al final: una regla posterior gana, así que con
+# `!.env.example` arriba y `.env*` abajo los ejemplos quedaban ignorados.
 !.env.example
 
 # Node
@@ -33,3 +36,4 @@ npm-debug.log*
 # DB
 *.sqlite3
 postgres-data/
+.vercel
