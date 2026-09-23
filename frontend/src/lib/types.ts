@@ -624,6 +624,50 @@ export interface MakeUpCredit {
  * tiene matrícula en ese curso, así que no sale en la lista normal: su presencia
  * cuelga del pase de recuperación.
  */
+/**
+ * Una clase en la jornada del profesor: cuándo, dónde y cuánto falta por hacer.
+ * La API la devuelve ya resuelta (curso, aula, conteos) para que la pantalla no
+ * tenga que cruzar cuatro listados por su cuenta.
+ */
+export interface AgendaEntry {
+  session_id: number;
+  schedule_id: number;
+  course_id: number;
+  course_name: string;
+  level_name?: string | null;
+  date: string;
+  start_time: string;
+  end_time: string;
+  status: SessionStatus;
+  register_closed: boolean;
+  modality: Modality;
+  room_name?: string | null;
+  teacher_id: number;
+  teacher_name: string;
+  students_total: number;
+  students_marked: number;
+  makeup_visitors: number;
+  /** Si *este* usuario puede cerrar la lista: marcar asistencia lo hace quien
+   *  imparte el curso, pero cerrar es del profesor titular de la franja. */
+  can_close_register: boolean;
+}
+
+export interface BoardStudent {
+  enrollment_id: number;
+  student_id: number;
+  full_name: string;
+  enrollment_code: string;
+  /** La marca de esta sesión, o null si todavía no tiene. */
+  mark: AttendanceStatus | null;
+}
+
+/** Todo lo que la pantalla de pasar lista necesita, en una llamada. */
+export interface ClassBoard {
+  session: AgendaEntry;
+  students: BoardStudent[];
+  visitors: MakeUpVisitor[];
+}
+
 export interface MakeUpVisitor {
   credit_id: number;
   student_id: number;

@@ -30,6 +30,7 @@ import {
 } from "../components/icons";
 import { GradeTable } from "../features/grades/GradeTable";
 import { GroupedClassesList } from "../features/classes/GroupedClassesList";
+import { TodayView } from "../features/classes/TodayView";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
@@ -142,14 +143,15 @@ function pickFeatured(schedules: Schedule[]): FeaturedSchedule | null {
 
 export default function TeacherDashboard() {
   const [params] = useSearchParams();
-  const section = params.get("m") ?? "clases";
+  const section = params.get("m") ?? "hoy";
 
   // Cada panel dibuja su propia cabecera, así que aquí solo se enruta.
+  if (section === "clases") return <ClassesView />;
   if (section === "tareas") return <AssignmentsPanel />;
   if (section === "reportes") return <ReportView />;
   if (section === "perfil") return <ProfilePanel />;
   if (section === "nomina") return <TeacherSelfPayrollView />;
-  return <ClassesView />;
+  return <TodayView />;
 }
 
 function TeacherSelfPayrollView() {

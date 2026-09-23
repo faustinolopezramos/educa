@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
-import type { ClassSession, MakeUpVisitor, SessionStatus } from "../types";
+import type {
+  AgendaEntry,
+  ClassBoard,
+  ClassSession,
+  MakeUpVisitor,
+  SessionStatus,
+} from "../types";
 import { useList } from "./common";
 
 export const useSessions = (scheduleId?: number) =>
@@ -10,6 +16,31 @@ export const useSessions = (scheduleId?: number) =>
     enabled: !!scheduleId,
     queryFn: async () =>
       (await api.get<ClassSession[]>(`/sessions?schedule_id=${scheduleId}`)).data,
+  });
+
+/**
+ * La jornada: las clases del rango que el usuario puede ver, ya resueltas.
+ * Sin fechas, las de hoy.
+ */
+export const useAgenda = (dateFrom?: string, dateTo?: string) =>
+  useQuery({
+    queryKey: ["agenda", dateFrom ?? "hoy", dateTo ?? dateFrom ?? "hoy"],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+      const qs = params.toString();
+      return (await api.get<AgendaEntry[]>(`/sessions/agenda${qs ? `?${qs}` : ""}`)).data;
+    },
+  });
+
+/** La clase y su lista completa: alumnos del grupo, visitantes y marcas. */
+export const useClassBoard = (sessionId?: number) =>
+  useQuery({
+    queryKey: ["class-board", sessionId],
+    enabled: !!sessionId,
+    queryFn: async () =>
+      (await api.get<ClassBoard>(`/sessions/${sessionId}/board`)).data,
   });
 
 export const useMySessions = () =>
@@ -65,6 +96,10 @@ export function useUpdateSession() {
  */
 function invalidateSessionViews(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["sessions"] });
+  // La jornada y la lista del día se dibujan desde sus propias consultas: lo
+  // que cambia una clase las cambia a las dos.
+  qc.invalidateQueries({ queryKey: ["agenda"] });
+  qc.invalidateQueries({ queryKey: ["class-board"] });
   qc.invalidateQueries({ queryKey: ["report"] });
   qc.invalidateQueries({ queryKey: ["dashboard"] });
   // Cancelar y reprogramar avisan al alumno por la campana.
@@ -158,6 +193,8 @@ export function useMarkMakeupVisitor(sessionId: number) {
       ).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["session-makeup-visitors", sessionId] });
+      qc.invalidateQueries({ queryKey: ["class-board", sessionId] });
+      qc.invalidateQueries({ queryKey: ["agenda"] });
       qc.invalidateQueries({ queryKey: ["makeups"] });
     },
   });

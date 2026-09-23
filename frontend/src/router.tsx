@@ -6,6 +6,7 @@ import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { Layout } from "./components/Layout";
 
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const ClassMode = lazy(() => import("./pages/ClassMode"));
 const Lobby = lazy(() => import("./pages/Lobby"));
 const Login = lazy(() => import("./pages/Login"));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
@@ -77,6 +78,10 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <SuspenseWrapper><RoleHome /></SuspenseWrapper> },
       { path: "lobby/:sessionId", element: <SuspenseWrapper><Lobby /></SuspenseWrapper> },
+      // Modo clase: pasar lista ocupa su propia pantalla, no una pestaña dentro
+      // del panel, para que la clase en curso sea enlazable y no compita con el
+      // resto del trabajo del profesor.
+      { path: "clase/:sessionId", element: <SuspenseWrapper><ClassMode /></SuspenseWrapper> },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

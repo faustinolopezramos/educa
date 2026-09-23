@@ -83,6 +83,10 @@ export const NAV: Record<Role, NavGroup[]> = {
     {
       label: "Docencia",
       items: [
+        // La jornada es la entrada: lo primero que necesita un profesor al
+        // abrir el sistema es la clase que tiene ahora, no el catálogo de todas
+        // las que imparte. "Mis clases" sigue estando para el historial.
+        { id: "hoy", label: "Hoy" },
         { id: "clases", label: "Mis clases" },
         { id: "tareas", label: "Tareas" },
         { id: "nomina", label: "Mis Horas / Nómina" },

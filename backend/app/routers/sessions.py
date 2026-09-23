@@ -1,13 +1,14 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import (
     apply_tenant,
     get_current_user,
+    has_user_permission,
     in_tenant,
     is_admin,
     require_staff_permission,
@@ -15,20 +16,29 @@ from app.core.deps import (
     teacher_course_ids,
     teacher_teaches_course,
 )
+from app.core.clock import academy_today
 from app.models import (
+    Attendance,
     ClassSession,
     Course,
     ENROLLMENT_HAS_ACCESS,
+    ENROLLMENT_OCCUPIES_SEAT,
     Enrollment,
+    Level,
     MakeUpCredit,
     MakeUpStatus,
     Permission,
+    Room,
     Schedule,
     SessionStatus,
     User,
     UserRole,
 )
 from app.schemas.session import (
+    AgendaEntry,
+    BoardStudent,
+    BoardVisitor,
+    ClassBoard,
     ClassSessionRead,
     MakeUpVisitorMark,
     MakeUpVisitorRead,
@@ -119,6 +129,30 @@ def _owned_schedule_or_404(db: Session, user: User, schedule_id: int) -> Schedul
     return schedule
 
 
+def _session_for_attendance_or_404(
+    db: Session, user: User, session_id: int
+) -> ClassSession:
+    """Una sesión en la que el usuario puede pasar lista, o 404.
+
+    Marcar asistencia lo hace quien imparte el curso, no sólo el profesor
+    titular de la franja: `_owned_schedule_or_404` es la regla de *editar* el
+    horario (generar, cancelar, reprogramar), y usarla aquí dejaba fuera a un
+    profesor asignado al curso que sí da esa clase.
+    """
+    session = db.get(ClassSession, session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    schedule = db.get(Schedule, session.schedule_id)
+    course = db.get(Course, schedule.course_id) if schedule else None
+    if not in_tenant(user, course) or course is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    if user.role == UserRole.teacher and not teacher_teaches_course(
+        db, user.id, course.id
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No enseñas este curso")
+    return session
+
+
 @router.get("", response_model=list[ClassSessionRead])
 def list_sessions(
     schedule_id: int | None = None,
@@ -135,6 +169,209 @@ def list_sessions(
     if date_to is not None:
         stmt = stmt.where(ClassSession.date <= date_to)
     return list(db.scalars(stmt.order_by(ClassSession.date)).all())
+
+
+# ---------------- La jornada ----------------
+#
+# `GET /sessions` devuelve filas de `class_sessions` y nada más, así que la
+# pantalla del profesor tenía que reconstruir su día en el navegador: horarios,
+# cursos, aulas y asistencia por separado, y una consulta de conteo por clase.
+# Esto responde la pregunta entera —"¿qué tengo hoy y qué me falta?"— con un
+# número fijo de consultas.
+
+
+def _may_close_register(user: User, schedule: Schedule) -> bool:
+    """Si este usuario puede dar por cerrada la lista de esa franja.
+
+    Misma regla que `_owned_schedule_or_404` impone al cerrar, pero como
+    respuesta en vez de como negativa: la pantalla la usa para no ofrecer un
+    botón que terminaría en 403. Un profesor asignado al curso marca asistencia;
+    cerrar la lista es del titular.
+    """
+    if user.role == UserRole.teacher:
+        return schedule.teacher_id == user.id
+    return is_admin(user) or has_user_permission(user, Permission.manage_schedules)
+
+
+def _agenda(db: Session, user: User, sessions: list) -> list[AgendaEntry]:
+    """Monta las entradas de agenda de unas filas ya cargadas y con permiso.
+
+    `sessions` son tuplas (ClassSession, Schedule, Course, Room|None, User, Level).
+    Los conteos van en tres consultas agrupadas, no en tres por clase.
+    """
+    if not sessions:
+        return []
+
+    session_ids = [row[0].id for row in sessions]
+    course_ids = list({row[2].id for row in sessions})
+
+    marked_rows = db.execute(
+        select(Attendance.session_id, func.count(Attendance.id))
+        .where(Attendance.session_id.in_(session_ids))
+        .group_by(Attendance.session_id)
+    ).all()
+    marked = {sid: count for sid, count in marked_rows}
+
+    seat_rows = db.execute(
+        select(Enrollment.course_id, func.count(Enrollment.id))
+        .where(
+            Enrollment.course_id.in_(course_ids),
+            Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
+        )
+        .group_by(Enrollment.course_id)
+    ).all()
+    seats = {cid: count for cid, count in seat_rows}
+
+    visitor_rows = db.execute(
+        select(MakeUpCredit.target_session_id, func.count(MakeUpCredit.id))
+        .where(
+            MakeUpCredit.target_session_id.in_(session_ids),
+            MakeUpCredit.status.in_([MakeUpStatus.booked, MakeUpStatus.attended]),
+        )
+        .group_by(MakeUpCredit.target_session_id)
+    ).all()
+    visitors = {sid: count for sid, count in visitor_rows}
+
+    return [
+        AgendaEntry(
+            session_id=sess.id,
+            schedule_id=sess.schedule_id,
+            course_id=course.id,
+            course_name=course.name,
+            level_name=level.name if level else None,
+            date=sess.date,
+            start_time=sess.start_time,
+            end_time=sess.end_time,
+            status=sess.status,
+            register_closed=sess.register_closed_at is not None,
+            modality=sched.modality,
+            room_name=room.name if room else None,
+            teacher_id=teacher.id,
+            teacher_name=teacher.full_name,
+            students_total=seats.get(course.id, 0),
+            students_marked=marked.get(sess.id, 0),
+            makeup_visitors=visitors.get(sess.id, 0),
+            can_close_register=_may_close_register(user, sched),
+        )
+        for sess, sched, course, room, teacher, level in sessions
+    ]
+
+
+def _agenda_rows(db: Session, user: User) -> Select:
+    """Todo lo que la agenda muestra de cada clase, con el alcance de siempre.
+
+    El grafo de joins se declara entero aquí en vez de colgarlo de
+    `_visible_sessions`: aquella ya une `schedule` y `course` por su cuenta, y
+    encadenar sobre ella dejaba a SQLAlchemy sin saber desde qué tabla unir el
+    profesor. El alcance se reutiliza como lo que es, un conjunto de ids.
+    """
+    visible_ids = _visible_sessions(db, user).with_only_columns(ClassSession.id)
+    return (
+        select(ClassSession, Schedule, Course, Room, User, Level)
+        .select_from(ClassSession)
+        .join(Schedule, ClassSession.schedule_id == Schedule.id)
+        .join(Course, Schedule.course_id == Course.id)
+        .join(Level, Course.level_id == Level.id)
+        .join(User, ClassSession.teacher_id == User.id)
+        .outerjoin(Room, Schedule.room_id == Room.id)
+        .where(ClassSession.id.in_(visible_ids))
+    )
+
+
+@router.get("/agenda", response_model=list[AgendaEntry])
+def session_agenda(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AgendaEntry]:
+    """Las clases del periodo que el usuario puede ver, listas para dibujar.
+
+    Sin fechas devuelve el día de hoy, que es lo que pide la pantalla de inicio
+    del profesor.
+    """
+    today = academy_today()
+    start = date_from or today
+    end = date_to or start
+
+    stmt = (
+        _agenda_rows(db, current_user)
+        .where(ClassSession.date >= start, ClassSession.date <= end)
+        .order_by(ClassSession.date.asc(), ClassSession.start_time.asc())
+    )
+    return _agenda(db, current_user, list(db.execute(stmt).all()))
+
+
+@router.get("/{session_id}/board", response_model=ClassBoard)
+def class_board(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(attendance_staff),
+) -> ClassBoard:
+    """La clase y su lista: alumnos del grupo, visitantes y marcas de hoy."""
+    session = _session_for_attendance_or_404(db, current_user, session_id)
+
+    row = db.execute(
+        _agenda_rows(db, current_user).where(ClassSession.id == session.id)
+    ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    entry = _agenda(db, current_user, [row])[0]
+
+    marks = {
+        enrollment_id: mark
+        for enrollment_id, mark in db.execute(
+            select(Attendance.enrollment_id, Attendance.status).where(
+                Attendance.session_id == session.id
+            )
+        ).all()
+    }
+
+    roster = db.execute(
+        select(Enrollment, User)
+        .join(User, Enrollment.student_id == User.id)
+        .where(
+            Enrollment.course_id == entry.course_id,
+            Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
+        )
+        .order_by(User.full_name.asc())
+    ).all()
+
+    visitors = db.execute(
+        select(MakeUpCredit, User, Course)
+        .join(User, MakeUpCredit.student_id == User.id)
+        .join(Enrollment, MakeUpCredit.enrollment_id == Enrollment.id)
+        .join(Course, Enrollment.course_id == Course.id)
+        .where(
+            MakeUpCredit.target_session_id == session.id,
+            MakeUpCredit.status.in_([MakeUpStatus.booked, MakeUpStatus.attended]),
+        )
+        .order_by(User.full_name.asc())
+    ).all()
+
+    return ClassBoard(
+        session=entry,
+        students=[
+            BoardStudent(
+                enrollment_id=enrollment.id,
+                student_id=student.id,
+                full_name=student.full_name,
+                enrollment_code=enrollment.enrollment_code,
+                mark=marks.get(enrollment.id),
+            )
+            for enrollment, student in roster
+        ],
+        visitors=[
+            BoardVisitor(
+                credit_id=credit.id,
+                student_id=student.id,
+                full_name=student.full_name,
+                origin_course_name=course.name if course else None,
+                status=credit.status,
+            )
+            for credit, student, course in visitors
+        ],
+    )
 
 
 @router.get("/{session_id}", response_model=ClassSessionRead)
@@ -397,14 +634,6 @@ def update_session(
 # su presencia no podía registrarse en ninguna parte y su pase se quedaba en
 # "reservado" para siempre. Aquí se le pone al lado de la lista normal, que es
 # donde el profesor lo tiene delante.
-def _session_for_register_or_404(
-    db: Session, user: User, session_id: int
-) -> ClassSession:
-    session = db.get(ClassSession, session_id)
-    if session is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-    _owned_schedule_or_404(db, user, session.schedule_id)
-    return session
 
 
 @router.get("/{session_id}/makeup-visitors", response_model=list[MakeUpVisitorRead])
@@ -414,7 +643,7 @@ def list_makeup_visitors(
     current_user: User = Depends(attendance_staff),
 ) -> list[MakeUpVisitorRead]:
     """Quién viene a esta sesión recuperando una clase de otro grupo."""
-    session = _session_for_register_or_404(db, current_user, session_id)
+    session = _session_for_attendance_or_404(db, current_user, session_id)
 
     rows = db.execute(
         select(MakeUpCredit, User, Course)
@@ -458,7 +687,7 @@ def mark_makeup_visitor(
     sin más convertiría el pase en un derecho ilimitado a no presentarse. Para
     devolverlo hay que emitir uno nuevo, que es una decisión de la academia.
     """
-    session = _session_for_register_or_404(db, current_user, session_id)
+    session = _session_for_attendance_or_404(db, current_user, session_id)
     if session.register_closed_at is not None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,

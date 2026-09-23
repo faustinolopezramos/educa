@@ -37,3 +37,6 @@ npm-debug.log*
 *.sqlite3
 postgres-data/
 .vercel
+
+# Caché incremental de TypeScript: es un artefacto de compilación.
+frontend/tsconfig.tsbuildinfo

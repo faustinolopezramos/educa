@@ -64,6 +64,10 @@ export function useCreateAttendance() {
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       // Marcar a alguien es también la única señal de que la sesión se dio.
       qc.invalidateQueries({ queryKey: ["sessions"] });
+      // La jornada muestra "x de y marcados" y la lista del día viene resuelta
+      // del servidor: las dos quedan desfasadas tras cada marca sin esto.
+      qc.invalidateQueries({ queryKey: ["agenda"] });
+      qc.invalidateQueries({ queryKey: ["class-board"] });
     },
   });
 }
@@ -90,6 +94,8 @@ export function useBulkAttendance() {
       qc.invalidateQueries({ queryKey: ["report"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["agenda"] });
+      qc.invalidateQueries({ queryKey: ["class-board"] });
     },
   });
 }

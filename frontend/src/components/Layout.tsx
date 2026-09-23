@@ -42,7 +42,8 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 const ITEM_ICONS: Record<string, IconComponent> = {
   inicio: IconHome,
-  clases: IconHome,
+  hoy: IconHome,
+  clases: IconBook,
   courses: IconBook,
   enrollments: IconClipboard,
   users: IconUsers,

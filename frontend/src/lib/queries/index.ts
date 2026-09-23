@@ -108,6 +108,8 @@ export {
   useReopenRegister,
   useMakeupVisitors,
   useMarkMakeupVisitor,
+  useAgenda,
+  useClassBoard,
 } from "./sessions";
 export {
   useTenants,
