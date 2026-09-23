@@ -27,6 +27,7 @@ from app.schemas.payment import (
 from app.services.audit import record, snapshot
 from app.services.finance import (
     MONEY_EPSILON,
+    ZERO,
     refresh_all_payment_statuses,
     refresh_payment_status,
 )
@@ -150,8 +151,8 @@ def enrollment_ledger(
             .order_by(Payment.id.desc())
         ).all()
     )
-    charged = sum(p.amount for p in rows if p.kind == PaymentKind.charge)
-    paid = sum(p.amount for p in rows if p.kind == PaymentKind.payment)
+    charged = sum((p.amount for p in rows if p.kind == PaymentKind.charge), ZERO)
+    paid = sum((p.amount for p in rows if p.kind == PaymentKind.payment), ZERO)
     return EnrollmentLedger(
         enrollment_id=enrollment_id,
         charged=charged,
@@ -180,29 +181,32 @@ def issue_invoice(
     """
     enrollment = _get_enrollment(db, current_user, enrollment_id)
     total_paid = sum(
-        p.amount
-        for p in db.scalars(
-            select(Payment).where(
-                Payment.enrollment_id == enrollment_id,
-                Payment.kind == PaymentKind.payment,
-            )
-        ).all()
+        (
+            p.amount
+            for p in db.scalars(
+                select(Payment).where(
+                    Payment.enrollment_id == enrollment_id,
+                    Payment.kind == PaymentKind.payment,
+                )
+            ).all()
+        ),
+        ZERO,
     )
     already_invoiced = (
         db.scalar(
-            select(func.coalesce(func.sum(Invoice.total_amount), 0.0)).where(
+            select(func.coalesce(func.sum(Invoice.total_amount), 0)).where(
                 Invoice.enrollment_id == enrollment_id
             )
         )
-        or 0.0
+        or ZERO
     )
     pending = total_paid - already_invoiced
     if total_paid <= 0:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "No hay pagos registrados para facturar"
         )
-    # El mismo epsilon que usa finanzas: el importe es un float y la diferencia
-    # de dos sumas puede quedarse en una milésima que nadie puede cobrar.
+    # El mismo epsilon que usa finanzas: por debajo del céntimo no hay importe
+    # que nadie pueda cobrar.
     if pending <= MONEY_EPSILON:
         raise HTTPException(
             status.HTTP_409_CONFLICT,

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, func
+from decimal import Decimal
+
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -20,7 +22,7 @@ class Invoice(Base):
         ForeignKey("enrollments.id", ondelete="CASCADE"), index=True
     )
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    total_amount: Mapped[float] = mapped_column(Float)
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     issued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

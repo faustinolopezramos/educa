@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime
+from decimal import Decimal
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -27,7 +28,7 @@ def build_invoice_pdf(
     student_name: str,
     course_name: str,
     enrollment_code: str,
-    total_amount: float,
+    total_amount: Decimal,
     code: str,
     issued_at: datetime,
 ) -> bytes:

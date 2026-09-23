@@ -4,7 +4,9 @@ from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Float, ForeignKey, String, Text, func
+from decimal import Decimal
+
+from sqlalchemy import ForeignKey, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -25,7 +27,7 @@ class Payment(Base):
         ForeignKey("enrollments.id", ondelete="CASCADE"), index=True
     )
     kind: Mapped[PaymentKind] = mapped_column(SqlEnum(PaymentKind, name="payment_kind"))
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Número de boleta de pago, depósito o transferencia bancaria
     receipt_number: Mapped[str | None] = mapped_column(String(64), nullable=True)

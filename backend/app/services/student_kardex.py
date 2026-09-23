@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -62,7 +64,7 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
     total_passed = 0
     total_failed = 0
     scores: list[float] = []
-    total_balance = 0.0
+    total_balance = Decimal("0.00")
     all_skills_acc: dict[str, list[float]] = {}
 
     for en in enrollments:
@@ -84,7 +86,7 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
         elif en.status == EnrollmentStatus.certified:
             total_passed += 1
 
-        bal = getattr(en, "balance", 0.0)
+        bal = getattr(en, "balance", None) or Decimal("0.00")
         total_balance += bal
 
         course_skills_acc: dict[str, list[float]] = {}

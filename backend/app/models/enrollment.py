@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import ForeignKey, Float, String, UniqueConstraint
+from decimal import Decimal
+
+from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -44,7 +46,7 @@ class Enrollment(Base):
     )
     # The agreed fee ("cuota") for this enrollment. The Payment ledger's first
     # `charge` row is seeded from this amount so the two never start out of sync.
-    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     attendance_blocked: Mapped[bool] = mapped_column(default=False)
 
     student: Mapped["User"] = relationship(back_populates="enrollments")

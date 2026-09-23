@@ -1,10 +1,23 @@
 """Shared shapes for request payloads."""
 
-from typing import Any, ClassVar, Generic, TypeVar
+from decimal import Decimal
+from typing import Annotated, Any, ClassVar, Generic, TypeVar
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, PlainSerializer, model_validator
 
 T = TypeVar("T")
+
+# El dinero se guarda y se opera como Decimal: con `float`, sumar cuotas de
+# 0.1 y 0.2 no daba exactamente 0.3, y esa diferencia acaba en un saldo que no
+# cuadra con lo que el alumno pagó.
+#
+# Hacia fuera sigue viajando como número JSON, no como cadena, que es lo que
+# Pydantic haría con un Decimal: el frontend ya consume estos campos como
+# números y no tiene por qué enterarse del cambio.
+Money = Annotated[
+    Decimal,
+    PlainSerializer(lambda v: float(v) if v is not None else None, return_type=float, when_used="json"),
+]
 
 
 class PaginationParams(BaseModel):

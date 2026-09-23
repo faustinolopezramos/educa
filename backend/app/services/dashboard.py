@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
@@ -52,6 +53,7 @@ from app.models import (
 )
 from app.services.courses import academy_occupancy
 from app.services.enrollments import balances_for, seats_taken
+from app.services.finance import ZERO
 
 # A course this close to `max_students` is worth flagging before it fills.
 NEARLY_FULL_FREE_SEATS = 2
@@ -72,7 +74,7 @@ class ActionItem:
     severity: str
     section: str
     detail: str | None = None
-    amount: float | None = None
+    amount: Decimal | None = None
 
 
 @dataclass
@@ -233,8 +235,11 @@ def _staff_items(db: DbSession, user: User, course_ids: list[int]) -> list[Actio
         )
         if delinquent:
             owed = sum(
-                max(0.0, v)
-                for v in balances_for(db, [e.id for e in delinquent]).values()
+                (
+                    max(ZERO, v)
+                    for v in balances_for(db, [e.id for e in delinquent]).values()
+                ),
+                ZERO,
             )
             items.append(
                 ActionItem(
@@ -244,7 +249,7 @@ def _staff_items(db: DbSession, user: User, course_ids: list[int]) -> list[Actio
                     severity="critical",
                     section="enrollments",
                     detail="Un alumno en mora no puede ver sus notas ni su reporte.",
-                    amount=round(owed, 2),
+                    amount=owed,
                 )
             )
 
@@ -357,7 +362,9 @@ def _student_items(
         ).all()
     )
     balances = balances_for(db, [e.id for e in live])
-    balance_due = round(sum(max(0.0, balances.get(e.id, e.amount or 0.0)) for e in live), 2)
+    balance_due = sum(
+        (max(ZERO, balances.get(e.id, e.amount or ZERO)) for e in live), ZERO
+    )
 
     overdue = [e for e in live if e.payment_status == PaymentStatus.overdue]
     if overdue:
@@ -376,8 +383,9 @@ def _student_items(
                     "Acércate a administración para regularizarla. Mientras siga "
                     "vencida no podrás ver tus notas ni tu avance."
                 ),
-                amount=round(
-                    sum(max(0.0, balances.get(e.id, e.amount or 0.0)) for e in overdue), 2
+                amount=sum(
+                    (max(ZERO, balances.get(e.id, e.amount or ZERO)) for e in overdue),
+                    ZERO,
                 ),
             )
         )

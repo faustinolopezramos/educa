@@ -13,6 +13,7 @@ where it gets counted.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import case, func, select
@@ -103,11 +104,11 @@ def balances_for(
         else_=-Payment.amount,
     )
     rows = db.execute(
-        select(Payment.enrollment_id, func.coalesce(func.sum(signed), 0.0))
+        select(Payment.enrollment_id, func.coalesce(func.sum(signed), 0))
         .where(Payment.enrollment_id.in_(enrollment_ids))
         .group_by(Payment.enrollment_id)
     ).all()
-    return {enrollment_id: float(total) for enrollment_id, total in rows}
+    return {enrollment_id: Decimal(total) for enrollment_id, total in rows}
 
 
 def attach_balances(db: Session, enrollments: Iterable[Enrollment]) -> list[Enrollment]:
@@ -123,5 +124,5 @@ def attach_balances(db: Session, enrollments: Iterable[Enrollment]) -> list[Enro
         if enrollment.id in totals:
             enrollment.balance = totals[enrollment.id]
         else:
-            enrollment.balance = float(enrollment.amount or 0.0)
+            enrollment.balance = enrollment.amount or Decimal("0.00")
     return rows

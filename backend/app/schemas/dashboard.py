@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from app.schemas.base import Money
 from pydantic import BaseModel, ConfigDict
 
 
@@ -11,7 +14,7 @@ class ActionItemRead(BaseModel):
     #: The `?m=` section that resolves this item, so it is never a dead end.
     section: str
     detail: str | None = None
-    amount: float | None = None
+    amount: Money | None = None
 
 
 class AcademyKpisRead(BaseModel):
@@ -39,7 +42,7 @@ class DashboardSummaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     role: str
     items: list[ActionItemRead]
-    balance_due: float = 0.0
+    balance_due: Money = Decimal("0.00")
     next_session_id: int | None = None
     #: Staff only. `None` for anyone else rather than a block of zeros, which
     #: would read as "an academy with nothing in it".

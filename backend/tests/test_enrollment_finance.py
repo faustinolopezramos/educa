@@ -128,7 +128,9 @@ def test_money_movements_leave_an_audit_trail(client, world):
     payments = client.get("/audit?entity=payment", headers=admin).json()["items"]
     assert payments, "a payment must be auditable"
     assert payments[0]["actor_id"] == world["admin"].id
-    assert payments[0]["after"]["amount"] == 300.0
+    # La traza guarda el importe exacto tal como se almacena, no un float:
+    # "300.00" no puede volverse 299.99999 al releerse.
+    assert payments[0]["after"]["amount"] == "300.00"
 
     invoices = client.get(
         f"/audit?entity=invoice&entity_id={invoice['id']}", headers=admin

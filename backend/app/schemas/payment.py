@@ -3,6 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import PaymentKind
+from app.schemas.base import Money
 
 
 class PaymentCreate(BaseModel):
@@ -11,7 +12,7 @@ class PaymentCreate(BaseModel):
     # A ledger movement is always a positive amount; its direction is `kind`.
     # A negative one would silently invert a charge into a credit and quietly
     # mark a debt as settled.
-    amount: float = Field(gt=0)
+    amount: Money = Field(gt=0)
     method: str | None = None
     receipt_number: str | None = None
     # Only meaningful on a `charge`: the date it falls due. Without one the
@@ -25,7 +26,7 @@ class PaymentRead(BaseModel):
     id: int
     enrollment_id: int
     kind: PaymentKind
-    amount: float
+    amount: Money
     method: str | None
     receipt_number: str | None
     due_date: date | None
@@ -45,7 +46,7 @@ class EnrollmentLedger(BaseModel):
     stored, only computed, so it can't drift from the sum of its parts."""
 
     enrollment_id: int
-    charged: float
-    paid: float
-    balance: float
+    charged: Money
+    paid: Money
+    balance: Money
     movements: list[PaymentRead]

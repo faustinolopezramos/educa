@@ -49,6 +49,7 @@ from app.models.academic_holiday import AcademicHoliday
 from app.models.location_proposal import LocationProposal
 from app.models.teacher_availability import TeacherAvailability
 from app.models.teacher_language import TeacherLanguage
+from app.models.teacher_rate import TeacherRate
 from app.models.enrollment import Enrollment
 from app.models.attendance import Attendance
 from app.models.grade import Grade
@@ -126,6 +127,7 @@ __all__ = [
     "SKILL_LABELS",
     "TeacherAvailability",
     "TeacherLanguage",
+    "TeacherRate",
     "Tenant",
     "TrackKind",
     "User",

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, JSON, String, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, Numeric, String, text
 from sqlalchemy import true as sa_true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,7 +44,9 @@ class User(Base):
     # Optional weekly teaching-hours cap for teachers (NULL = uncapped).
     max_weekly_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Teacher hourly rate for payroll settlement (NULL or 0 = not configured).
-    hourly_rate: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.0)
+    hourly_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True, default=Decimal("0.00")
+    )
     # Bumped on password change so refresh tokens issued before it stop working.
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Whether the account may be used at all. A teacher who leaves the academy

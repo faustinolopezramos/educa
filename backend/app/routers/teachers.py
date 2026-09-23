@@ -19,6 +19,7 @@ from app.models import (
     Permission,
     TeacherAvailability,
     TeacherLanguage,
+    TeacherRate,
     User,
     UserRole,
 )
@@ -346,10 +347,43 @@ def update_teacher_hourly_rate(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only),
 ) -> dict:
-    """Set or update the hourly compensation rate for a teacher."""
+    """Fijar la tarifa por hora de un profesor, con su fecha de entrada en vigor.
+
+    La tarifa queda registrada con fecha (`teacher_rates`) y la liquidación de
+    cada clase usa la que regía ese día. Antes sólo se guardaba el valor actual,
+    de modo que un aumento recalculaba hacia atrás meses ya liquidados.
+
+    Por defecto rige desde hoy. Se puede fechar en el pasado para corregir un
+    acuerdo que ya estaba en vigor, y en el futuro para dejar programada una
+    subida.
+    """
     teacher = _require_teacher(db, teacher_id, current_user)
     before = snapshot(teacher)
-    teacher.hourly_rate = payload.hourly_rate
+
+    effective_from = payload.effective_from or academy_today()
+    existing = db.scalar(
+        select(TeacherRate).where(
+            TeacherRate.teacher_id == teacher.id,
+            TeacherRate.effective_from == effective_from,
+        )
+    )
+    if existing is not None:
+        existing.hourly_rate = payload.hourly_rate
+    else:
+        db.add(
+            TeacherRate(
+                tenant_id=teacher.tenant_id,
+                teacher_id=teacher.id,
+                hourly_rate=payload.hourly_rate,
+                effective_from=effective_from,
+                created_by=current_user.id,
+            )
+        )
+
+    # `users.hourly_rate` sigue siendo la tarifa vigente que muestran las
+    # pantallas. Una subida con fecha futura no la toca todavía.
+    if effective_from <= academy_today():
+        teacher.hourly_rate = payload.hourly_rate
 
     record(
         db,
@@ -364,6 +398,7 @@ def update_teacher_hourly_rate(
     db.refresh(teacher)
     return {
         "teacher_id": teacher.id,
-        "hourly_rate": teacher.hourly_rate,
-        "message": f"Tarifa horaria actualizada a {teacher.hourly_rate:.2f}",
+        "hourly_rate": float(payload.hourly_rate),
+        "effective_from": effective_from.isoformat(),
+        "message": f"Tarifa horaria actualizada a {payload.hourly_rate:.2f}",
     }

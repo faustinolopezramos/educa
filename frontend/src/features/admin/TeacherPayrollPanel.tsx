@@ -40,6 +40,9 @@ export function TeacherPayrollPanel() {
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherPayrollSummary | null>(null);
   const [editingTeacher, setEditingTeacher] = useState<TeacherPayrollSummary | null>(null);
   const [newRate, setNewRate] = useState<number>(0);
+  // Desde cuándo rige la tarifa nueva. Por defecto hoy: una subida no debe
+  // recalcular meses ya liquidados.
+  const [rateFrom, setRateFrom] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   const { data: summary, isLoading, isError } = useAcademyPayrollSummary(dateFrom, dateTo);
   const updateRate = useUpdateTeacherRate();
@@ -47,7 +50,11 @@ export function TeacherPayrollPanel() {
   const handleUpdateRate = () => {
     if (!editingTeacher) return;
     updateRate.mutate(
-      { teacherId: editingTeacher.teacher_id, hourlyRate: Number(newRate) },
+      {
+        teacherId: editingTeacher.teacher_id,
+        hourlyRate: Number(newRate),
+        effectiveFrom: rateFrom,
+      },
       {
         onSuccess: () => {
           notify(`Tarifa de ${editingTeacher.teacher_name} actualizada`, "success");
@@ -251,7 +258,10 @@ export function TeacherPayrollPanel() {
         >
           <div className="space-y-3">
             <p className="text-xs text-slate-600">
-              Establece la remuneración por hora de clase impartida para este docente. Las liquidaciones presentes y futuras utilizarán esta tarifa.
+              Establece la remuneración por hora de clase impartida para este
+              docente. Cada clase se liquida con la tarifa vigente el día en que
+              se impartió, así que las liquidaciones anteriores a la fecha de
+              vigencia no cambian.
             </p>
             <label className="block text-xs font-medium text-slate-700">
               Tarifa por Hora ($)
@@ -261,6 +271,15 @@ export function TeacherPayrollPanel() {
                 min="0"
                 value={newRate}
                 onChange={(e) => setNewRate(Number(e.target.value))}
+                className="mt-1"
+              />
+            </label>
+            <label className="block text-xs font-medium text-slate-700">
+              Vigente desde
+              <Input
+                type="date"
+                value={rateFrom}
+                onChange={(e) => setRateFrom(e.target.value)}
                 className="mt-1"
               />
             </label>

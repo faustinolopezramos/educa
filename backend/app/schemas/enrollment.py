@@ -1,10 +1,11 @@
 from datetime import date
+from decimal import Decimal
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import EnrollmentStatus, PaymentStatus
-from app.schemas.base import PatchModel
+from app.schemas.base import Money, PatchModel
 
 
 class EnrollmentCreate(BaseModel):
@@ -13,7 +14,7 @@ class EnrollmentCreate(BaseModel):
     status: EnrollmentStatus = EnrollmentStatus.active
     payment_status: PaymentStatus = PaymentStatus.pending
     # The agreed fee ("cuota"). Optional: an admin may set it later via PATCH.
-    amount: float = Field(default=0.0, ge=0)
+    amount: Money = Field(default=Decimal("0.00"), ge=0)
     # When that cuota falls due. Copied onto the ledger's opening charge; with
     # no date the debt is open-ended and never becomes delinquent by itself.
     due_date: date | None = None
@@ -24,7 +25,7 @@ class EnrollmentUpdate(PatchModel):
     status: EnrollmentStatus | None = None
     payment_status: PaymentStatus | None = None
     attendance_blocked: bool | None = None
-    amount: float | None = Field(default=None, ge=0)
+    amount: Money | None = Field(default=None, ge=0)
 
 
 class EnrollmentRead(BaseModel):
@@ -36,11 +37,11 @@ class EnrollmentRead(BaseModel):
     status: EnrollmentStatus
     payment_status: PaymentStatus
     attendance_blocked: bool
-    amount: float
+    amount: Money
     # `charged − paid` from the ledger, so the list can show what is owed
     # instead of only whether it is late. Populated by `attach_balances`;
     # defaulted so a lone enrollment built without it still serialises.
-    balance: float = 0.0
+    balance: Money = Decimal("0.00")
 
 
 class BulkEnrollRequest(BaseModel):
@@ -48,7 +49,7 @@ class BulkEnrollRequest(BaseModel):
 
     course_id: int
     student_ids: list[int] = Field(min_length=1, max_length=200)
-    amount: float = Field(default=0.0, ge=0)
+    amount: Money = Field(default=Decimal("0.00"), ge=0)
     due_date: date | None = None
     #: Enrol despite a timetable clash, the same override the single endpoint has.
     force: bool = False

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import enum
 from datetime import date, datetime, time
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import inspect
@@ -26,6 +27,20 @@ def _jsonable(value: Any) -> Any:
         return value.value
     if isinstance(value, (date, datetime, time)):
         return value.isoformat()
+    # Los importes son Decimal, que el codificador JSON no sabe escribir. Se
+    # guardan como cadena y no como float: la traza dice "12.30", el valor que
+    # de verdad tenía la columna, sin volver a pasar por la coma flotante de la
+    # que se vino huyendo.
+    #
+    # Se cuadra a céntimos porque es lo que la columna guarda: según se tome el
+    # snapshot antes o después del `refresh`, el mismo importe llegaba aquí como
+    # "300.0" o como "300.00", y la traza de un cambio no debería depender de
+    # eso.
+    if isinstance(value, Decimal):
+        try:
+            return str(value.quantize(Decimal("0.01")))
+        except InvalidOperation:
+            return str(value)
     return value
 
 

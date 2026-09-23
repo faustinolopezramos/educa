@@ -35,15 +35,23 @@ export function useUpdateTeacherRate() {
     mutationFn: async ({
       teacherId,
       hourlyRate,
+      effectiveFrom,
     }: {
       teacherId: number;
       hourlyRate: number;
+      /** Desde cuándo rige. Sin fecha, desde hoy; lo ya liquidado no cambia. */
+      effectiveFrom?: string;
     }) => {
       return (
-        await api.patch<{ teacher_id: number; hourly_rate: number; message: string }>(
-          `/teachers/${teacherId}/rate`,
-          { hourly_rate: hourlyRate },
-        )
+        await api.patch<{
+          teacher_id: number;
+          hourly_rate: number;
+          effective_from: string;
+          message: string;
+        }>(`/teachers/${teacherId}/rate`, {
+          hourly_rate: hourlyRate,
+          ...(effectiveFrom ? { effective_from: effectiveFrom } : {}),
+        })
       ).data;
     },
     onSuccess: (_data, vars) => {

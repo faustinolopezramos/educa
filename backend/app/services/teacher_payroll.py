@@ -1,17 +1,32 @@
 from __future__ import annotations
 
+import bisect
 from datetime import date
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import apply_tenant
-from app.models import ClassSession, Course, Schedule, SessionStatus, User, UserRole
+from app.models import (
+    ClassSession,
+    Course,
+    Schedule,
+    SessionStatus,
+    TeacherRate,
+    User,
+    UserRole,
+)
 from app.schemas.teacher_payroll import (
     AcademyPayrollSummary,
     TeacherPayrollReport,
     TeacherPayrollSessionItem,
     TeacherPayrollSummary,
 )
+
+
+ZERO = Decimal("0.00")
+_CENTS = Decimal("0.01")
 
 
 def _session_duration_hours(session: ClassSession) -> float:
@@ -22,6 +37,35 @@ def _session_duration_hours(session: ClassSession) -> float:
     return round(diff / 60.0, 2)
 
 
+def _rate_history(db: Session, teacher_id: int) -> list[tuple[date, Decimal]]:
+    """Las tarifas de un profesor, ordenadas por fecha de entrada en vigor."""
+    rows = db.execute(
+        select(TeacherRate.effective_from, TeacherRate.hourly_rate)
+        .where(TeacherRate.teacher_id == teacher_id)
+        .order_by(TeacherRate.effective_from.asc())
+    ).all()
+    return [(row[0], row[1]) for row in rows]
+
+
+def rate_on(history: list[tuple[date, Decimal]], day: date, fallback: Decimal) -> Decimal:
+    """La tarifa vigente ese día.
+
+    Una clase se paga a lo que valía la hora el día que se dio. Antes se usaba
+    siempre la tarifa actual, así que subirle el precio a un profesor reescribía
+    hacia atrás liquidaciones ya cerradas —y pagadas— por otro importe.
+
+    `fallback` cubre al profesor que aún no tiene ninguna tarifa con fecha: se
+    usa la que lleva en su ficha.
+    """
+    if not history:
+        return fallback
+    idx = bisect.bisect_right([eff for eff, _ in history], day)
+    if idx == 0:
+        # La clase es anterior a la primera tarifa registrada.
+        return fallback
+    return history[idx - 1][1]
+
+
 def calculate_teacher_payroll(
     db: Session,
     teacher: User,
@@ -29,7 +73,8 @@ def calculate_teacher_payroll(
     date_to: date,
 ) -> TeacherPayrollReport:
     """Calculate detailed teaching hours and remuneration for a single teacher in a date window."""
-    rate = teacher.hourly_rate or 0.0
+    current_rate = teacher.hourly_rate or ZERO
+    history = _rate_history(db, teacher.id)
 
     stmt = (
         select(ClassSession, Course)
@@ -48,11 +93,12 @@ def calculate_teacher_payroll(
     rows = db.execute(stmt).all()
     session_items: list[TeacherPayrollSessionItem] = []
     total_hours = 0.0
-    total_amount = 0.0
+    total_amount = ZERO
 
     for session, course in rows:
         duration = _session_duration_hours(session)
-        amount = round(duration * rate, 2)
+        rate = rate_on(history, session.date, current_rate)
+        amount = (Decimal(str(duration)) * rate).quantize(_CENTS)
         total_hours += duration
         total_amount += amount
 
@@ -76,12 +122,12 @@ def calculate_teacher_payroll(
         teacher_id=teacher.id,
         teacher_name=teacher.full_name,
         email=teacher.email,
-        hourly_rate=rate,
+        hourly_rate=current_rate,
         date_from=date_from,
         date_to=date_to,
         total_sessions=len(session_items),
         total_hours=round(total_hours, 2),
-        total_amount=round(total_amount, 2),
+        total_amount=total_amount,
         sessions=session_items,
     )
 
@@ -105,7 +151,7 @@ def calculate_academy_payroll(
 
     teacher_summaries: list[TeacherPayrollSummary] = []
     total_academy_hours = 0.0
-    total_academy_amount = 0.0
+    total_academy_amount = ZERO
 
     for teacher in teachers:
         report = calculate_teacher_payroll(db, teacher, date_from, date_to)
@@ -129,6 +175,6 @@ def calculate_academy_payroll(
         date_to=date_to,
         total_teachers=len(teacher_summaries),
         total_hours=round(total_academy_hours, 2),
-        total_amount=round(total_academy_amount, 2),
+        total_amount=total_academy_amount,
         teachers=teacher_summaries,
     )

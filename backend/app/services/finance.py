@@ -17,6 +17,7 @@ turn the enrollment delinquent, because nobody ever agreed on a date to miss.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -33,19 +34,21 @@ from app.models import (
     User,
 )
 
-# Money is stored as a float, so an exact `paid >= charged` comparison can trip
-# on the last binary digit (0.1 + 0.2 owed against 0.3 paid). A hundredth of a
-# currency unit is below anything the academy can actually collect.
-MONEY_EPSILON = 0.005
+# Los importes son Decimal exactos, así que ya no hay error de coma flotante
+# que absorber. El margen se mantiene por debajo del céntimo para que un saldo
+# residual impagable (medio céntimo de un prorrateo) no deje una matrícula
+# eternamente "pendiente".
+MONEY_EPSILON = Decimal("0.005")
+ZERO = Decimal("0.00")
 
 
-def enrollment_balance(db: Session, enrollment_id: int) -> tuple[float, float]:
+def enrollment_balance(db: Session, enrollment_id: int) -> tuple[Decimal, Decimal]:
     """`(charged, paid)` for one enrollment, straight from the ledger."""
     rows = db.scalars(
         select(Payment).where(Payment.enrollment_id == enrollment_id)
     ).all()
-    charged = sum(p.amount for p in rows if p.kind == PaymentKind.charge)
-    paid = sum(p.amount for p in rows if p.kind == PaymentKind.payment)
+    charged = sum((p.amount for p in rows if p.kind == PaymentKind.charge), ZERO)
+    paid = sum((p.amount for p in rows if p.kind == PaymentKind.payment), ZERO)
     return charged, paid
 
 
@@ -58,7 +61,7 @@ def derive_payment_status(
 
     # An enrollment whose ledger was never opened falls back to the agreed
     # cuota, so a fee recorded only on the enrollment still counts as owed.
-    owed = (charged if charged > 0 else enrollment.amount) - paid
+    owed = (charged if charged > 0 else (enrollment.amount or ZERO)) - paid
     if owed <= MONEY_EPSILON:
         return PaymentStatus.paid
 
@@ -66,15 +69,18 @@ def derive_payment_status(
     # a payment covers the oldest debt first, so anything still uncovered by
     # today's due charges is money that should already have arrived.
     due_charges = sum(
-        p.amount
-        for p in db.scalars(
-            select(Payment).where(
-                Payment.enrollment_id == enrollment.id,
-                Payment.kind == PaymentKind.charge,
-                Payment.due_date.isnot(None),
-                Payment.due_date <= today,
-            )
-        ).all()
+        (
+            p.amount
+            for p in db.scalars(
+                select(Payment).where(
+                    Payment.enrollment_id == enrollment.id,
+                    Payment.kind == PaymentKind.charge,
+                    Payment.due_date.isnot(None),
+                    Payment.due_date <= today,
+                )
+            ).all()
+        ),
+        ZERO,
     )
     if due_charges - paid > MONEY_EPSILON:
         return PaymentStatus.overdue
