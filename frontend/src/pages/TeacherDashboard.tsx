@@ -42,6 +42,7 @@ import {
   MODALITY_LABELS,
   dayName,
   formatTime,
+  localDow,
   modalityColor,
   modalityLabel,
   needsLink,
@@ -95,10 +96,6 @@ function initials(name: string): string {
     .slice(0, 2)
     .join("")
     .toUpperCase();
-}
-
-function localDow(d = new Date()): number {
-  return (d.getDay() + 6) % 7;
 }
 
 function nowTimeString(): string {

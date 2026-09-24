@@ -14,6 +14,12 @@ export function dayName(dow: number): string {
   return DAYS[dow] ?? `Día ${dow}`;
 }
 
+/** El día de hoy como Lunes=0..Domingo=6, la convención de `Schedule.day_of_week`.
+ *  Vivía copiada igual en tres pantallas; una sola versión no puede divergir. */
+export function localDow(d = new Date()): number {
+  return (d.getDay() + 6) % 7;
+}
+
 export function formatDateTime(iso: string, timeZone?: string): string {
   return new Date(iso).toLocaleString("es", {
     dateStyle: "medium",

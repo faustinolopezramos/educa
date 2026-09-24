@@ -290,6 +290,13 @@ export const IconPin = (p: IconProps) => (
   </Icon>
 );
 
+export const IconCash = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="2" y="6" width="20" height="12" rx="2" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+
 export const IconTag = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 11V5.5A1.5 1.5 0 0 1 5.5 4H11l8.5 8.5a1.5 1.5 0 0 1 0 2.1l-5.9 5.9a1.5 1.5 0 0 1-2.1 0L4 11z" />

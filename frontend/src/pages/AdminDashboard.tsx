@@ -9,12 +9,13 @@ import { canSeeSection, defaultSection } from "../lib/nav";
 import { AuditPanel } from "../features/audit/AuditPanel";
 import { ReportView } from "../features/reports/ReportView";
 import { CatalogPanel } from "../features/admin/CatalogPanel";
-import { CoursesAndTeachersHub } from "../features/admin/CoursesAndTeachersHub";
+import { CoursesPanel } from "../features/admin/CoursesPanel";
 import { EnrollmentsPanel } from "../features/admin/EnrollmentsPanel";
 import { HolidaysPanel } from "../features/admin/HolidaysPanel";
 import { InicioPanel } from "../features/admin/InicioPanel";
 import { LocationProposalsPanel } from "../features/admin/LocationProposalsPanel";
 import { RoomsPanel } from "../features/admin/RoomsPanel";
+import { SchedulesPanel } from "../features/admin/SchedulesPanel";
 import { TenantsPanel } from "../features/admin/TenantsPanel";
 import { StudentsPanel } from "../features/admin/StudentsPanel";
 import { TeachersPanel } from "../features/admin/TeachersPanel";
@@ -35,14 +36,14 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const section = params.get("m") ?? (user ? defaultSection(user.role) : "inicio");
 
-  const hub = <CoursesAndTeachersHub />;
-
   const panels: Record<string, ReactNode> = {
     inicio: <InicioPanel />,
     tenants: <TenantsPanel />,
     pendientes: <LocationProposalsPanel />,
-    courses: hub,
-    schedules: hub,
+    // El calendario de arrastrar y soltar vivía embebido al fondo de
+    // "Resumen"; hoy es una sección propia, no un alias de la de cursos.
+    horarios: <SchedulesPanel />,
+    courses: <CoursesPanel />,
     catalog: <CatalogPanel />,
     enrollments: <EnrollmentsPanel />,
     users: <UsersPanel />,

@@ -27,16 +27,28 @@ const ADMIN_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // The three entities an admin actually manages get a section each, so any
-    // of them is one click away. They used to share a single "Usuarios" screen
-    // where teachers and students were tabs, which put "edit a teacher" three
-    // clicks deep and mixed two jobs that have nothing in common.
-    label: "Gestión Académica",
+    // El calendario de arrastrar y soltar (`SchedulePlanner`) vivía embebido
+    // al fondo de "Resumen", sin sección propia: el id que le correspondía,
+    // "schedules", no lo enlazaba nada en toda la aplicación. Es el trabajo
+    // más pesado que hace un admin y merece su propio grupo, no un rincón.
+    label: "Agenda",
+    items: [{ id: "horarios", label: "Horarios" }],
+  },
+  {
+    // Lo que se toca cada hora: matricular, dar de alta un alumno, armar un
+    // curso, asignar un profesor. Antes compartía grupo con nómina y
+    // reportes, que se consultan por ciclo (cierre de mes), no en este ritmo.
+    label: "Academia",
     items: [
       { id: "enrollments", label: "Matrículas" },
       { id: "students", label: "Alumnos" },
       { id: "courses", label: "Cursos" },
       { id: "teachers", label: "Profesores" },
+    ],
+  },
+  {
+    label: "Finanzas y reportes",
+    items: [
       { id: "nomina", label: "Nómina Docente" },
       { id: "reports", label: "Reportes" },
     ],
@@ -46,7 +58,7 @@ const ADMIN_GROUPS: NavGroup[] = [
     items: [{ id: "users", label: "Todas las cuentas" }],
   },
   {
-    label: "Configuración del sistema",
+    label: "Configuración",
     items: [
       { id: "catalog", label: "Estructura académica" },
       { id: "rooms", label: "Aulas" },
@@ -114,12 +126,12 @@ export const NAV: Record<Role, NavGroup[]> = {
   ],
 };
 
-// Sections a role may open that have no menu entry of their own. `schedules`
-// and `pendientes` hang off the courses hub; the two student ids are the ones
-// "Mi progreso" replaced, kept alive so an old bookmark still lands somewhere.
+// Sections a role may open that have no menu entry of their own. `pendientes`
+// hangs off the courses screen; the two student ids are the ones "Mi
+// progreso" replaced, kept alive so an old bookmark still lands somewhere.
 const EXTRA_SECTIONS: Partial<Record<Role, string[]>> = {
-  admin: ["schedules", "pendientes"],
-  assistant: ["schedules", "pendientes"],
+  admin: ["pendientes"],
+  assistant: ["pendientes"],
   student: ["calificaciones", "reportes"],
 };
 
@@ -154,8 +166,12 @@ export function canSeeSection(user: User | null, sectionId: string): boolean {
   if (sectionId === "nomina")
     return perms.has("manage_teachers") || perms.has("view_reports");
   if (sectionId === "students") return perms.has("manage_students");
-  if (sectionId === "courses" || sectionId === "schedules")
+  if (sectionId === "courses")
     return perms.has("manage_schedules") || perms.has("manage_catalog");
+  // Horarios es literalmente el permiso que la API usa para esta pantalla
+  // (`manage_schedules`): a diferencia de Cursos, aquí no basta con poder
+  // tocar el catálogo si no se puede tocar el horario en sí.
+  if (sectionId === "horarios") return perms.has("manage_schedules");
   if (sectionId === "pendientes") return perms.has("manage_schedules");
   if (sectionId === "enrollments")
     return perms.has("manage_enrollments") || perms.has("manage_finance");

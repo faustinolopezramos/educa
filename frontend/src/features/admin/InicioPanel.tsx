@@ -1,12 +1,14 @@
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
 import { ActionTray } from "../../components/ActionTray";
-import { ExecutiveKpiCard } from "./ExecutiveKpiCard";
-import { Button, Card, MetaItem, PageHeader } from "../../components/ui";
-import { useReport } from "../../lib/queries";
+import { AcademyKpis } from "./AcademyKpis";
+import { Badge, Button, Card, PageHeader, SectionHeading } from "../../components/ui";
+import { adminStatusLine } from "../../lib/adminHome";
+import { DAYS, dayName, formatTime, localDow, modalityColor, modalityLabel } from "../../lib/format";
+import { useCourses, useDashboard, useRooms, useSchedules } from "../../lib/queries";
 import { canSeeSection } from "../../lib/nav";
-import { SchedulePlanner } from "../schedules/SchedulePlanner";
 
 /**
  * The academy's home screen, for an admin or an assistant.
@@ -21,39 +23,27 @@ import { SchedulePlanner } from "../schedules/SchedulePlanner";
  * per role *and per permission* — so the proposals alert this file used to own
  * is one row among several, and an assistant is never shown a queue they have
  * no permission to work.
+ *
+ * The full weekly timetable (drag-and-drop) used to be embedded at the bottom
+ * of this screen — the heaviest workspace an admin has, buried under KPIs and
+ * pendientes, with no menu entry of its own. It now lives in "Horarios"; this
+ * screen only shows a compact preview that links there.
  */
 export function InicioPanel() {
   const { user } = useAuth();
   const [, setParams] = useSearchParams();
-  const { data: report } = useReport("week");
+  const { data: dashboard } = useDashboard();
 
-  const attendance = report?.attendance_rate;
   const firstName = user?.full_name?.split(" ")[0] ?? "";
   const canEnroll = canSeeSection(user, "enrollments");
   const canSeeCourses = canSeeSection(user, "courses");
+  const canSeeHorarios = canSeeSection(user, "horarios");
 
   return (
     <div>
       <PageHeader
         title={firstName ? `Hola, ${firstName}` : "Resumen"}
-        description="Lo que ocurre en la academia esta semana."
-        meta={
-          <>
-            {/* The academy's size and capacity moved to the KPI row below; what
-                stays here is how *this week* is going, which the KPIs do not
-                say. "Impartidas" now means a class whose register was taken, so
-                the pair reads as progress through the week rather than a total
-                that was already complete on Monday morning. */}
-            <MetaItem
-              value={`${report?.sessions_held ?? 0}/${report?.sessions_total ?? 0}`}
-              label="clases impartidas esta semana"
-            />
-            <MetaItem
-              value={attendance == null ? "—" : `${Math.round(attendance * 100)}%`}
-              label="de asistencia"
-            />
-          </>
-        }
+        description={adminStatusLine(dashboard?.items ?? [])}
         actions={
           <>
             {canSeeCourses && (
@@ -70,13 +60,77 @@ export function InicioPanel() {
         }
       />
 
-      <ExecutiveKpiCard />
+      <AcademyKpis />
 
       <ActionTray emptyMessage="No hay nada pendiente en la academia. Todo al día." />
 
-      <Card padding="sm">
-        <SchedulePlanner />
-      </Card>
+      {canSeeHorarios && <WeekPreview />}
     </div>
+  );
+}
+
+/**
+ * Las próximas clases de la semana, en una lista compacta que enlaza al
+ * horario completo — no un calendario entero embebido aquí.
+ */
+function WeekPreview() {
+  const [, setParams] = useSearchParams();
+  const { data: schedules = [] } = useSchedules();
+  const { data: courses = [] } = useCourses();
+  const { data: rooms = [] } = useRooms();
+
+  const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
+  const roomName = (id: number | null) =>
+    id == null ? null : (rooms.find((r) => r.id === id)?.name ?? null);
+
+  const today = localDow();
+  const upcoming = useMemo(() => {
+    return [...schedules]
+      .sort((a, b) => {
+        // Los días se ordenan en rueda a partir de hoy: el lunes que viene se
+        // ve más lejos que el sábado de esta semana, igual que en el
+        // calendario real.
+        const da = (a.day_of_week - today + 7) % 7;
+        const db = (b.day_of_week - today + 7) % 7;
+        return da - db || a.start_time.localeCompare(b.start_time);
+      })
+      .slice(0, 6);
+  }, [schedules, today]);
+
+  return (
+    <Card padding="sm">
+      <div className="mb-3 flex items-center justify-between">
+        <SectionHeading>Esta semana</SectionHeading>
+        <Button variant="secondary" size="sm" onClick={() => setParams({ m: "horarios" })}>
+          Ver horarios completos →
+        </Button>
+      </div>
+
+      {upcoming.length === 0 ? (
+        <p className="py-6 text-center text-xs text-slate-500">
+          Todavía no hay horarios armados.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {upcoming.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs"
+            >
+              <span className="tabular w-24 flex-none font-semibold text-slate-600">
+                {DAYS[s.day_of_week]?.slice(0, 3) ?? dayName(s.day_of_week)} {formatTime(s.start_time)}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-slate-900">
+                {courseName(s.course_id)}
+              </span>
+              <Badge color={modalityColor(s.modality)}>{modalityLabel(s.modality)}</Badge>
+              {roomName(s.room_id) && (
+                <span className="flex-none text-slate-500">{roomName(s.room_id)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }

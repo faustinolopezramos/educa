@@ -23,6 +23,7 @@ import {
   courseModalityLabel,
   formatDateTime,
   formatTime,
+  localDow,
   locationSummary,
   timeZoneLabel,
 } from "../lib/format";
@@ -51,11 +52,6 @@ import type { Enrollment, MakeUpCredit, Modality } from "../lib/types";
 
 function sessionStartMs(date: string, time: string): number {
   return new Date(`${date}T${time}`).getTime();
-}
-
-/** Today as Monday=0..Sunday=6, the convention `Schedule.day_of_week` uses. */
-function localDow(d = new Date()): number {
-  return (d.getDay() + 6) % 7;
 }
 
 export default function StudentDashboard() {
