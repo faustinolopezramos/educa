@@ -58,6 +58,8 @@ from app.models.meeting_provider import MeetingProvider
 from app.models.virtual_meeting import VirtualMeeting
 from app.models.meeting_log import MeetingLog
 from app.models.audit_log import AuditLog
+from app.models.at_risk_sweep import AtRiskSweep
+from app.models.push_subscription import PushSubscription
 from app.models.notification import (
     DeliveryChannel,
     DeliveryStatus,
@@ -117,7 +119,9 @@ __all__ = [
     "MODALITY_USES_ROOM",
     "Modality",
     "Nationality",
+    "AtRiskSweep",
     "Notification",
+    "PushSubscription",
     "NotificationDelivery",
     "DeliveryChannel",
     "DeliveryStatus",

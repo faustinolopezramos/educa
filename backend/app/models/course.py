@@ -41,7 +41,7 @@ class Course(Base):
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     periodicity: Mapped[str | None] = mapped_column(String(30), nullable=True)
     max_students: Mapped[int] = mapped_column(Integer, default=20)
-    # Minimum final grade (0–10) to pass the course and earn a level certificate.
+    # Minimum final grade (0–10) to pass the course.
     passing_score: Mapped[float] = mapped_column(Float, default=6.0)
 
     level: Mapped["Level"] = relationship(back_populates="courses")

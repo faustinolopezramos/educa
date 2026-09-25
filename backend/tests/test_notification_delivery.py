@@ -24,7 +24,7 @@ from tests.conftest import auth
 @pytest.fixture
 def no_loop(monkeypatch):
     # Que el lifespan de la API no arranque su propio despachador en paralelo.
-    monkeypatch.setattr(settings, "notifications_dispatch_interval_seconds", 0)
+    monkeypatch.setattr(settings, "background_jobs_interval_seconds", 0)
 
 
 @pytest.fixture

@@ -897,7 +897,7 @@ def delete_course(
 ) -> None:
     course = _course_or_404(db, current_user, course_id)
     # Deleting a course cascades all the way down: enrollments, and with them
-    # attendance, grades, certificates, payments and invoices. That is an
+    # attendance, grades, payments and invoices. That is an
     # accounting record being destroyed, not a catalog entry being tidied up,
     # so a course anyone was ever enrolled in has to be emptied deliberately.
     enrolled = db.scalar(

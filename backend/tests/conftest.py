@@ -22,6 +22,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.clock import academy_today
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.main import app
@@ -40,6 +41,11 @@ from app.models import (
     UserRole,
     VirtualMeeting,
 )
+
+# Las tareas de fondo de la API (envíos, barrido de riesgo) abrirían su propia
+# conexión y escribirían fuera de la transacción que cada prueba deshace. Las
+# pruebas las ejercitan llamando a las funciones directamente.
+settings.background_jobs_interval_seconds = 0
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",

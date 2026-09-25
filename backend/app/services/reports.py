@@ -42,12 +42,18 @@ from app.models import (
 # session-grade average drops below a passing mark.
 MIN_ATTENDANCE_RATE = 0.7
 PASSING_AVERAGE = 6.0
+# Faltas seguidas al final del periodo que bastan por sí solas para avisar. La
+# tasa tarda en moverse —dos faltas en un trimestre de treinta clases apenas la
+# tocan—, y dejar de venir de golpe es justo como empieza un abandono.
+CONSECUTIVE_ABSENCES_ALERT = 2
 
 
 def period_range(period: str, anchor: date) -> tuple[date, date]:
     """The [from, to] the period covers around the anchor date."""
     if period == "day":
         return anchor, anchor
+    if period == "last4w":  # las cuatro semanas que acaban en `anchor`
+        return anchor - timedelta(days=27), anchor
     if period == "week":  # Monday..Sunday
         start = anchor - timedelta(days=anchor.weekday())
         return start, start + timedelta(days=6)
@@ -59,7 +65,7 @@ def period_range(period: str, anchor: date) -> tuple[date, date]:
             else start.replace(month=start.month + 1)
         )
         return start, nxt - timedelta(days=1)
-    raise ValueError("period must be one of: day, week, month")
+    raise ValueError("period must be one of: day, week, month, last4w")
 
 
 def scoped_course_ids(
@@ -153,9 +159,14 @@ def build_report(
     anchor: date,
     course_id: int | None = None,
     teacher_id: int | None = None,
+    only_course_ids: list[int] | None = None,
 ) -> Report:
+    """`only_course_ids` narrows the scope further, never widens it — the weekly
+    at-risk sweep uses it to report on one academy's running courses."""
     date_from, date_to = period_range(period, anchor)
     course_ids = scoped_course_ids(db, user, course_id, teacher_id)
+    if only_course_ids is not None:
+        course_ids = [c for c in course_ids if c in set(only_course_ids)]
     report = Report(period=period, date_from=date_from, date_to=date_to)
     if not course_ids:
         return report
@@ -198,7 +209,7 @@ def build_report(
 
     # --- Attendance in range ---
     att_rows = db.execute(
-        select(Attendance, Enrollment.course_id, Enrollment.student_id)
+        select(Attendance, Enrollment.course_id, Enrollment.student_id, ClassSession.date)
         .join(ClassSession, Attendance.session_id == ClassSession.id)
         .join(Enrollment, Attendance.enrollment_id == Enrollment.id)
         .join(Schedule, ClassSession.schedule_id == Schedule.id)
@@ -215,7 +226,9 @@ def build_report(
     per_course: dict[int, list[int]] = {}  # course_id -> [present, counted]
     # (student, course) -> [present, counted] for the at-risk pass
     per_student: dict[tuple[int, int], list[int]] = {}
-    for att, cid, sid in att_rows:
+    # (student, course) -> [(date, is_present)] for the absence-streak signal
+    timeline: dict[tuple[int, int], list[tuple[date, bool]]] = {}
+    for att, cid, sid, on in att_rows:
         # La justificada no entra por ningún lado: ni suma asistencia ni resta.
         # Ver `ATTENDANCE_COUNTS_TOWARD_RATE`.
         if att.status not in ATTENDANCE_COUNTS_TOWARD_RATE:
@@ -229,6 +242,7 @@ def build_report(
         ps = per_student.setdefault((sid, cid), [0, 0])
         ps[0] += 1 if is_present else 0
         ps[1] += 1
+        timeline.setdefault((sid, cid), []).append((on, is_present))
 
     report.attendance_rate = (
         round(present_total / counted_total, 3) if counted_total else None
@@ -333,6 +347,13 @@ def build_report(
         reasons: list[str] = []
         if rate is not None and rate < MIN_ATTENDANCE_RATE:
             reasons.append("asistencia baja")
+        streak = 0
+        for _on, was_present in sorted(timeline.get((sid, cid), []), reverse=True):
+            if was_present:
+                break
+            streak += 1
+        if streak >= CONSECUTIVE_ABSENCES_ALERT:
+            reasons.append(f"{streak} faltas seguidas")
         if average is not None and average < PASSING_AVERAGE:
             reasons.append("promedio bajo")
         student_skills = skill_acc.get((sid, cid), {})

@@ -394,7 +394,7 @@ def get_student_kardex_endpoint(
 
     Un alumno abre el suyo, y de nadie más. Del otro lado sólo entra quien ya
     administra alumnos — la misma llave que abre `GET /users/{id}`, porque este
-    expediente reúne el historial completo, los certificados y el **saldo
+    expediente reúne el historial completo, las notas finales y el **saldo
     pendiente**. Dejarlo detrás de la mera autenticación lo ponía al alcance de
     cualquier profesor, sobre alumnos que nunca tuvo en clase, y de un asistente
     sin ningún permiso concedido.

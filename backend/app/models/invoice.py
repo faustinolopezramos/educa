@@ -12,7 +12,7 @@ from app.core.database import Base
 
 class Invoice(Base):
     """An internal receipt/comprobante for an enrollment — same shape as
-    `Certificate` (a sequential `code`, an issuer, a PDF). No fiscal
+    any numbered document (a sequential `code`, an issuer, a PDF). No fiscal
     integration (DTE/factura electrónica) in this scope."""
 
     __tablename__ = "invoices"

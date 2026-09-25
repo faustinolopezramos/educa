@@ -93,12 +93,28 @@ class Settings(BaseSettings):
     # Prefijo que se antepone a un teléfono guardado sin código de país.
     whatsapp_default_country_code: str = "502"
 
+    # Avisos push del navegador (Web Push). Las claves VAPID identifican a este
+    # servidor ante los servicios de push; se generan una vez con
+    # `python -m app.cli generate-vapid-keys` y no se cambian (cambiarlas deja
+    # inservibles todas las suscripciones existentes).
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:soporte@educa.com"
+
     # Enlace a la aplicación que se añade al pie de los correos. Vacío = sin enlace.
     app_url: str = ""
 
-    # Cada cuántos segundos el proceso de la API vacía la cola de envíos. 0 lo
-    # desactiva (queda el comando `python -m app.cli dispatch-notifications`).
-    notifications_dispatch_interval_seconds: int = 20
+    # Cada cuántos segundos corren las tareas de fondo de la API: vaciar la cola
+    # de envíos y, cuando toca, el barrido semanal de riesgo. 0 las desactiva
+    # (quedan los comandos `dispatch-notifications` y `at-risk-sweep` del CLI).
+    background_jobs_interval_seconds: int = 20
+
+    # Barrido semanal de alumnos en riesgo: qué día (0 = lunes) y a partir de
+    # qué hora de la academia se lanza. Si la API estaba apagada a esa hora, se
+    # lanza en cuanto vuelve, dentro de la misma semana.
+    at_risk_sweep_enabled: bool = True
+    at_risk_sweep_weekday: int = 0
+    at_risk_sweep_hour: int = 7
 
     # Seed
     seed_admin_email: str = "admin@educa.com"

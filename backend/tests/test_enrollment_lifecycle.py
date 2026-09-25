@@ -196,17 +196,17 @@ def test_the_transition_table_matches_the_documented_lifecycle():
         (E.enrolled, E.inactive),
         (E.enrolled, E.withdrawn),
         (E.active, E.inactive),
-        (E.active, E.certified),
+        (E.active, E.graduated),
         (E.active, E.withdrawn),
         (E.inactive, E.active),
         (E.inactive, E.withdrawn),
     ]
     illegal = [
-        (E.enrolled, E.certified),  # nobody certifies a course they never began
+        (E.enrolled, E.graduated),  # nobody certifies a course they never began
         (E.active, E.enrolled),  # a started course does not un-start
         (E.inactive, E.enrolled),
-        (E.certified, E.active),  # a certificate has already been issued
-        (E.certified, E.withdrawn),
+        (E.graduated, E.active),  # the course is closed on a passing grade
+        (E.graduated, E.withdrawn),
         (E.withdrawn, E.active),  # coming back is a new matrícula, with a new code
         (E.withdrawn, E.enrolled),
     ]

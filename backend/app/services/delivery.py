@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import html
 import logging
-import threading
 from collections import Counter
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -30,12 +29,14 @@ from app.models import (
     DeliveryStatus,
     Notification,
     NotificationDelivery,
+    PushSubscription,
     Tenant,
     User,
 )
-from app.services.email import DeliveryError, deliver_email, email_configured
+from app.services.email import DeliveryError, deliver_email
 from app.services.notifications import WHATSAPP_TEMPLATES
-from app.services.whatsapp import send_template, whatsapp_configured
+from app.services.push import SubscriptionGone, send_push
+from app.services.whatsapp import send_template
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,23 @@ def _send(db: Session, delivery: NotificationDelivery) -> str:
             raise DeliveryError(f"Sin plantilla de WhatsApp para «{note.kind}»", permanent=True)
         template, params = build(user, note.data)
         return send_template(delivery.destination, template, params)
+    if delivery.channel == DeliveryChannel.push:
+        sub = db.get(PushSubscription, int(delivery.destination.removeprefix("push:")))
+        if sub is None:
+            raise DeliveryError("El dispositivo dejó de recibir avisos", permanent=True)
+        try:
+            return send_push(
+                sub,
+                title=note.title,
+                body=note.body,
+                url="/",
+                tag=f"educa-{note.id}",
+            )
+        except SubscriptionGone:
+            # El navegador la dio de baja (desinstaló la app, borró datos): no
+            # tiene sentido volver a intentarlo ni con este aviso ni con otros.
+            db.delete(sub)
+            raise
     raise DeliveryError(f"Canal desconocido: {delivery.channel}", permanent=True)
 
 
@@ -166,50 +184,3 @@ def dispatch_pending(
         results[delivery.status] += 1
         db.commit()
     return results
-
-
-class DispatchLoop:
-    """Drains the outbox every few seconds from inside the API process.
-
-    Fly keeps one machine always running (`min_machines_running = 1`), so this
-    is enough for delivery within seconds without a separate worker. A thread
-    rather than a task because SMTP and the HTTP client are blocking. With more
-    than one process, each runs its own loop and `SKIP LOCKED` keeps them apart.
-    """
-
-    def __init__(self, session_factory: Callable[[], Session], interval: float) -> None:
-        self._session_factory = session_factory
-        self._interval = interval
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="notification-dispatch", daemon=True)
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._stop.set()
-        self._thread.join(timeout=30)
-
-    def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                db = self._session_factory()
-                try:
-                    results = dispatch_pending(db)
-                finally:
-                    db.close()
-                if results:
-                    logger.info("Envíos de notificaciones: %s", dict(results))
-            except Exception:
-                logger.exception("El despachador de notificaciones falló; sigue en marcha")
-            self._stop.wait(self._interval)
-
-
-def start_dispatch_loop(session_factory: Callable[[], Session]) -> DispatchLoop | None:
-    """Start the loop when there is something to send through; None otherwise."""
-    interval = settings.notifications_dispatch_interval_seconds
-    if interval <= 0 or not (email_configured() or whatsapp_configured()):
-        return None
-    loop = DispatchLoop(session_factory, interval)
-    loop.start()
-    return loop

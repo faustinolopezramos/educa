@@ -54,11 +54,11 @@ def test_enrollment_status_change_is_audited(client, world):
     client.patch(
         f"/enrollments/{world['enrollment'].id}",
         headers=admin,
-        json={"status": "certified"},
+        json={"status": "graduated"},
     )
     rows = _audit(client, admin, entity="enrollment", entity_id=world["enrollment"].id)
     assert rows[0]["before"]["status"] == "active"
-    assert rows[0]["after"]["status"] == "certified"
+    assert rows[0]["after"]["status"] == "graduated"
 
 
 def test_a_user_password_change_never_records_the_hash(client, world):

@@ -37,15 +37,16 @@ class EnrollmentStatus(str, enum.Enum):
     """The lifecycle of a matrícula (enrollment) — this *is* the student's
     academic status; there is deliberately no separate per-student status.
 
-    `certified` and `withdrawn` are the renamed `completed`/`cancelled` values
+    `graduated` and `withdrawn` are the renamed `completed`/`cancelled` values
     from the original 3-state enum — same meaning, names aligned to the
-    business's own vocabulary (Certificado/Desistió).
+    business's own vocabulary (Graduado/Desistió). The first was called
+    `certified` while Educa issued certificates; it no longer does.
     """
 
     enrolled = "enrolled"
     active = "active"
     inactive = "inactive"
-    certified = "certified"
+    graduated = "graduated"
     withdrawn = "withdrawn"
 
 
@@ -80,7 +81,7 @@ ENROLLMENT_HAS_ACCESS: frozenset[EnrollmentStatus] = frozenset(
 
 #: Still carries a live financial obligation, so its payment status is worth
 #: re-deriving and its debt can make the student delinquent. A course that was
-#: certified or dropped is closed out; whatever it left owing is collected
+#: graduated or dropped is closed out; whatever it left owing is collected
 #: outside this lifecycle.
 ENROLLMENT_OWES: frozenset[EnrollmentStatus] = frozenset(
     {
@@ -91,14 +92,14 @@ ENROLLMENT_OWES: frozenset[EnrollmentStatus] = frozenset(
 )
 
 #: The states an enrollment may be *created* in. A brand-new matrícula cannot
-#: start out certified or withdrawn, and `inactive` describes a pause of
+#: start out graduated or withdrawn, and `inactive` describes a pause of
 #: something that already ran.
 ENROLLMENT_OPENING_STATES: frozenset[EnrollmentStatus] = frozenset(
     {EnrollmentStatus.enrolled, EnrollmentStatus.active}
 )
 
-#: Which states each state may move to. `certified` and `withdrawn` are terminal
-#: on purpose: a certificate has been issued against the first, and re-admitting
+#: Which states each state may move to. `graduated` and `withdrawn` are terminal
+#: on purpose: the first closed the course on a passing final grade, and re-admitting
 #: a student who dropped out is a *new* matrícula with its own code — which the
 #: partial unique index on (student, course) already allows.
 ENROLLMENT_TRANSITIONS: dict[EnrollmentStatus, frozenset[EnrollmentStatus]] = {
@@ -112,14 +113,14 @@ ENROLLMENT_TRANSITIONS: dict[EnrollmentStatus, frozenset[EnrollmentStatus]] = {
     EnrollmentStatus.active: frozenset(
         {
             EnrollmentStatus.inactive,
-            EnrollmentStatus.certified,
+            EnrollmentStatus.graduated,
             EnrollmentStatus.withdrawn,
         }
     ),
     EnrollmentStatus.inactive: frozenset(
         {EnrollmentStatus.active, EnrollmentStatus.withdrawn}
     ),
-    EnrollmentStatus.certified: frozenset(),
+    EnrollmentStatus.graduated: frozenset(),
     EnrollmentStatus.withdrawn: frozenset(),
 }
 
@@ -128,7 +129,7 @@ ENROLLMENT_STATUS_LABELS: dict[EnrollmentStatus, str] = {
     EnrollmentStatus.enrolled: "Inscrito",
     EnrollmentStatus.active: "Activo",
     EnrollmentStatus.inactive: "Inactivo",
-    EnrollmentStatus.certified: "Certificado",
+    EnrollmentStatus.graduated: "Graduado",
     EnrollmentStatus.withdrawn: "Desistió",
 }
 

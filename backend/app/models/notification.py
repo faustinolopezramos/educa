@@ -43,6 +43,8 @@ class Notification(Base):
 class DeliveryChannel:
     email = "email"
     whatsapp = "whatsapp"
+    #: Aviso del navegador. `destination` es `push:<id de PushSubscription>`.
+    push = "push"
 
 
 class DeliveryStatus:

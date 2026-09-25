@@ -27,11 +27,13 @@ from app.models import (
     Enrollment,
     Notification,
     NotificationDelivery,
+    PushSubscription,
     Schedule,
     User,
     UserRole,
 )
 from app.services.email import email_configured
+from app.services.push import push_configured
 from app.services.whatsapp import normalize_phone, whatsapp_configured
 
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
@@ -97,6 +99,14 @@ def notify(
     }
     send_email = email_configured()
     send_whatsapp = whatsapp_configured() and kind in WHATSAPP_TEMPLATES and data is not None
+    devices: dict[int, list[int]] = {}
+    if push_configured():
+        for sub_id, uid in db.execute(
+            select(PushSubscription.id, PushSubscription.user_id).where(
+                PushSubscription.user_id.in_(recipient_ids)
+            )
+        ).all():
+            devices.setdefault(uid, []).append(sub_id)
     for rid in recipient_ids:
         note = Notification(recipient_id=rid, kind=kind, title=title, body=body, data=data)
         user = users.get(rid)
@@ -109,6 +119,12 @@ def notify(
             if phone:
                 note.deliveries.append(
                     NotificationDelivery(channel=DeliveryChannel.whatsapp, destination=phone)
+                )
+            # Un aviso por dispositivo suscrito: el permiso del navegador ya es
+            # el consentimiento, no hay otra preferencia que mirar.
+            for sub_id in devices.get(rid, []):
+                note.deliveries.append(
+                    NotificationDelivery(channel=DeliveryChannel.push, destination=f"push:{sub_id}")
                 )
         db.add(note)
     return len(recipient_ids)
@@ -191,7 +207,11 @@ def notify_teacher_of_at_risk(
 
 
 def notify_directors_of_at_risk(
-    db: Session, tenant_id: int | None, total_students: int, affected_courses_count: int
+    db: Session,
+    tenant_id: int | None,
+    total_students: int,
+    affected_courses_count: int,
+    details: list[str] | None = None,
 ) -> int:
     """Notify the academy's admins and assistants about its at-risk count.
 
@@ -213,4 +233,10 @@ def notify_directors_of_at_risk(
         return 0
     title = "Alerta Académica: Alumnos en riesgo detectados"
     body = f"Se han detectado {total_students} alumno(s) en riesgo académico en {affected_courses_count} curso(s)."
+    if details:
+        # Quien hace el seguimiento necesita los nombres, no sólo la cifra.
+        shown = details[:15]
+        body += "\n\n" + "\n".join(f"• {line}" for line in shown)
+        if len(details) > len(shown):
+            body += f"\n…y {len(details) - len(shown)} más en Reportes."
     return notify(db, directors, "at_risk_management", title, body)

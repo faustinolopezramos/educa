@@ -410,7 +410,7 @@ def book_candidate_session(
 
     enrollment = db.get(Enrollment, credit.enrollment_id)
     if enrollment is None or enrollment.status not in ENROLLMENT_HAS_ACCESS:
-        # Una matrícula retirada, pausada o ya certificada no da derecho a
+        # Una matrícula retirada, pausada o ya graduada no da derecho a
         # sentarse en otra clase.
         raise HTTPException(
             status.HTTP_409_CONFLICT,

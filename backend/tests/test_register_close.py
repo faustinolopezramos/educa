@@ -291,3 +291,60 @@ def test_assigned_teacher_can_close_own_register(client, db, world, session_a):
     res = client.post(f"/sessions/{session_a.id}/close-register", headers=teacher)
     assert res.status_code == 200
     assert res.json()["register_closed_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Una lista cerrada no se toca sin reabrirla — ni marca a marca ni en lote.
+# El móvil del profesor puede guardar marcas sin conexión y enviarlas tarde.
+# ---------------------------------------------------------------------------
+def test_a_closed_register_refuses_late_marks(client, world, session_a):
+    teacher = auth(client, "teacher_a@test.com")
+    _mark(client, teacher, enrollment_id=world["enrollment"].id, session_id=session_a.id)
+    client.post(f"/sessions/{session_a.id}/close-register", headers=teacher)
+
+    late = client.post(
+        "/attendance",
+        headers=teacher,
+        json={
+            "enrollment_id": world["enrollment"].id,
+            "session_id": session_a.id,
+            "status": "absent",
+        },
+    )
+    assert late.status_code == 409
+    assert late.json()["detail"]["reason"] == "register_closed"
+
+    bulk = client.post(
+        f"/attendance/sessions/{session_a.id}/bulk",
+        headers=teacher,
+        json={"items": [{"enrollment_id": world["enrollment"].id, "status": "absent"}]},
+    )
+    assert bulk.status_code == 409
+
+    client.post(f"/sessions/{session_a.id}/reopen-register", headers=teacher)
+    fixed = client.post(
+        f"/attendance/sessions/{session_a.id}/bulk",
+        headers=teacher,
+        json={"items": [{"enrollment_id": world["enrollment"].id, "status": "absent"}]},
+    )
+    assert fixed.status_code == 200, fixed.text
+
+
+def test_bulk_marking_stays_inside_the_academy(client, db, world, session_a):
+    from app.models import Tenant, UserRole
+    from tests.conftest import make_user
+
+    mine, other = Tenant(name="Mía", slug="mia-bulk"), Tenant(name="Otra", slug="otra-bulk")
+    db.add_all([mine, other])
+    db.flush()
+    world["course_a"].tenant_id = mine.id
+    foreign_admin = make_user(db, "admin@otrabulk.com", UserRole.admin)
+    foreign_admin.tenant_id = other.id
+    db.flush()
+
+    res = client.post(
+        f"/attendance/sessions/{session_a.id}/bulk",
+        headers=auth(client, "admin@otrabulk.com"),
+        json={"items": [{"enrollment_id": world["enrollment"].id, "status": "present"}]},
+    )
+    assert res.status_code == 404

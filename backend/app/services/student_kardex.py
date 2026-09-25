@@ -83,7 +83,7 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
 
         if final_score is not None:
             scores.append(final_score)
-        elif en.status == EnrollmentStatus.certified:
+        elif en.status == EnrollmentStatus.graduated:
             total_passed += 1
 
         bal = getattr(en, "balance", None) or Decimal("0.00")
@@ -156,7 +156,7 @@ def get_student_kardex(db: Session, student_id: int) -> StudentKardexResponse:
     elif any(en.status == EnrollmentStatus.inactive for en in enrollments):
         person_status = "paused"
         person_status_label = "En Pausa"
-    elif any(en.status == EnrollmentStatus.certified for en in enrollments):
+    elif any(en.status == EnrollmentStatus.graduated for en in enrollments):
         person_status = "graduated"
         person_status_label = "Egresado"
     else:

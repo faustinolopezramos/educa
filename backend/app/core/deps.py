@@ -125,7 +125,7 @@ def enrollment_in_scope_or_404(
     An enrollment carries no `tenant_id`; it belongs to whichever academy owns
     its course, so that is the hop this makes. Three routers had grown their own
     copy of exactly this check and three more had none at all — grades,
-    attendance and certificates among them — which is what made "did we scope
+    attendance and final grades among them — which is what made "did we scope
     this one?" a question you had to answer per endpoint. There is now one
     answer to reach for.
     """
@@ -257,7 +257,7 @@ def student_is_solvent(db: Session, student_id: int) -> bool:
 
     "Solvente" here mirrors the dashboard's payment nudge: an `overdue` cuota is
     the delinquent state, while `pending` is simply not-yet-due. Withdrawn or
-    certified enrollments don't count — they no longer carry a live obligation.
+    graduated enrollments don't count — they no longer carry a live obligation.
     A *paused* one still does: pausing a course does not forgive its debt.
     """
     delinquent = db.scalar(
@@ -273,7 +273,7 @@ def student_is_solvent(db: Session, student_id: int) -> bool:
 def student_course_ids(db: Session, student_id: int) -> list[int]:
     """Distinct course IDs whose classroom the student may reach.
 
-    Paused, certified and withdrawn enrollments are excluded: they no longer
+    Paused, graduated and withdrawn enrollments are excluded: they no longer
     grant access to a live classroom.
     """
     return list(

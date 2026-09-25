@@ -10,6 +10,7 @@ from app.core.deps import (
     apply_tenant,
     enrollment_in_scope_or_404,
     get_current_user,
+    in_tenant,
     require_staff_permission,
     teacher_course_ids,
     teacher_teaches_course,
@@ -110,7 +111,26 @@ def _session_for_enrollment(
             status.HTTP_409_CONFLICT,
             "La clase fue cancelada; no se puede pasar lista sobre ella",
         )
+    _ensure_register_open(session)
     return session
+
+
+def _ensure_register_open(session: ClassSession) -> None:
+    """409 si la lista ya se cerró.
+
+    Cerrar la lista es afirmar "esto es lo que pasó en clase"; corregirla exige
+    reabrirla antes, a propósito. Hasta ahora sólo lo impedía la pantalla, y una
+    marca que el móvil del profesor guardó sin conexión podía llegar después de
+    que el titular cerrara la lista desde otro sitio y reescribirla sin aviso.
+    """
+    if session.register_closed_at is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "reason": "register_closed",
+                "message": "La lista de esta clase ya está cerrada; reábrela para corregirla",
+            },
+        )
 
 
 def _ensure_enrollment_is_live(enrollment: Enrollment) -> None:
@@ -230,14 +250,19 @@ def bulk_attendance(
     session = db.get(ClassSession, session_id)
     if session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    session_course_id = db.scalar(
+        select(Schedule.course_id).where(Schedule.id == session.schedule_id)
+    )
+    # El marcado individual acota por academia (`enrollment_in_scope_or_404`);
+    # éste no lo hacía, y un admin de otra academia podía pasar lista aquí.
+    if not in_tenant(current_user, db.get(Course, session_course_id)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     if session.status == SessionStatus.cancelled:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "La clase fue cancelada; no se puede pasar lista sobre ella",
         )
-    session_course_id = db.scalar(
-        select(Schedule.course_id).where(Schedule.id == session.schedule_id)
-    )
+    _ensure_register_open(session)
     if current_user.role == UserRole.teacher and not teacher_teaches_course(
         db, current_user.id, session_course_id
     ):

@@ -164,8 +164,8 @@ def test_the_lifecycle_walks_forward_through_the_five_stakeholder_values(
     admin = auth(client, "admin@test.com")
     enrollment_id = world["enrollment"].id
 
-    # active → inactive → active → certified is the long way round, and legal.
-    for value in ("inactive", "active", "certified"):
+    # active → inactive → active → graduated is the long way round, and legal.
+    for value in ("inactive", "active", "graduated"):
         res = client.patch(
             f"/enrollments/{enrollment_id}", headers=admin, json={"status": value}
         )
@@ -211,7 +211,35 @@ def test_an_enrollment_cannot_be_born_in_a_terminal_state(client, world):
         json={
             "student_id": world["outsider"].id,
             "course_id": world["course_b"].id,
-            "status": "certified",
+            "status": "graduated",
         },
     )
     assert res.status_code == 400, res.text
+
+
+# ---------------------------------------------------------------------------
+# Lo que un profesor ve de una matrícula es lo que necesita para dar la clase:
+# nunca la cuota, el saldo ni si el alumno está al día.
+# ---------------------------------------------------------------------------
+_FINANCE_FIELDS = {"payment_status", "amount", "balance"}
+
+
+def test_teachers_never_see_what_a_student_owes(client, world, db):
+    from app.models import PaymentStatus
+
+    world["enrollment"].payment_status = PaymentStatus.overdue
+    db.flush()
+
+    teacher = auth(client, "teacher_a@test.com")
+    rows = client.get("/enrollments", headers=teacher).json()
+    assert rows, "el profesor debe seguir viendo la matrícula de su alumno"
+    for row in rows:
+        assert _FINANCE_FIELDS.isdisjoint(row), row
+        assert {"student_id", "status", "enrollment_code"} <= row.keys()
+
+    admin = auth(client, "admin@test.com")
+    [row] = [
+        r for r in client.get("/enrollments", headers=admin).json()
+        if r["id"] == world["enrollment"].id
+    ]
+    assert row["payment_status"] == "overdue" and "balance" in row

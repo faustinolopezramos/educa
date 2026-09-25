@@ -38,6 +38,7 @@ from app.schemas.enrollment import (
     BulkEnrollResult,
     EnrollmentCreate,
     EnrollmentRead,
+    EnrollmentTeachingRead,
     EnrollmentUpdate,
 )
 from app.services.audit import record, snapshot
@@ -65,13 +66,13 @@ def _in_scope_or_404(db: Session, actor: User, enrollment_id: int) -> Enrollment
     return enrollment
 
 
-@router.get("", response_model=list[EnrollmentRead])
+@router.get("", response_model=list[EnrollmentRead] | list[EnrollmentTeachingRead])
 def list_enrollments(
     course_id: int | None = None,
     student_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[Enrollment]:
+) -> list[EnrollmentRead] | list[EnrollmentTeachingRead]:
     # An enrollment has no tenant of its own; it belongs to whichever academy
     # owns the course, so the scope comes from that join.
     stmt = apply_tenant(
@@ -91,7 +92,11 @@ def list_enrollments(
             stmt = stmt.where(Enrollment.student_id == student_id)
     if course_id is not None:
         stmt = stmt.where(Enrollment.course_id == course_id)
-    return attach_balances(db, db.scalars(stmt).all())
+    rows = db.scalars(stmt).all()
+    if current_user.role == UserRole.teacher:
+        # Sin cuota, saldo ni estado de pago: al profesor no le toca saberlo.
+        return [EnrollmentTeachingRead.model_validate(e) for e in rows]
+    return [EnrollmentRead.model_validate(e) for e in attach_balances(db, rows)]
 
 
 @router.post("", response_model=EnrollmentRead, status_code=status.HTTP_201_CREATED)
@@ -110,7 +115,7 @@ def create_enrollment(
 
 
     # A matrícula is born either "Inscrito" or "Activo". Accepting any status the
-    # caller sent let one be created already certified or withdrawn — states that
+    # caller sent let one be created already graduated or withdrawn — states that
     # describe how a course *ended*, applied to one that never began.
     if payload.status not in ENROLLMENT_OPENING_STATES:
         raise HTTPException(
@@ -298,8 +303,8 @@ def update_enrollment(
 
     # The lifecycle is a path, not a set of interchangeable labels. Without this
     # a PATCH could walk a matrícula straight from "Desistió" back to "Activo",
-    # or un-certify a student whose certificate had already been issued against
-    # that very state.
+    # or un-graduate a student whose course had already been closed on that very
+    # state.
     if payload.status is not None and not enrollment_transition_allowed(
         enrollment.status, payload.status
     ):
@@ -383,7 +388,7 @@ def delete_enrollment(
     enrollment = _in_scope_or_404(db, current_user, enrollment_id)
 
     # Una matrícula con expediente detrás no se borra: el `cascade` se llevaría
-    # por delante las notas, la asistencia y el certificado del alumno en ese
+    # por delante las notas y la asistencia del alumno en ese
     # curso, y la fila de auditoría sólo guardaría la matrícula — no lo que
     # desapareció con ella. Para eso está «Desistió», que es la baja lógica que
     # el resto del sistema usa por este mismo motivo.

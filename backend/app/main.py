@@ -25,6 +25,7 @@ from app.routers import (
     meetings,
     notifications,
     payments,
+    push,
     reports,
     rooms,
     schedules,
@@ -33,7 +34,7 @@ from app.routers import (
     tenants,
     users,
 )
-from app.services.delivery import start_dispatch_loop
+from app.services.background import start_background_jobs
 from app.webhooks import router as webhooks
 
 # ---- Rate limiter for login & refresh (In-memory or Redis) ----
@@ -135,9 +136,9 @@ _docs_enabled = not settings.is_production
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Los avisos por correo y WhatsApp se envían desde aquí, en segundo plano;
-    # sin SMTP ni WhatsApp configurados no arranca nada.
-    loop = start_dispatch_loop(SessionLocal)
+    # Tareas de fondo: enviar los avisos por correo/WhatsApp y el barrido
+    # semanal de alumnos en riesgo (app/services/background.py).
+    loop = start_background_jobs(SessionLocal)
     try:
         yield
     finally:
@@ -200,6 +201,7 @@ app.include_router(makeups.router)
 app.include_router(meetings.router)
 app.include_router(reports.router)
 app.include_router(notifications.router)
+app.include_router(push.router)
 app.include_router(payments.router)
 app.include_router(audit.router)
 app.include_router(dashboard.router)

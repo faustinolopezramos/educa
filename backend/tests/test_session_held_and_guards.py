@@ -6,7 +6,7 @@ Three gaps closed here:
   `realizadas = total − canceladas` and a class three days away already counted
   as taught.
 * Attendance and grades were accepted against cancelled sessions and against
-  matrículas that had been withdrawn or certified, both of which quietly move
+  matrículas that had been withdrawn or graduated, both of which quietly move
   the attendance rate and the final average the at-risk sweep reads.
 * Rooms, holidays and teacher availability changed with no trace at all.
 """
@@ -194,7 +194,7 @@ def test_a_cancelled_class_cannot_be_graded(client, world, session_a):
     assert res.status_code == 409, res.text
 
 
-@pytest.mark.parametrize("closed", ["withdrawn", "certified"])
+@pytest.mark.parametrize("closed", ["withdrawn", "graduated"])
 def test_a_closed_matricula_accepts_neither_marks_nor_grades(
     client, db, world, session_a, closed
 ):

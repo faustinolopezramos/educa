@@ -4,6 +4,8 @@ Usage:
     python -m app.cli refresh-payments [--tenant-slug SLUG] [--on YYYY-MM-DD]
     python -m app.cli expire-makeups [--tenant-slug SLUG] [--on YYYY-MM-DD]
     python -m app.cli dispatch-notifications [--limit N]
+    python -m app.cli at-risk-sweep [--force]
+    python -m app.cli generate-vapid-keys
 """
 
 from __future__ import annotations
@@ -174,6 +176,39 @@ def cmd_dispatch_notifications(
         db.close()
 
 
+def cmd_at_risk_sweep(
+    args: argparse.Namespace, session_factory: Callable[[], Session] = SessionLocal
+) -> int:
+    """Lanza el barrido semanal de alumnos en riesgo de las academias a las que les toca.
+
+    La API lo lanza sola; esto sirve para adelantarlo (`--force` no espera al día
+    y la hora configurados). En ningún caso se repite en la misma semana.
+    """
+    from app.services.risk_sweep import run_due_sweeps
+
+    db = session_factory()
+    try:
+        done = run_due_sweeps(db, force=args.force)
+        print(f"Barridos realizados: {done} academia(s).")
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_generate_vapid_keys(args: argparse.Namespace) -> int:
+    """Imprime un par de claves VAPID nuevo para los avisos push.
+
+    Se generan una sola vez por instalación. Cambiarlas después deja inservibles
+    todas las suscripciones: cada dispositivo tendría que volver a activarlas.
+    """
+    from app.services.push import generate_vapid_keys
+
+    public, private = generate_vapid_keys()
+    print(f"VAPID_PUBLIC_KEY={public}")
+    print(f"VAPID_PRIVATE_KEY={private}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Herramientas de línea de comandos de Educa")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -222,6 +257,20 @@ def main() -> None:
     )
     parser_dispatch.add_argument("--limit", type=int, default=500)
     parser_dispatch.set_defaults(func=cmd_dispatch_notifications)
+
+    parser_sweep = subparsers.add_parser(
+        "at-risk-sweep",
+        help="Avisar de los alumnos en riesgo (una vez por semana y academia)",
+    )
+    parser_sweep.add_argument(
+        "--force", action="store_true", help="No esperar al día y hora configurados"
+    )
+    parser_sweep.set_defaults(func=cmd_at_risk_sweep)
+
+    parser_vapid = subparsers.add_parser(
+        "generate-vapid-keys", help="Generar las claves VAPID de los avisos push (una vez)"
+    )
+    parser_vapid.set_defaults(func=cmd_generate_vapid_keys)
 
     args = parser.parse_args()
     exit_code = args.func(args)

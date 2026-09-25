@@ -119,7 +119,7 @@ def _visible_enrollment(db: Session, user: User, enrollment_id: int) -> Enrollme
         if not student_is_solvent(db, user.id):
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                "Acceso restringido: Tienes pagos pendientes. Por favor regulariza tu saldo para consultar notas y certificados.",
+                "Acceso restringido: Tienes pagos pendientes. Por favor regulariza tu saldo para consultar tus notas.",
             )
     if user.role == UserRole.teacher and not teacher_teaches_course(
         db, user.id, enrollment.course_id

@@ -70,9 +70,9 @@ def _validate_session(db: Session, session_id: int, enrollment: Enrollment) -> N
 def _ensure_enrollment_is_live(enrollment: Enrollment) -> None:
     """Refuse grades against a matrícula that has already been closed out.
 
-    A certificate is issued against the final grade, so regrading a certified
-    enrollment silently disagrees with the certificate already in the student's
-    hands; a withdrawn one has no course left to be graded on.
+    A graduated enrollment was closed on its final grade, so regrading it
+    silently disagrees with the verdict the student was already given; a
+    withdrawn one has no course left to be graded on.
     """
     if enrollment.status not in ENROLLMENT_OCCUPIES_SEAT:
         raise HTTPException(
@@ -114,7 +114,7 @@ def list_grades(
         if not student_is_solvent(db, current_user.id):
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                "Acceso restringido: Tienes pagos pendientes. Por favor regulariza tu saldo para consultar notas y certificados.",
+                "Acceso restringido: Tienes pagos pendientes. Por favor regulariza tu saldo para consultar tus notas.",
             )
         # `Enrollment` is already joined for the tenant scope above.
         stmt = stmt.where(Enrollment.student_id == current_user.id)

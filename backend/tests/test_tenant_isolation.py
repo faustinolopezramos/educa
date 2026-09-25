@@ -280,7 +280,7 @@ def test_reports_do_not_span_academies(client, academies):
 
 
 # ---------------------------------------------------------------------------
-# The academic record: grades, attendance, assignments, certificates.
+# The academic record: grades, attendance, assignments.
 #
 # The scoping above was added for users, catalog, timetable, enrolments, finance
 # and audit. Everything below was built afterwards and never scoped at all, so

@@ -21,8 +21,8 @@ def test_kardex_response_schema():
         course_id=10,
         course_title="Inglés A1",
         level_name="A1 - Principiante",
-        status="certified",
-        status_label="Certificado",
+        status="graduated",
+        status_label="Graduado",
         enrollment_code="2026-00001",
         final_score=8.5,
         passed=True,
@@ -45,7 +45,7 @@ def test_kardex_response_schema():
 
 # ---------------- Who may open an expediente ----------------
 #
-# The kardex gathers a student's whole record — every course, every certificate
+# The kardex gathers a student's whole record — every course, every final grade
 # and the **outstanding balance** — so it answers to the same key as the rest of
 # the directory, `manage_students`. It shipped behind mere authentication, which
 # handed it to any teacher (over students they never taught) and to an assistant

@@ -2,7 +2,7 @@
 
 Portrait A4 — student, course, enrollment code, amount, and a verification
 code in the footer. No fiscal integration (DTE/factura electrónica); this is
-an internal comprobante, mirroring `certificate_pdf.py`'s shape.
+an internal comprobante.
 """
 
 from __future__ import annotations

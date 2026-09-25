@@ -28,15 +28,25 @@ class EnrollmentUpdate(PatchModel):
     amount: Money | None = Field(default=None, ge=0)
 
 
-class EnrollmentRead(BaseModel):
+class EnrollmentTeachingRead(BaseModel):
+    """What a teacher sees of a matrícula: only what teaching the class needs.
+
+    No fee, no balance, no payment status. Whether a student owes money is
+    between the student and the academy; a teacher who knows it treats that
+    student differently, and nothing in a lesson depends on it.
+    """
+
     model_config = ConfigDict(from_attributes=True)
     id: int
     student_id: int
     course_id: int
     enrollment_code: str
     status: EnrollmentStatus
-    payment_status: PaymentStatus
     attendance_blocked: bool
+
+
+class EnrollmentRead(EnrollmentTeachingRead):
+    payment_status: PaymentStatus
     amount: Money
     # `charged − paid` from the ledger, so the list can show what is owed
     # instead of only whether it is late. Populated by `attach_balances`;

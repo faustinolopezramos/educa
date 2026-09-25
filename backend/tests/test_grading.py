@@ -1,4 +1,4 @@
-"""Final grade (weighted) and level certificates."""
+"""Final grade (weighted) and the pass/fail verdict."""
 
 import pytest
 
