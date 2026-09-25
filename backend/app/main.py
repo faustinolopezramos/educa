@@ -1,4 +1,5 @@
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -7,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
+from app.core.database import SessionLocal
 from app.routers import (
     assignments,
     attendance,
@@ -31,6 +33,7 @@ from app.routers import (
     tenants,
     users,
 )
+from app.services.delivery import start_dispatch_loop
 from app.webhooks import router as webhooks
 
 # ---- Rate limiter for login & refresh (In-memory or Redis) ----
@@ -130,7 +133,20 @@ async def cache_middleware(request: Request, call_next):
 # cualquiera que pase; en desarrollo sigue estando, que es donde hace falta.
 _docs_enabled = not settings.is_production
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Los avisos por correo y WhatsApp se envían desde aquí, en segundo plano;
+    # sin SMTP ni WhatsApp configurados no arranca nada.
+    loop = start_dispatch_loop(SessionLocal)
+    try:
+        yield
+    finally:
+        if loop is not None:
+            loop.stop()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Educa — Control Académico y Aula Virtual",
     version="0.1.0",
     docs_url="/docs" if _docs_enabled else None,

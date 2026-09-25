@@ -3,6 +3,7 @@
 Usage:
     python -m app.cli refresh-payments [--tenant-slug SLUG] [--on YYYY-MM-DD]
     python -m app.cli expire-makeups [--tenant-slug SLUG] [--on YYYY-MM-DD]
+    python -m app.cli dispatch-notifications [--limit N]
 """
 
 from __future__ import annotations
@@ -131,6 +132,48 @@ def cmd_expire_makeups(
         db.close()
 
 
+def cmd_dispatch_notifications(
+    args: argparse.Namespace, session_factory: Callable[[], Session] = SessionLocal
+) -> int:
+    """Envía ya los avisos por correo/WhatsApp pendientes y resume la cola.
+
+    La API los envía sola cada pocos segundos; esto sirve para vaciar la cola a
+    mano y, sobre todo, para ver qué está fallando (plantilla sin aprobar,
+    credenciales SMTP malas) sin buscar en los logs.
+    """
+    from sqlalchemy import func
+
+    from app.models import NotificationDelivery
+    from app.services.delivery import dispatch_pending
+
+    db = session_factory()
+    try:
+        results = dispatch_pending(db, limit=args.limit)
+        print(f"Procesados: {dict(results) or 'nada pendiente'}")
+        rows = db.execute(
+            select(
+                NotificationDelivery.channel,
+                NotificationDelivery.status,
+                func.count(),
+            ).group_by(NotificationDelivery.channel, NotificationDelivery.status)
+        ).all()
+        for channel, st, n in sorted(rows):
+            print(f"  {channel:<9} {st:<8} {n}")
+        errors = db.execute(
+            select(NotificationDelivery.channel, NotificationDelivery.last_error)
+            .where(NotificationDelivery.last_error.is_not(None))
+            .order_by(NotificationDelivery.id.desc())
+            .limit(5)
+        ).all()
+        if errors:
+            print("Últimos errores:")
+            for channel, err in errors:
+                print(f"  [{channel}] {err}")
+        return 0
+    finally:
+        db.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Herramientas de línea de comandos de Educa")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -172,6 +215,13 @@ def main() -> None:
         help="Fecha de referencia en formato YYYY-MM-DD (opcional, por defecto hoy)",
     )
     parser_expire.set_defaults(func=cmd_expire_makeups)
+
+    parser_dispatch = subparsers.add_parser(
+        "dispatch-notifications",
+        help="Enviar los avisos por correo/WhatsApp pendientes y mostrar el estado de la cola",
+    )
+    parser_dispatch.add_argument("--limit", type=int, default=500)
+    parser_dispatch.set_defaults(func=cmd_dispatch_notifications)
 
     args = parser.parse_args()
     exit_code = args.func(args)

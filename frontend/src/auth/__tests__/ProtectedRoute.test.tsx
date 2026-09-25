@@ -28,6 +28,8 @@ describe("ProtectedRoute", () => {
         timezone: "UTC",
         max_weekly_hours: null,
         phone: null,
+        notify_email: true,
+        notify_whatsapp: false,
         address: null,
         nationality_id: null,
       is_active: true,

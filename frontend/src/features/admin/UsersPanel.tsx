@@ -682,6 +682,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
     max_weekly_hours: user.max_weekly_hours ?? ("" as number | ""),
     password: "",
     phone: user.phone ?? "",
+    notify_whatsapp: user.notify_whatsapp,
     address: user.address ?? "",
     nationality_id: user.nationality_id ?? 0,
     permissions: user.permissions || [],
@@ -725,6 +726,7 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
       timezone: form.timezone,
       max_weekly_hours: form.max_weekly_hours === "" ? null : Number(form.max_weekly_hours),
       phone: form.phone.trim() || null,
+      notify_whatsapp: form.notify_whatsapp,
       address: form.address.trim() || null,
       nationality_id: form.nationality_id || null,
       permissions: form.role === "assistant" ? form.permissions : [],
@@ -906,6 +908,20 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         <Field label="Teléfono">
           <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </Field>
+        <label className="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            checked={form.notify_whatsapp}
+            onChange={(e) => setForm({ ...form, notify_whatsapp: e.target.checked })}
+          />
+          <span>
+            Aceptó recibir avisos por WhatsApp
+            <span className="block text-xs text-slate-500">
+              Márcalo sólo si la persona lo autorizó (por ejemplo, en la hoja de matrícula).
+            </span>
+          </span>
+        </label>
         <Field label="Dirección">
           <Input
             value={form.address}

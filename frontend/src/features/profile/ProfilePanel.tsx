@@ -62,6 +62,10 @@ export function ProfilePanel() {
       </div>
 
       <div className="max-w-2xl">
+        <NotificationChannelsForm user={user} />
+      </div>
+
+      <div className="max-w-2xl">
         <PasswordForm />
       </div>
 
@@ -181,6 +185,78 @@ function ProfileDetailsForm({ user }: { user: User }) {
         <Button disabled={!dirty || update.isPending} onClick={save}>
           Guardar cambios
         </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Por dónde llegan los avisos (clase cancelada, reprogramada…) además de la
+ * campana. Cada casilla se guarda al marcarla: son dos interruptores, no un
+ * formulario que haya que acordarse de enviar.
+ */
+function NotificationChannelsForm({ user }: { user: User }) {
+  const { updateUser } = useAuth();
+  const update = useUpdateMe() ?? {};
+
+  function toggle(field: "notify_email" | "notify_whatsapp", value: boolean) {
+    update.mutate(
+      { [field]: value },
+      {
+        onSuccess: (fresh) => {
+          updateUser(fresh);
+          notify("Preferencia guardada", "success");
+        },
+        onError: onMutationError("No se pudo guardar la preferencia"),
+      },
+    );
+  }
+
+  const channels = [
+    {
+      field: "notify_email" as const,
+      label: "Correo electrónico",
+      detail: user.email,
+      disabledReason: null,
+    },
+    {
+      field: "notify_whatsapp" as const,
+      label: "WhatsApp",
+      detail: user.phone || "Sin teléfono",
+      disabledReason: user.phone ? null : "Agrega tu teléfono arriba para activarlo",
+    },
+  ];
+
+  return (
+    <Card>
+      <SectionHeading>Avisos</SectionHeading>
+      <p className="text-sm text-slate-500 mb-3">
+        Si se cancela o se mueve una de tus clases, te avisamos aquí en la campana y,
+        además, por los canales que marques.
+      </p>
+      <div className="space-y-2">
+        {channels.map((c) => (
+          <label
+            key={c.field}
+            className={`flex items-start gap-2.5 rounded-lg border border-slate-200 p-3 text-sm ${
+              c.disabledReason ? "opacity-60" : "cursor-pointer hover:bg-slate-50"
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              checked={user[c.field]}
+              disabled={!!c.disabledReason || update.isPending}
+              onChange={(e) => toggle(c.field, e.target.checked)}
+            />
+            <span>
+              <span className="font-medium text-slate-800">{c.label}</span>
+              <span className="block text-xs text-slate-500">
+                {c.disabledReason ?? c.detail}
+              </span>
+            </span>
+          </label>
+        ))}
       </div>
     </Card>
   );

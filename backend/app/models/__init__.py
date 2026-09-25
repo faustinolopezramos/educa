@@ -58,7 +58,12 @@ from app.models.meeting_provider import MeetingProvider
 from app.models.virtual_meeting import VirtualMeeting
 from app.models.meeting_log import MeetingLog
 from app.models.audit_log import AuditLog
-from app.models.notification import Notification
+from app.models.notification import (
+    DeliveryChannel,
+    DeliveryStatus,
+    Notification,
+    NotificationDelivery,
+)
 from app.models.payment import Payment
 from app.models.invoice import Invoice
 from app.models.tenant import Tenant
@@ -113,6 +118,9 @@ __all__ = [
     "Modality",
     "Nationality",
     "Notification",
+    "NotificationDelivery",
+    "DeliveryChannel",
+    "DeliveryStatus",
     "Payment",
     "PaymentKind",
     "PaymentStatus",

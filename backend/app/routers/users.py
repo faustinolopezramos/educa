@@ -235,6 +235,8 @@ def create_user(
         timezone=payload.timezone,
         max_weekly_hours=payload.max_weekly_hours,
         phone=payload.phone,
+        notify_email=payload.notify_email,
+        notify_whatsapp=payload.notify_whatsapp,
         address=payload.address,
         nationality_id=payload.nationality_id,
         permissions=[p.value for p in payload.permissions or []],

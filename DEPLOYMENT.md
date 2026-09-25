@@ -140,6 +140,66 @@ flyctl ssh console -a educa-backend -C "python -m app.cli expire-makeups"
 
 ---
 
+## 4.2 Avisos por correo y WhatsApp
+
+Cada notificación (clase cancelada, clase reprogramada, alumnos en riesgo) se
+guarda en la campana y, además, se pone en una cola de envío por cada canal
+configurado. La API vacía esa cola cada 20 s desde su propio proceso: no hace
+falta un worker aparte. Un envío que falla se reintenta 4 veces más (hasta ~1 h);
+lo que lleva más de 12 h en cola se descarta, porque avisar de una clase
+cancelada al día siguiente no sirve de nada.
+
+Estado de la cola y últimos errores:
+
+```bash
+flyctl ssh console -a educa-backend -C "python -m app.cli dispatch-notifications"
+```
+
+### Correo
+
+Cualquier proveedor SMTP. El remitente visible es el nombre de la academia.
+
+```bash
+flyctl secrets set SMTP_HOST=smtp.resend.com SMTP_PORT=465 \
+  SMTP_USER=resend SMTP_PASSWORD="re_..." \
+  EMAIL_FROM=avisos@tu-dominio.com APP_URL=https://tu-app.vercel.app
+```
+
+Configura SPF y DKIM del dominio de `EMAIL_FROM` en el proveedor; sin eso los
+avisos acaban en spam.
+
+### WhatsApp (Cloud API de Meta)
+
+1. En Meta Business Manager, crea una app de tipo *Business* con el producto
+   WhatsApp y registra el número de la academia.
+2. Crea un **usuario del sistema** con permiso `whatsapp_business_messaging` y
+   genera un token permanente (el temporal de la consola caduca en 24 h).
+3. Registra estas plantillas, categoría **Utilidad**, idioma **Spanish (es)**.
+   El nombre y el número de variables tienen que coincidir exactamente:
+
+   **`educa_clase_cancelada`**
+   > Hola {{1}}, tu clase de {{2}} del {{3}} fue cancelada. Revisa la aplicación de la academia para más detalles.
+
+   **`educa_clase_reprogramada`**
+   > Hola {{1}}, tu clase de {{2}} del {{3}} se movió al {{4}}. Revisa la aplicación de la academia para más detalles.
+
+   ({{1}} nombre, {{2}} curso, {{3}} "lunes 15 de septiembre a las 18:00",
+   {{4}} "miércoles 17 de septiembre".)
+4. Cuando Meta las apruebe:
+
+```bash
+flyctl secrets set WHATSAPP_TOKEN="EAAG..." WHATSAPP_PHONE_NUMBER_ID="1234567890"
+```
+
+**Consentimiento.** Meta exige que la persona haya aceptado recibir mensajes.
+Por eso WhatsApp viene apagado para todos: lo activa cada alumno en su perfil, o
+administración al editar al usuario (casilla "Aceptó recibir avisos por
+WhatsApp") si el consentimiento se recogió en la matrícula. Los teléfonos sin
+código de país se envían con `WHATSAPP_DEFAULT_COUNTRY_CODE`; un número
+extranjero hay que guardarlo con su `+`.
+
+---
+
 ## 5. Seed de Datos (si BD vacía)
 
 ```bash

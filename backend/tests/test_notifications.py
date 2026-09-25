@@ -1,7 +1,10 @@
 """In-app notifications and the events that raise them."""
 
+from datetime import date
+
 import pytest
 
+from app.services.notifications import fecha_larga
 from tests.conftest import auth
 
 
@@ -26,7 +29,9 @@ def test_cancelling_a_class_notifies_its_active_students(client, world, session_
     notes = client.get("/notifications", headers=student).json()
     assert len(notes) == 1
     assert notes[0]["kind"] == "session_cancelled"
-    assert session_a["date"] in notes[0]["body"]
+    # La fecha como se lee en un mensaje, no como clave ISO: el mismo texto
+    # sale ahora por correo.
+    assert fecha_larga(date.fromisoformat(session_a["date"])) in notes[0]["body"]
 
 
 def test_an_unrelated_student_is_not_notified(client, world, session_a):
@@ -51,7 +56,7 @@ def test_rescheduling_tells_students_the_new_date(client, world, session_a):
 
     student = auth(client, "student@test.com")
     notes = client.get("/notifications", headers=student).json()
-    assert new_date in notes[0]["body"]
+    assert fecha_larga(date.fromisoformat(new_date)) in notes[0]["body"]
 
 
 # ---------------- Read state ----------------

@@ -62,6 +62,8 @@ export interface ProfilePatch {
   password?: string;
   current_password?: string;
   phone?: string | null;
+  notify_email?: boolean;
+  notify_whatsapp?: boolean;
   address?: string | null;
   cui_passport?: string | null;
   nationality_id?: number | null;

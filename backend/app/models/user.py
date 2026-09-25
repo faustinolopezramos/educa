@@ -60,6 +60,16 @@ class User(Base):
     # User), so a student's and a teacher's phone/address/nationality live in
     # exactly one place rather than a per-role table.
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Por dónde, además de la campana, le llegan los avisos. El correo viene
+    # activado; WhatsApp no, porque Meta exige que la persona lo haya aceptado
+    # antes del primer mensaje — lo marca ella en su perfil, o la academia al
+    # recoger ese consentimiento en la matrícula.
+    notify_email: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=sa_true(), nullable=False
+    )
+    notify_whatsapp: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cui_passport: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True

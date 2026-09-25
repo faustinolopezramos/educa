@@ -233,7 +233,7 @@ Elegir "Nocturna" crea automáticamente **dos** horarios (uno por cada día de e
 **Cancelación y reprogramación:**
 - Una sesión puede cancelarse (con motivo opcional); la fila se conserva con estado "cancelada"
 - Puede reprogramarse a otra fecha (crea una sesión de recuperación vinculada a la original)
-- Al cancelar/reprogramar, se genera una **notificación interna del sistema** (campana in-app) a los alumnos con matrícula activa — **no** se envía correo ni SMS
+- Al cancelar/reprogramar, se genera una notificación (campana in-app) a los alumnos con matrícula activa, que sale además por correo y WhatsApp según los canales configurados y las preferencias de cada alumno (`notify_email`, `notify_whatsapp`); ver `app/services/delivery.py`
 - **La reprogramación SÍ valida choques reales**: comprueba disponibilidad del profesor, otros horarios semanales del profesor, disponibilidad del aula, y sesiones concretas ya existentes en esa fecha/hora (protegido además por constraint de exclusión GiST en `ClassSession`)
 - **Tanto cancelar como reprogramar quedan en la auditoría** (`entity=class_session`, actions `cancel` y `reschedule`) con before/after, actor y timestamp
 
@@ -499,7 +499,7 @@ El módulo de proveedores de reunión (Manual/Zoom/Google/Teams, credenciales ci
 ## 13. Notificaciones In-App
 
 - Campana con contador de no leídos
-- Se genera notificación automática (in-app, no email/SMS) al cancelar/reprogramar una clase, solo a alumnos con matrícula activa
+- Se genera notificación automática (in-app, más correo/WhatsApp si están configurados) al cancelar/reprogramar una clase, solo a alumnos con matrícula activa
 - **"Alertas de alumnos en riesgo" son manuales, no automáticas**: un admin o profesor debe disparar la acción bajo demanda. El efecto es notificar **a los profesores** del curso sobre sus alumnos en riesgo — no notifica a los propios alumnos ni genera ninguna acción de seguimiento automática
 
 ---
@@ -667,7 +667,7 @@ Desfases de esquema encontrados al contrastar los modelos contra una base migrad
 19. ~~Aulas, festivos, proveedores de video, tareas y notificaciones siguen sin auditarse.~~ — **PARCIAL**: aulas, festivos y disponibilidad ya se auditan. Siguen sin auditarse **proveedores de video, tareas y notificaciones**.
 
 ### Bajo impacto — matices para no generar expectativas equivocadas
-20. Las notificaciones son solo internas (in-app); no hay correo ni SMS.
+20. ~~Las notificaciones son solo internas (in-app).~~ Resuelto: cola de envío por canal (`notification_deliveries`) escrita en la misma transacción, despachada cada 20 s con reintentos y caducidad a las 12 h.
 21. Verificar un certificado por código requiere sesión iniciada, no es un enlace público.
 22. ~~La asistencia y las calificaciones pueden registrarse sobre matrículas o sesiones ya canceladas, sin bloqueo.~~ — **RESUELTO** (ver 33).
 

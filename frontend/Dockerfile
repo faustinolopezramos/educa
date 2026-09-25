@@ -4,6 +4,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# Los .env.* no entran en la imagen (.dockerignore) y Vite fija la URL de la API
+# al compilar, así que tiene que llegar como argumento de build.
+ARG VITE_API_URL
 RUN npm run build
 
 FROM nginx:alpine

@@ -31,6 +31,10 @@ export interface User {
   max_weekly_hours: number | null;
   hourly_rate?: number | null;
   phone: string | null;
+  /** Avisos por correo además de la campana. Activado por defecto. */
+  notify_email: boolean;
+  /** Avisos por WhatsApp. Requiere consentimiento: apagado por defecto. */
+  notify_whatsapp: boolean;
   address: string | null;
   cui_passport?: string | null;
   nationality_id: number | null;

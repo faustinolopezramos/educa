@@ -105,7 +105,7 @@ def raise_at_risk_alerts(
         )
     created_teacher = notify_teacher_of_at_risk(db, by_course)
     created_director = notify_directors_of_at_risk(
-        db, len(report.at_risk), len(by_course)
+        db, current_user.tenant_id, len(report.at_risk), len(by_course)
     )
     created = created_teacher + created_director
     if created:

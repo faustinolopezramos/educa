@@ -60,6 +60,8 @@ class UserBase(BaseModel):
     timezone: str = "UTC"
     max_weekly_hours: int | None = None
     phone: str | None = None
+    notify_email: bool = True
+    notify_whatsapp: bool = False
     address: str | None = None
     cui_passport: str | None = None
     nationality_id: int | None = None
@@ -88,6 +90,8 @@ class UserUpdate(PatchModel):
         "role",
         "timezone",
         "password",
+        "notify_email",
+        "notify_whatsapp",
     )
     email: EmailStr | None = None
     full_name: str | None = None
@@ -96,6 +100,8 @@ class UserUpdate(PatchModel):
     password: Password | None = None
     max_weekly_hours: int | None = None
     phone: str | None = None
+    notify_email: bool | None = None
+    notify_whatsapp: bool | None = None
     address: str | None = None
     cui_passport: CuiPassport | None = None
     nationality_id: int | None = None
@@ -112,12 +118,20 @@ class UserSelfUpdate(PatchModel):
     really them and not an admin resetting a forgotten one.
     """
 
-    NON_NULLABLE: ClassVar[tuple[str, ...]] = ("full_name", "timezone", "password")
+    NON_NULLABLE: ClassVar[tuple[str, ...]] = (
+        "full_name",
+        "timezone",
+        "password",
+        "notify_email",
+        "notify_whatsapp",
+    )
     full_name: str | None = None
     timezone: str | None = None
     password: Password | None = None
     current_password: str | None = None
     phone: str | None = None
+    notify_email: bool | None = None
+    notify_whatsapp: bool | None = None
     address: str | None = None
     cui_passport: CuiPassport | None = None
     nationality_id: int | None = None

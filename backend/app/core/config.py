@@ -74,6 +74,32 @@ class Settings(BaseSettings):
     # Optional Redis URL for distributed rate limiting in multi-worker production
     redis_url: str | None = None
 
+    # Correo saliente (SMTP). Sin SMTP_HOST el correo no se envía: las
+    # notificaciones se quedan sólo en la campana. Sirve cualquier proveedor que
+    # hable SMTP (Resend, Brevo, SendGrid, Google Workspace…). El puerto 465 usa
+    # SSL directo; cualquier otro, STARTTLS.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    email_from: str = "notificaciones@educa.com"
+
+    # WhatsApp Cloud API (Meta). Los mensajes que inicia la academia sólo pueden
+    # ser plantillas aprobadas por Meta — ver DEPLOYMENT.md para las que usa Educa.
+    whatsapp_token: str = ""
+    whatsapp_phone_number_id: str = ""
+    whatsapp_api_version: str = "v23.0"
+    whatsapp_template_language: str = "es"
+    # Prefijo que se antepone a un teléfono guardado sin código de país.
+    whatsapp_default_country_code: str = "502"
+
+    # Enlace a la aplicación que se añade al pie de los correos. Vacío = sin enlace.
+    app_url: str = ""
+
+    # Cada cuántos segundos el proceso de la API vacía la cola de envíos. 0 lo
+    # desactiva (queda el comando `python -m app.cli dispatch-notifications`).
+    notifications_dispatch_interval_seconds: int = 20
+
     # Seed
     seed_admin_email: str = "admin@educa.com"
     seed_admin_password: str = "admin123"

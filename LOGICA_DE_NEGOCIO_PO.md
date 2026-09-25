@@ -77,7 +77,7 @@ En la pantalla de catálogo, administración ve la oferta agrupada en esas tres 
 
 **Cancelar o mover una clase:**
 - Se puede cancelar una clase puntual (con motivo opcional) o moverla a otra fecha.
-- En ambos casos, los alumnos inscritos reciben un aviso **dentro de la aplicación** (la campana de notificaciones) — no se envía correo ni mensaje de texto.
+- En ambos casos, los alumnos inscritos reciben un aviso en la campana de notificaciones y, si la academia lo tiene configurado, también **por correo** y **por WhatsApp** (ver sección 12).
 
 ---
 
@@ -167,7 +167,13 @@ Administración ve reportes de toda la academia; cada profesor solo de sus curso
 
 ## 12. Notificaciones
 
-Hay una campana de notificaciones dentro de la aplicación. Avisa automáticamente cuando se cancela o reprograma una clase. Además, un profesor o administración puede disparar manualmente un aviso de "alumnos en riesgo" — ese aviso llega a los **profesores** del curso, no directamente a los alumnos ni a un responsable de seguimiento académico, y no ocurre de forma automática ni periódica.
+Hay una campana de notificaciones dentro de la aplicación. Avisa automáticamente cuando se cancela o reprograma una clase.
+
+**Correo y WhatsApp.** Cada aviso de la campana sale también por correo (todos los avisos) y por WhatsApp (por ahora sólo clase cancelada o reprogramada), si la academia configuró esos canales:
+- El **correo** viene activado para todos; cada persona puede apagarlo en su perfil.
+- **WhatsApp** viene apagado: Meta exige que la persona lo haya aceptado. Lo activa el propio alumno en su perfil, o administración al editar su ficha si el consentimiento se recogió en la matrícula. Hace falta un teléfono registrado.
+- Si un envío falla se reintenta durante aproximadamente una hora. Un aviso que no pudo salir en 12 horas se descarta en vez de mandarse tarde.
+- Los mensajes de WhatsApp usan plantillas que Meta tiene que aprobar antes (el texto está en `DEPLOYMENT.md`). Además, un profesor o administración puede disparar manualmente un aviso de "alumnos en riesgo" — ese aviso llega a los **profesores** del curso, no directamente a los alumnos ni a un responsable de seguimiento académico, y no ocurre de forma automática ni periódica.
 
 ---
 
@@ -227,7 +233,7 @@ Estos son comportamientos que **el sistema ya tiene implementados de una forma c
 
 ### Prioridad baja (matices, no necesariamente requieren cambio)
 
-13. **Notificaciones solo dentro de la app.** No se envía correo ni SMS ante cancelaciones o alertas. ¿Es suficiente para esta fase?
+13. ~~Notificaciones solo dentro de la app.~~ **Resuelto**: los avisos salen también por correo y WhatsApp (sección 12). Queda por decidir si los avisos de alumnos en riesgo deben ir también por WhatsApp — hoy sólo van por campana y correo.
 
 14. **Verificación de certificados.** Requiere tener cuenta en el sistema; alguien externo (ej. un empleador) no puede verificar un certificado sin ser usuario. ¿Debería habilitarse una verificación pública?
 
