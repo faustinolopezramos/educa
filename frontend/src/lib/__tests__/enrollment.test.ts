@@ -22,8 +22,8 @@ describe("enrollment lifecycle", () => {
     }
   });
 
-  it("treats certified and withdrawn as the end of the line", () => {
-    expect(isTerminalStatus("certified")).toBe(true);
+  it("treats graduated and withdrawn as the end of the line", () => {
+    expect(isTerminalStatus("graduated")).toBe(true);
     expect(isTerminalStatus("withdrawn")).toBe(true);
     expect(allowedTransitions("withdrawn")).toEqual(["withdrawn"]);
   });
@@ -88,7 +88,7 @@ describe("holdsSeat", () => {
 
   it("leaves out anyone the API would refuse a mark for", () => {
     expect(holdsSeat("inactive")).toBe(false);
-    expect(holdsSeat("certified")).toBe(false);
+    expect(holdsSeat("graduated")).toBe(false);
     expect(holdsSeat("withdrawn")).toBe(false);
   });
 });
@@ -112,9 +112,9 @@ describe("isDelinquent", () => {
   });
 
   it("stops counting a matrícula that was already closed out", () => {
-    // Whatever a certified or withdrawn course left owing is collected outside
+    // Whatever a graduated or withdrawn course left owing is collected outside
     // this lifecycle, so it must not keep the student locked out of their notes.
-    expect(isDelinquent({ status: "certified", payment_status: "overdue" })).toBe(false);
+    expect(isDelinquent({ status: "graduated", payment_status: "overdue" })).toBe(false);
     expect(isDelinquent({ status: "withdrawn", payment_status: "overdue" })).toBe(false);
   });
 });

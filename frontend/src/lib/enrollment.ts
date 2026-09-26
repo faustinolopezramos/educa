@@ -4,8 +4,8 @@ import type { EnrollmentStatus } from "./types";
  * Which states each state may move to — the same table the API enforces
  * (`app/models/enums.py: ENROLLMENT_TRANSITIONS`).
  *
- * `certified` and `withdrawn` are terminal: a certificate has been issued
- * against the first, and re-admitting a student who dropped out is a *new*
+ * `graduated` and `withdrawn` are terminal: the first closed the course on a
+ * passing final grade, and re-admitting a student who dropped out is a *new*
  * matrícula with its own code, not a resurrection of the old one.
  *
  * The panel used to offer all five states from every state, so half the options
@@ -14,9 +14,9 @@ import type { EnrollmentStatus } from "./types";
  */
 export const ENROLLMENT_TRANSITIONS: Record<EnrollmentStatus, EnrollmentStatus[]> = {
   enrolled: ["active", "inactive", "withdrawn"],
-  active: ["inactive", "certified", "withdrawn"],
+  active: ["inactive", "graduated", "withdrawn"],
   inactive: ["active", "withdrawn"],
-  certified: [],
+  graduated: [],
   withdrawn: [],
 };
 

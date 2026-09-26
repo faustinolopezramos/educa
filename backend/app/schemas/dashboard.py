@@ -38,6 +38,15 @@ class AcademyKpisRead(BaseModel):
     occupancy_rate: float | None
 
 
+class SetupStepRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    key: str
+    label: str
+    hint: str
+    section: str
+    done: bool
+
+
 class DashboardSummaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     role: str
@@ -47,3 +56,5 @@ class DashboardSummaryRead(BaseModel):
     #: Staff only. `None` for anyone else rather than a block of zeros, which
     #: would read as "an academy with nothing in it".
     kpis: AcademyKpisRead | None = None
+    #: Admin of an academy only: the steps to its first class.
+    setup: list[SetupStepRead] | None = None

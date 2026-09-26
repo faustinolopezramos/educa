@@ -42,10 +42,13 @@ from app.models import (
     ClassSession,
     Course,
     Enrollment,
+    Language,
+    Level,
     LocationProposal,
     PaymentStatus,
     Permission,
     ProposalStatus,
+    RenewalRequest,
     Schedule,
     SessionStatus,
     User,
@@ -99,6 +102,20 @@ class AcademyKpis:
 
 
 @dataclass
+class SetupStep:
+    """One step of getting a brand-new academy to its first class.
+
+    `section` is the `?m=` where the step is done, like an `ActionItem`.
+    """
+
+    key: str
+    label: str
+    hint: str
+    section: str
+    done: bool
+
+
+@dataclass
 class DashboardSummary:
     role: str
     items: list[ActionItem] = field(default_factory=list)
@@ -108,6 +125,9 @@ class DashboardSummary:
     # Staff-only. `None` for anyone else rather than a block of zeros, which
     # would read as "an academy with nothing in it".
     kpis: AcademyKpis | None = None
+    # Admin of an academy only. The steps from an empty academy to its first
+    # enrolled student; the UI shows them until all are done.
+    setup: list[SetupStep] | None = None
 
 
 def _academy_kpis(db: DbSession, user: User, course_ids: list[int]) -> AcademyKpis:
@@ -163,7 +183,7 @@ def build_executive_kpis(db: DbSession, user: User) -> AcademyKpis:
     return _academy_kpis(db, user, course_ids)
 
 
-def _past_unregistered(db: DbSession, course_ids: list[int], since: date) -> int:
+def _past_unregistered(db: DbSession, teacher_id: int) -> int:
     """Classes whose date has passed and whose register was never closed.
 
     Antes preguntaba por `status = scheduled`, que la primera marca de
@@ -172,17 +192,17 @@ def _past_unregistered(db: DbSession, course_ids: list[int], since: date) -> int
     si la lista se cerró, que es lo que alguien afirma a propósito. Las
     canceladas no cuentan: no hay lista que llenar.
     """
-    if not course_ids:
-        return 0
     return (
         db.scalar(
             select(func.count())
             .select_from(ClassSession)
-            .join(Schedule, ClassSession.schedule_id == Schedule.id)
             .where(
-                Schedule.course_id.in_(course_ids),
+                # Quien cierra una lista es el titular de la sesión, no todo
+                # profesor asignado al curso. Contar por curso le decía a un
+                # co-profesor «25 clases sin pasar lista» cuando 21 eran de la
+                # franja de un compañero y no podía cerrar ninguna.
+                ClassSession.teacher_id == teacher_id,
                 ClassSession.date < academy_today(),
-                ClassSession.date >= since,
                 ClassSession.register_closed_at.is_(None),
                 ClassSession.status != SessionStatus.cancelled,
             )
@@ -219,6 +239,33 @@ def _staff_items(db: DbSession, user: User, course_ids: list[int]) -> list[Actio
                     severity="warning",
                     section="pendientes",
                     detail="Un profesor espera que apruebes dónde dará su clase.",
+                )
+            )
+
+    # --- Graduated students asking for a seat in the next level ---
+    if has_user_permission(user, Permission.manage_enrollments):
+        renewals = (
+            db.scalar(
+                select(func.count())
+                .select_from(RenewalRequest)
+                .where(
+                    RenewalRequest.course_id.in_(course_ids or [-1]),
+                    RenewalRequest.status == ProposalStatus.pending,
+                )
+            )
+            or 0
+        )
+        if renewals:
+            items.append(
+                ActionItem(
+                    kind="renewal_requests",
+                    label="solicitud de renovación"
+                    if renewals == 1
+                    else "solicitudes de renovación",
+                    count=renewals,
+                    severity="warning",
+                    section="enrollments",
+                    detail="Alumnos graduados esperan plaza en su siguiente nivel.",
                 )
             )
 
@@ -297,9 +344,9 @@ def _staff_items(db: DbSession, user: User, course_ids: list[int]) -> list[Actio
 
 def _teacher_items(db: DbSession, user: User, course_ids: list[int]) -> list[ActionItem]:
     items: list[ActionItem] = []
-    unregistered = _past_unregistered(
-        db, course_ids, academy_today() - timedelta(days=30)
-    )
+    # Sin ventana de 30 días: la agenda de «Mis clases» enseña todas las listas
+    # abiertas del periodo, y dos cifras distintas para lo mismo no se explican.
+    unregistered = _past_unregistered(db, user.id)
     if unregistered:
         items.append(
             ActionItem(
@@ -426,6 +473,54 @@ def _student_items(
     return items, balance_due
 
 
+def _setup_steps(db: DbSession, user: User, course_ids: list[int]) -> list[SetupStep]:
+    """Where an academy stands on the road to its first class.
+
+    Una academia recién creada abría su inicio y leía «No hay nada pendiente.
+    Todo al día»: cierto y engañoso, porque no había nada de nada. El orden
+    importa —un curso necesita nivel, un nivel necesita área, abrir exige
+    profesor y horario— y no estaba escrito en ningún sitio.
+    """
+    tenant_id = user.tenant_id
+
+    def count(stmt) -> int:
+        return db.scalar(stmt) or 0
+
+    areas = count(select(func.count(Language.id)).where(Language.tenant_id == tenant_id))
+    levels = count(
+        select(func.count(Level.id))
+        .join(Language, Language.id == Level.language_id)
+        .where(Language.tenant_id == tenant_id)
+    )
+    teachers = count(
+        select(func.count(User.id)).where(
+            User.tenant_id == tenant_id, User.role == UserRole.teacher, User.is_active.is_(True)
+        )
+    )
+    students = count(
+        select(func.count(User.id)).where(
+            User.tenant_id == tenant_id, User.role == UserRole.student, User.is_active.is_(True)
+        )
+    )
+    open_courses = count(
+        select(func.count(Course.id)).where(
+            Course.id.in_(course_ids or [-1]), Course.status.in_(COURSE_IS_ACTIVE)
+        )
+    )
+    enrolled = count(
+        select(func.count(Enrollment.id)).where(Enrollment.course_id.in_(course_ids or [-1]))
+    )
+    return [
+        SetupStep("areas", "Crea un área o idioma", "Por ejemplo Inglés o Computación.", "catalog", areas > 0),
+        SetupStep("levels", "Define sus niveles", "A1, A2… o Módulo 1, Módulo 2…", "catalog", levels > 0),
+        SetupStep("teachers", "Da de alta a tus profesores", "Con los cursos que pueden impartir.", "teachers", teachers > 0),
+        SetupStep("courses", "Crea un curso con profesor y horario", "El asistente de cursos te guía.", "courses", len(course_ids) > 0),
+        SetupStep("open", "Abre el curso a matrícula", "Al abrirlo se crean sus clases en el calendario.", "courses", open_courses > 0),
+        SetupStep("students", "Registra a tus alumnos", "Cada uno recibe su acceso.", "students", students > 0),
+        SetupStep("enroll", "Matricula al primer alumno", "Y ya puede ver sus clases.", "enrollments", enrolled > 0),
+    ]
+
+
 def build_summary(db: DbSession, user: User) -> DashboardSummary:
     """The caller's tray of things to act on."""
     if is_admin(user) or user.role == UserRole.assistant:
@@ -434,6 +529,11 @@ def build_summary(db: DbSession, user: User) -> DashboardSummary:
             role=user.role.value,
             items=_staff_items(db, user, course_ids),
             kpis=_academy_kpis(db, user, course_ids),
+            setup=(
+                _setup_steps(db, user, course_ids)
+                if user.role == UserRole.admin and user.tenant_id is not None
+                else None
+            ),
         )
 
     if user.role == UserRole.teacher:

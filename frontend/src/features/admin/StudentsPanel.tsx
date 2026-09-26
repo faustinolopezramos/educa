@@ -51,7 +51,7 @@ function deriveStatus(student: User, enrolments: Enrollment[]): DerivedStatus {
   // happy label that also happens to be true.
   if (current.some((e) => e.payment_status === "overdue")) return "moroso";
   if (current.length > 0) return "activo";
-  if (mine.some((e) => e.status === "certified")) return "egresado";
+  if (mine.some((e) => e.status === "graduated")) return "egresado";
   return "sin_curso";
 }
 

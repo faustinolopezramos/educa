@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.http import commit_or_conflict
 from app.core.deps import (
+    apply_tenant,
     get_current_user,
     in_tenant,
     is_admin,
@@ -160,8 +161,18 @@ def list_proposals(
     db: Session = Depends(get_db),
     current_user: User = Depends(staff_only),
 ) -> list[LocationProposal]:
-    """Admins see every proposal; a teacher sees only their own."""
-    stmt = select(LocationProposal)
+    """Admins see their academy's proposals; a teacher sees only their own.
+
+    Scoped through the schedule's course: a proposal has no tenant of its own,
+    and this list used to return every academy's links and rooms.
+    """
+    stmt = apply_tenant(
+        select(LocationProposal)
+        .join(Schedule, Schedule.id == LocationProposal.schedule_id)
+        .join(Course, Course.id == Schedule.course_id),
+        Course.tenant_id,
+        current_user,
+    )
     if current_user.role == UserRole.teacher:
         stmt = stmt.where(LocationProposal.proposed_by == current_user.id)
     if status_filter is not None:
@@ -169,9 +180,11 @@ def list_proposals(
     return list(db.scalars(stmt.order_by(LocationProposal.id.desc())).all())
 
 
-def _pending_or_404(db: Session, proposal_id: int) -> LocationProposal:
+def _pending_or_404(db: Session, actor: User, proposal_id: int) -> LocationProposal:
+    """A pending proposal of the caller's academy — another academy's is a 404."""
     proposal = db.get(LocationProposal, proposal_id)
-    if proposal is None:
+    schedule = db.get(Schedule, proposal.schedule_id) if proposal else None
+    if schedule is None or not in_tenant(actor, db.get(Course, schedule.course_id)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Proposal not found")
     if proposal.status is not ProposalStatus.pending:
         raise HTTPException(status.HTTP_409_CONFLICT, "La propuesta ya fue revisada")
@@ -187,7 +200,7 @@ def approve_proposal(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only),
 ) -> LocationProposal:
-    proposal = _pending_or_404(db, proposal_id)
+    proposal = _pending_or_404(db, current_user, proposal_id)
     schedule = db.get(Schedule, proposal.schedule_id)
     if schedule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Schedule not found")
@@ -224,7 +237,7 @@ def reject_proposal(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only),
 ) -> LocationProposal:
-    proposal = _pending_or_404(db, proposal_id)
+    proposal = _pending_or_404(db, current_user, proposal_id)
     before = snapshot(proposal)
     proposal.status = ProposalStatus.rejected
     proposal.reviewed_by = current_user.id

@@ -146,7 +146,7 @@ export function StudentKardexModal({
                         <div className="text-2xs text-slate-400">{item.level_name}</div>
                       </td>
                       <td className="p-3">
-                        <Badge color={item.status === "certified" ? "green" : item.status === "active" ? "sky" : "slate"}>
+                        <Badge color={item.status === "graduated" ? "green" : item.status === "active" ? "sky" : "slate"}>
                           {item.status_label}
                         </Badge>
                       </td>

@@ -194,10 +194,9 @@ operable". Detalle y secuencia en [`docs/roadmap.md`](docs/roadmap.md).
   los salta) y **cancelar/reprogramar** una clase (`POST /sessions/{id}/cancel`
   · `/reschedule`, que crea una sesión de recuperación enlazada). Una clase
   cancelada no cuenta como realizada en los reportes.
-- **Nota final y certificado de nivel**: pesos de evaluación por curso
-  (`course_evaluations`), nota final ponderada contra `passing_score`, y
-  **certificado PDF** verificable por código cuando el alumno aprueba
-  (`GET /enrollments/{id}/final-grade`, `POST /enrollments/{id}/certificate`).
+- **Nota final**: pesos de evaluación por curso (`course_evaluations`) y nota
+  final ponderada contra `passing_score` (`GET /enrollments/{id}/final-grade`).
+  Educa no emite certificados; eso queda fuera del sistema.
 - **Notificaciones** in-app (`notifications`): campana con no-leídos; primer
   consumidor automático — cancelar/reprogramar una clase avisa a sus alumnos — y
   una alerta manual de alumnos en riesgo hacia sus profesores

@@ -13,6 +13,7 @@ import {
 import { StudentGrades } from "../features/grades/StudentGrades";
 import { StudentKardexView } from "../features/grades/StudentKardexView";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
+import { NextLevelCard } from "../features/enrollments/NextLevelCard";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
 import {
@@ -21,15 +22,13 @@ import {
   PAYMENT_LABELS,
   courseModality,
   courseModalityLabel,
-  formatDateTime,
   formatTime,
   localDow,
   locationSummary,
-  timeZoneLabel,
 } from "../lib/format";
 import { attendancePct } from "../lib/attendance";
 import { isCurrentEnrollment, isDelinquent } from "../lib/enrollment";
-import { nextClassStatusLine } from "../lib/studentHome";
+import { nextClassStatusLine, whenLabel } from "../lib/studentHome";
 import {
   useCourses,
   useDashboard,
@@ -45,10 +44,14 @@ import {
   useSchedules,
   useVisibleAttendance,
 } from "../lib/queries";
-import { LOBBY_WINDOW_MIN, GRACE_MS } from "../lib/constants";
+import { LOBBY_WINDOW_MIN, GRACE_MS, SCORE_MAX } from "../lib/constants";
 import { Modal, ModalActions } from "../components/ui";
 import { MakeUpBookingModal } from "../features/classes/MakeUpBookingModal";
 import type { Enrollment, MakeUpCredit, Modality } from "../lib/types";
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 function sessionStartMs(date: string, time: string): number {
   return new Date(`${date}T${time}`).getTime();
@@ -99,7 +102,7 @@ function ProgressView({
     <div>
       <PageHeader
         title="Mi progreso"
-        description="Tus notas por curso, avance del periodo y expediente oficial (Kardex)."
+        description="Tus notas, cómo vas en este periodo y tu historial de cursos."
       />
       <div className="mb-4">
         <SegmentedControl
@@ -107,8 +110,8 @@ function ProgressView({
           onChange={setView}
           options={[
             { value: "notas", label: "Notas" },
-            { value: "avance", label: "Avance del periodo" },
-            { value: "expediente", label: "Expediente Oficial (Kardex)" },
+            { value: "avance", label: "Este periodo" },
+            { value: "expediente", label: "Historial" },
           ]}
         />
       </div>
@@ -152,7 +155,6 @@ function StudentReport() {
 
 function WeekView({ isOverdue }: { isOverdue: boolean }) {
   const { user } = useAuth();
-  const tz = user?.timezone;
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
   const { data: levels = [] } = useLevels();
@@ -224,7 +226,7 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
 
   const nextClassForCourse = (courseId: number): string | null => {
     const n = myMeetings.find((x) => x.sched.course_id === courseId);
-    return n ? formatDateTime(new Date(n.start).toISOString(), tz) : null;
+    return n ? whenLabel(n.start, now) : null;
   };
 
   return (
@@ -243,6 +245,8 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
         // una fila más del mismo peso que "una tarea sin entregar".
         exclude={["payment_overdue"]}
       />
+
+      <NextLevelCard />
 
       {makeups.length > 0 && (
         <div className="mb-6 rounded-2xl border border-brand-200/80 bg-gradient-to-r from-brand-50/70 via-indigo-50/40 to-white p-4 shadow-xs">
@@ -347,7 +351,6 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
               start={next.start}
               opensAt={next.opensAt}
               sessionId={next.sess.id}
-              tz={tz}
               topic={next.sess.topic}
             />
           ) : (
@@ -482,7 +485,7 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
           }
           message={
             history.length > 0
-              ? "Tus cursos anteriores siguen abajo, con sus notas y certificados."
+              ? "Tus cursos anteriores siguen abajo, con sus notas."
               : "Cuando dirección te matricule, tus cursos y tu progreso aparecerán aquí."
           }
         />
@@ -713,7 +716,6 @@ function NextClassHero({
   start,
   opensAt,
   sessionId,
-  tz,
   topic,
 }: {
   courseName: string;
@@ -723,7 +725,6 @@ function NextClassHero({
   start: number;
   opensAt: number;
   sessionId: number;
-  tz?: string;
   topic?: string | null;
 }) {
   const [now, setNow] = useState(Date.now());
@@ -735,14 +736,9 @@ function NextClassHero({
   const lobbyOpen = now >= opensAt;
   const toStart = Math.max(0, start - now);
   const mins = Math.floor(toStart / 60000);
-  const startIso = new Date(start).toISOString();
 
   const countLabel =
-    toStart <= 0
-      ? "En curso en vivo"
-      : mins < 60
-        ? `Empieza en ${mins} min`
-        : `Empieza ${formatDateTime(startIso, tz)}`;
+    toStart <= 0 ? "En curso en vivo" : mins < 60 ? `Empieza en ${mins} min` : "Tu próxima clase";
 
   return (
     // El alumno no opera esta clase, sólo la espera: el mismo negro casi puro
@@ -764,10 +760,11 @@ function NextClassHero({
       <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">{courseName}</h2>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-brand-100">
-        <span className="tabular">
-          {formatDateTime(startIso, tz)}
-          {tz && ` (${timeZoneLabel(startIso, tz)})`}
-        </span>
+        {/* La hora de la clase tal como la dice el horario, la misma que la
+            lista de la semana. Convertida a la zona del perfil —que por
+            defecto es UTC— el mismo grupo de las 08:00 salía aquí a las
+            14:00 y abajo a las 08:00. */}
+        <span className="tabular">{capitalize(whenLabel(start, now))}</span>
         <span aria-hidden="true">·</span>
         <span>Prof. {teacher}</span>
         <span aria-hidden="true">·</span>
@@ -956,10 +953,12 @@ function FinalGradeRow({ enrollmentId }: { enrollmentId: number }) {
     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs">
       <span className="text-slate-500">
         Nota final:{" "}
+        {/* «9 / 6» se leía como nueve sobre seis. La nota es sobre SCORE_MAX; el 6
+            es el mínimo para aprobar, y se dice con esas palabras. */}
         <strong className={final.passed ? "text-green-700" : "text-red-600"}>
-          {final.final_score}
+          {final.final_score}/{SCORE_MAX}
         </strong>{" "}
-        / {final.passing_score}
+        · se aprueba con {final.passing_score}
       </span>
       <Badge color={final.passed ? "green" : "red"}>
         {final.passed ? "Aprobado" : "No aprobado"}

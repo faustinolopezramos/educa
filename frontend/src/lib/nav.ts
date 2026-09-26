@@ -204,6 +204,17 @@ export function canManageGrades(user: User | null): boolean {
   return true;
 }
 
+/** Opening matrículas (and approving renewals, which opens one) — not just
+ *  seeing them: an assistant with only `manage_finance` reaches the list too. */
+export function canManageEnrollments(user: User | null): boolean {
+  if (!user) return false;
+  if (user.role === "student" || user.role === "teacher") return false;
+  if (user.role === "assistant") {
+    return (user.permissions || []).includes("manage_enrollments");
+  }
+  return true;
+}
+
 export function getNavForUser(user: User | null): NavGroup[] {
   if (!user) return [];
   if (user.role !== "assistant") return NAV[user.role];

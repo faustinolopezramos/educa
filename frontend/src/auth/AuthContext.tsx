@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { api, getRefreshToken, getToken, LOGOUT_EVENT, setToken } from "../lib/api";
+import { forgetDeviceOnLogout } from "../lib/push";
 import { isSupabaseConfigured, signInWithSupabase, signOutFromSupabase } from "../lib/supabase";
 import { queryClient } from "../lib/queryClient";
 import type { LoginResponse, Permission, Role, User } from "../lib/types";
@@ -116,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshToken = getRefreshToken();
     // La sesión de Supabase, si la hubo, se cierra también; nunca bloquea.
     void signOutFromSupabase();
+    // Este dispositivo deja de recibir los avisos de quien sale.
+    forgetDeviceOnLogout();
     setToken(null, null);
     setUser(null);
     // Every cached query was fetched as the user who just left. On a shared

@@ -45,6 +45,7 @@ from app.services.audit import record, snapshot
 from app.services.enrollments import (
     attach_balances,
     check_tenant_student_quota,
+    level_after,
     seats_taken,
 )
 from app.services.finance import refresh_payment_status
@@ -106,6 +107,21 @@ def create_enrollment(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only),
 ) -> Enrollment:
+    enrollment = open_enrollment(db, current_user, payload, force=force)
+    db.commit()
+    db.refresh(enrollment)
+    return attach_balances(db, [enrollment])[0]
+
+
+def open_enrollment(
+    db: Session, current_user: User, payload: EnrollmentCreate, *, force: bool = False
+) -> Enrollment:
+    """Seat a student in a course, with every check a matrícula must pass.
+
+    Does not commit. It is the one door into a course: the admin's form and an
+    approved renewal request both come through here, so a renewal can never
+    skip the capacity, timetable or course-state checks a manual one gets.
+    """
     student = db.get(User, payload.student_id)
     if not in_tenant(current_user, student) or student.role != UserRole.student:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "student_id must be a student")
@@ -226,9 +242,7 @@ def create_enrollment(
         enrollment.id,
         after=snapshot(enrollment),
     )
-    db.commit()
-    db.refresh(enrollment)
-    return attach_balances(db, [enrollment])[0]
+    return enrollment
 
 
 @router.get("/{enrollment_id}/next-level-suggestion")
@@ -244,20 +258,7 @@ def suggest_next_level_enrollment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Course not found")
 
     current_level = db.get(Level, course.level_id) if course.level_id else None
-
-    next_level = None
-    if current_level:
-        sibling_levels = list(
-            db.scalars(
-                select(Level)
-                .where(Level.language_id == current_level.language_id)
-                .order_by(Level.id)
-            ).all()
-        )
-        for idx, lvl in enumerate(sibling_levels):
-            if lvl.id == current_level.id and idx + 1 < len(sibling_levels):
-                next_level = sibling_levels[idx + 1]
-                break
+    next_level = level_after(db, current_level) if current_level else None
 
     suggested_courses = []
     if next_level:

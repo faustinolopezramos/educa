@@ -140,11 +140,23 @@ flyctl ssh console -a educa-backend -C "python -m app.cli expire-makeups"
 
 ---
 
+### Barrido semanal de alumnos en riesgo
+
+No hace falta programarlo: la API lo lanza sola los lunes desde las 7:00 (hora
+de la academia), una vez por semana y academia (`AT_RISK_SWEEP_WEEKDAY`,
+`AT_RISK_SWEEP_HOUR`, `AT_RISK_SWEEP_ENABLED`). Para adelantarlo:
+
+```bash
+flyctl ssh console -a educa-backend -C "python -m app.cli at-risk-sweep --force"
+```
+
+---
+
 ## 4.2 Avisos por correo y WhatsApp
 
 Cada notificación (clase cancelada, clase reprogramada, alumnos en riesgo) se
 guarda en la campana y, además, se pone en una cola de envío por cada canal
-configurado. La API vacía esa cola cada 20 s desde su propio proceso: no hace
+configurado. La API vacía esa cola cada 20 s (`BACKGROUND_JOBS_INTERVAL_SECONDS`) desde su propio proceso: no hace
 falta un worker aparte. Un envío que falla se reintenta 4 veces más (hasta ~1 h);
 lo que lleva más de 12 h en cola se descarta, porque avisar de una clase
 cancelada al día siguiente no sirve de nada.
@@ -200,11 +212,60 @@ extranjero hay que guardarlo con su `+`.
 
 ---
 
-## 5. Seed de Datos (si BD vacía)
+## 4.3 App instalable y avisos push
+
+El frontend es instalable (manifest + service worker en `frontend/public/`): en
+Android/Chrome el perfil ofrece "Instalar la app"; en iPhone explica el paso por
+Safari (Compartir → Añadir a pantalla de inicio). **En iPhone los avisos push
+sólo funcionan dentro de la app instalada** (iOS 16.4 o posterior).
+
+Para activar los avisos push, genera las claves **una sola vez** y guárdalas:
 
 ```bash
-flyctl ssh console -a educa-backend -C "python -m app.seed"
+cd backend && python -m app.cli generate-vapid-keys
+flyctl secrets set VAPID_PUBLIC_KEY="B..." VAPID_PRIVATE_KEY="..." \
+  VAPID_SUBJECT="mailto:soporte@tu-dominio.com"
 ```
+
+No las cambies después: cada dispositivo suscrito tendría que volver a activar
+los avisos. Cada persona los activa por dispositivo en su perfil ("Avisos en
+este dispositivo"); el permiso que pide el navegador es el consentimiento. Los
+avisos push salen por la misma cola que el correo y WhatsApp, con sus reintentos
+y su caducidad a las 12 h. Un dispositivo que el servicio de push da por
+desaparecido (404/410) se borra solo.
+
+`sw.js` y `manifest.webmanifest` se sirven con `Cache-Control: no-cache`
+(`vercel.json` y `nginx.conf`) para que un despliegue los renueve.
+
+---
+
+## 5. Instalación inicial (BD vacía)
+
+Una instalación nueva sólo necesita las nacionalidades y el superadmin, con una
+contraseña que elijas tú:
+
+```bash
+flyctl ssh console -a educa-backend
+# dentro de la VM (la contraseña se pide sin eco):
+python -m app.cli bootstrap --email tu-correo@dominio.com
+```
+
+Después entra como superadmin, abre **Academias → Nueva academia** y crea la
+academia con su primer administrador.
+
+> **No uses `python -m app.seed` en producción.** Crea una «Academia Demo» con
+> contraseñas publicadas en el código (`superadmin123`, `teacher123`…) y se niega
+> a ejecutarse con `ENVIRONMENT=production`.
+
+**Si esta instalación se preparó con el seed**, el superadmin `superadmin@educa.com`
+tiene la contraseña `superadmin123`. Cámbiala ya (también cierra sus sesiones):
+
+```bash
+python -m app.cli bootstrap --email superadmin@educa.com --reset-password
+```
+
+y da de baja o cambia las cuentas demo (`admin@educa.com`, `teacher@educa.com`,
+`student@educa.com`…) si siguen activas.
 
 ---
 

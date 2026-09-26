@@ -231,7 +231,7 @@ export function StudentKardexView() {
                     <td className="px-5 py-3.5">
                       <Badge
                         color={
-                          entry.status === "certified"
+                          entry.status === "graduated"
                             ? "indigo"
                             : entry.status === "active"
                               ? "green"

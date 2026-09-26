@@ -237,7 +237,9 @@ function ClassBlock({
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="truncate text-base font-semibold text-slate-800">
+            {/* En el móvil el nombre puede ocupar dos líneas: cortado a
+                «Inglés A1 - Mañ…» no distingue un grupo de otro. */}
+            <h2 className="text-base font-semibold text-slate-800 sm:truncate">
               {entry.course_name}
             </h2>
             {entry.register_closed && (
@@ -267,7 +269,7 @@ function ClassBlock({
             {!cancelled && ` · ${counts}`}
           </p>
         </div>
-        <div className="flex flex-none gap-2.5">
+        <div className="flex w-full gap-2.5 sm:w-auto sm:flex-none">
           {!cancelled && needsLink(entry.modality) && phase === "next" && (
             <Button
               variant="secondary"
@@ -280,6 +282,7 @@ function ClassBlock({
           )}
           <Button
             variant={phase === "open" ? "primary" : "secondary"}
+            className="flex-1 sm:flex-none"
             onClick={() => navigate(`/clase/${entry.session_id}`)}
           >
             {phase === "open"

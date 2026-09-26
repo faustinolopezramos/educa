@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ComponentType, SVGProps } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { defaultSection, getNavForUser, type NavItem } from "../lib/nav";
+import { syncPushSubscription } from "../lib/push";
 import { useLocationProposals } from "../lib/queries";
 import { CommandPalette, openCommandPalette } from "./CommandPalette";
 import {
@@ -75,6 +76,12 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("educa_nav_collapsed") === "true",
   );
+
+  // Si este dispositivo ya tenía avisos activados, quedan a nombre de quien entra.
+  const userId = user?.id;
+  useEffect(() => {
+    if (userId) void syncPushSubscription();
+  }, [userId]);
 
   if (!user) return null;
 

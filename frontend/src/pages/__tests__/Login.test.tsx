@@ -95,22 +95,41 @@ describe("Login", () => {
     });
   });
 
-  it("should show error message on login failure", async () => {
-    mockLogin.mockRejectedValueOnce(new Error("Invalid credentials"));
-
+  async function submitWith(error: unknown) {
+    mockLogin.mockRejectedValueOnce(error);
     const user = userEvent.setup();
     render(<Login />);
+    await user.type(screen.getByPlaceholderText("admin@educa.com"), "admin@educa.com");
+    await user.type(screen.getByPlaceholderText("••••••••"), "wrong");
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
+  }
 
-    const emailInput = screen.getByPlaceholderText("admin@educa.com");
-    const passwordInput = screen.getByPlaceholderText("••••••••");
-    const submitButton = screen.getByRole("button", { name: "Entrar" });
-
-    await user.type(emailInput, "admin@educa.com");
-    await user.type(passwordInput, "wrong");
-    await user.click(submitButton);
-
+  it("says the credentials are wrong in Spanish, not the API's English", async () => {
+    await submitWith({
+      response: { status: 401, data: { detail: "Could not validate credentials" } },
+    });
     await waitFor(() => {
-      expect(screen.getByText("Credenciales incorrectas")).toBeInTheDocument();
+      expect(screen.getByText("Correo o contraseña incorrectos.")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Could not validate/)).not.toBeInTheDocument();
+  });
+
+  it("explains that the academy is suspended", async () => {
+    await submitWith({
+      response: {
+        status: 403,
+        data: { detail: "Tu academia está suspendida en la plataforma." },
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/academia está suspendida/)).toBeInTheDocument();
+    });
+  });
+
+  it("does not blame the password when the server could not be reached", async () => {
+    await submitWith(new Error("Network Error"));
+    await waitFor(() => {
+      expect(screen.getByText(/No se pudo iniciar sesión/)).toBeInTheDocument();
     });
   });
 

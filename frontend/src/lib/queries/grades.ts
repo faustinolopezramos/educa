@@ -15,8 +15,8 @@ export const GRADES_ALL_KEY = ["grades", "all"] as const;
  * The final grade is *derived* server-side from the grades, and nothing here
  * ever invalidated it: a teacher entered the exam that closed the course, the
  * cell updated, and the "Nota final — Aprobado/No aprobado" row kept showing
- * the previous verdict for the rest of the session. The certificate is issued
- * against that number, so the stale one was the one being acted on.
+ * the previous verdict for the rest of the session. Graduating a
+ * student is decided on that number, so the stale one was the one being acted on.
  *
  * The report and the dashboard tray read the same scores, so they go with it.
  */
@@ -109,7 +109,7 @@ export function useUpdateGrade() {
   });
 }
 
-// ---- Final grade, evaluation weights, certificates ----
+// ---- Final grade, evaluation weights ----
 export const useFinalGrade = (enrollmentId?: number, enabled = true) =>
   useQuery({
     queryKey: ["final-grade", enrollmentId],

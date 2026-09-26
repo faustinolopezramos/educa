@@ -72,6 +72,7 @@ from app.models.tenant import Tenant
 from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.refresh_session import RefreshSession
 from app.models.make_up_credit import MakeUpCredit
+from app.models.renewal_request import RenewalRequest
 
 __all__ = [
     "COURSE_ACCEPTS_ENROLMENT",
@@ -109,6 +110,7 @@ __all__ = [
     "Level",
     "LocationProposal",
     "MakeUpCredit",
+    "RenewalRequest",
     "MakeUpStatus",
     "MAKEUP_STATUS_LABELS",
     "MeetingLog",

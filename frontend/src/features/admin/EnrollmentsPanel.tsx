@@ -9,6 +9,7 @@ import {
 import { IconClipboard } from "../../components/icons";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
 import { Student360Drawer } from "./Student360Drawer";
+import { RenewalRequestsCard } from "./RenewalRequestsCard";
 import {
   useCourses,
   useCreatePayment,
@@ -32,11 +33,14 @@ import type {
   User,
 } from "../../lib/types";
 import { onMutationError } from "./shared";
+import { useAuth } from "../../auth/AuthContext";
+import { canManageEnrollments } from "../../lib/nav";
 import { allowedTransitions, formatBalance, isTerminalStatus } from "../../lib/enrollment";
 
 const STATUS_LABELS = ENROLLMENT_LABELS as Record<EnrollmentStatus, string>;
 
 export function EnrollmentsPanel() {
+  const { user } = useAuth();
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
   const { data: students = [] } = useUsers("student");
@@ -120,6 +124,8 @@ export function EnrollmentsPanel() {
         }
         actions={<Button onClick={() => setWizardCourseId("new")}>Nueva matrícula</Button>}
       />
+
+      {canManageEnrollments(user) && <RenewalRequestsCard />}
 
       <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5">
         <SearchInput
@@ -374,7 +380,7 @@ const STATUS_SELECT_STYLES: Record<EnrollmentStatus, string> = {
   enrolled: "border-slate-200 bg-slate-50 text-slate-700",
   active: "border-emerald-200 bg-emerald-50 text-emerald-800",
   inactive: "border-amber-200 bg-amber-50 text-amber-800",
-  certified: "border-brand-200 bg-brand-50 text-brand-800",
+  graduated: "border-brand-200 bg-brand-50 text-brand-800",
   withdrawn: "border-red-200 bg-red-50 text-red-800",
 };
 
@@ -657,7 +663,7 @@ function FinancesModal({
           {isCharge ? (
             <Field
               label="Vence el (opcional)"
-              hint="Pasada esta fecha sin cubrir, la matrícula queda en mora y se restringe el acceso a notas y certificados. Sin fecha, el cobro no vence por sí solo."
+              hint="Pasada esta fecha sin cubrir, la matrícula queda en mora y se restringe el acceso a las notas. Sin fecha, el cobro no vence por sí solo."
             >
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </Field>

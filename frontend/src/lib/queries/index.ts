@@ -53,6 +53,13 @@ export {
   useDeleteHoliday,
 } from "./holidays";
 export {
+  useRenewalOptions,
+  usePendingRenewals,
+  useRequestRenewal,
+  useWithdrawRenewal,
+  useReviewRenewal,
+} from "./renewals";
+export {
   useLocationProposals,
   useProposeLocation,
   useReviewProposal,
@@ -115,6 +122,8 @@ export {
   useTenants,
   useCreateTenant,
   useUpdateTenant,
+  useTenantAdmins,
+  useCreateTenantAdmin,
 } from "./tenants";
 export type { TenantPayload } from "./tenants";
 export {

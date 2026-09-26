@@ -44,6 +44,22 @@ export function todayLocal(date = new Date()): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/**
+ * "2026-09-21" → "lun 21 sept": a class date as a person reads it.
+ *
+ * The date-only string is read as a calendar day in local time — `new
+ * Date("2026-09-21")` would parse it as UTC midnight and show the day before
+ * anywhere west of Greenwich.
+ */
+export function shortDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d)
+    .toLocaleDateString("es", { weekday: "short", day: "numeric", month: "short" })
+    .replace(/\./g, "")
+    .replace(",", "");
+}
+
 export function calculateEndDate(startDateStr: string, periodicity: string): string {
   if (!startDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) return "";
 
@@ -103,7 +119,7 @@ export const ENROLLMENT_LABELS: Record<string, string> = {
   enrolled: "Inscrito",
   active: "Activo",
   inactive: "Inactivo",
-  certified: "Certificado",
+  graduated: "Graduado",
   withdrawn: "Desistió",
 };
 

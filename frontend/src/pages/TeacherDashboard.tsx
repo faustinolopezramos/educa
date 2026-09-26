@@ -46,6 +46,7 @@ import {
   modalityColor,
   modalityLabel,
   needsLink,
+  shortDate,
   todayLocal,
   usesRoom,
 } from "../lib/format";
@@ -276,8 +277,22 @@ function ClassesView() {
   const { data: schedules = [] } = useSchedules(true);
   const { data: courses = [] } = useCourses();
   const [selected, setSelected] = useState<Schedule | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | undefined>();
+  const detailRef = useRef<HTMLDivElement | null>(null);
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
+
+  // En el móvil el detalle queda debajo de toda la agenda: tocar una clase y
+  // que el cambio ocurra dos pantallas más abajo parecía no hacer nada.
+  function select(schedule: Schedule, sessionId?: number) {
+    setSelected(schedule);
+    setSelectedSessionId(sessionId);
+    requestAnimationFrame(() => {
+      if (window.matchMedia("(max-width: 1023px)").matches) {
+        detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
 
   const featured = useMemo(() => pickFeatured(schedules), [schedules]);
 
@@ -289,29 +304,30 @@ function ClassesView() {
     <div className="space-y-6">
       <PageHeader
         title="Mis Clases"
-        description="Gestión jerárquica de clases en vivo, próximas y realizadas."
+        description="Pasa lista, califica y organiza tus clases."
       />
 
       <ActionTray emptyMessage="No tienes clases pendientes de registrar." />
 
-      <NowBar featured={featured} courseName={courseName} onGo={(s) => setSelected(s)} />
+      <NowBar featured={featured} courseName={courseName} onGo={(s) => select(s)} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left: Grouped Session List */}
         <div className="lg:col-span-1">
           <Card>
-            <SectionHeading>Agenda de Clases</SectionHeading>
-            <GroupedClassesList
-              selectedSchedule={selected}
-              onSelectSchedule={(s) => setSelected(s)}
-            />
+            <SectionHeading>Agenda</SectionHeading>
+            <GroupedClassesList selectedSchedule={selected} onSelectSchedule={select} />
           </Card>
         </div>
 
         {/* Right: Selected Class Workspace */}
-        <div className="lg:col-span-2">
+        <div ref={detailRef} className="scroll-mt-20 lg:col-span-2">
           {selected ? (
-            <ClassDetail schedule={selected} courseName={courseName(selected.course_id)} />
+            <ClassDetail
+              schedule={selected}
+              courseName={courseName(selected.course_id)}
+              initialSessionId={selectedSessionId}
+            />
           ) : (
             <Card>
               <EmptyState
@@ -381,12 +397,16 @@ function NowBar({
       </div>
 
       <div className="flex flex-none flex-wrap items-center gap-2">
-        {todayOrNow && (
+        {/* Una presencial no tiene aula virtual que abrir. */}
+        {todayOrNow && needsLink(s.modality) && (
           <Button disabled={ensure.isPending} onClick={() => enterLobby(s)}>
             {ensure.isPending ? "Abriendo…" : "Entrar al aula"}
           </Button>
         )}
-        <Button variant={todayOrNow ? "secondary" : "primary"} onClick={() => onGo(s)}>
+        <Button
+          variant={todayOrNow && needsLink(s.modality) ? "secondary" : "primary"}
+          onClick={() => onGo(s)}
+        >
           Gestionar clase
         </Button>
       </div>
@@ -394,14 +414,23 @@ function NowBar({
   );
 }
 
-function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName: string }) {
+function ClassDetail({
+  schedule,
+  courseName,
+  initialSessionId,
+}: {
+  schedule: Schedule;
+  courseName: string;
+  /** The session the teacher tapped in the agenda, when they tapped one. */
+  initialSessionId?: number;
+}) {
   const { data: allEnrollments = [] } = useEnrollments(schedule.course_id);
   const { data: students = [] } = useCourseStudents(schedule.course_id);
   const { data: sessions = [] } = useSessions(schedule.id);
   const generate = useGenerateSessions();
 
   // `GET /enrollments` hands over the whole history of the course — quien
-  // desistió, quien se certificó, quien está en pausa — mientras que el roster
+  // desistió, quien se graduó, quien está en pausa — mientras que el roster
   // de nombres (`useCourseStudents`) sólo devuelve a quien ocupa plaza. Cruzar
   // las dos listas sin filtrar ponía en la lista del día filas sin nombre
   // (`#42`) sobre las que la API rechaza la marca con un 409, e inflaba el
@@ -420,10 +449,11 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
       setSessionId(null);
       return;
     }
+    const tapped = sessions.find((s) => s.id === initialSessionId);
     const todays = sessions.find((s) => s.date === today);
     const past = [...sessions].reverse().find((s) => s.date <= today);
-    setSessionId((todays ?? past ?? sessions[0]).id);
-  }, [sessions.length, schedule.id]);
+    setSessionId((tapped ?? todays ?? past ?? sessions[0]).id);
+  }, [sessions.length, schedule.id, initialSessionId]);
 
   const studentName = (id: number) =>
     students.find((s) => s.id === id)?.full_name ?? `#${id}`;
@@ -508,7 +538,7 @@ function ClassDetail({ schedule, courseName }: { schedule: Schedule; courseName:
               >
                 {sessions.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.date}
+                    {shortDate(s.date)}
                     {s.date === today ? " · hoy" : ""}
                     {s.status === "cancelled"
                       ? " · cancelada"
@@ -696,6 +726,10 @@ function SessionControls({ session }: { session: ClassSession }) {
   const reschedule = useRescheduleSession();
   const [newDate, setNewDate] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  // Plegado: reprogramar y cancelar son excepciones, y cancelar notifica a
+  // todos los alumnos. No deben estar a un dedo de «Presente» mientras se pasa
+  // lista — el modo clase ya los sacó de ahí por lo mismo.
+  const [open, setOpen] = useState(false);
 
   if (session.status === "cancelled") {
     return (
@@ -705,9 +739,19 @@ function SessionControls({ session }: { session: ClassSession }) {
     );
   }
 
+  if (!open) {
+    return (
+      <div className="mb-4 border-b border-slate-100 pb-3">
+        <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+          Reprogramar o cancelar esta clase
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <label htmlFor="reschedule-date" className="text-xs font-medium text-slate-600">
           Reprogramar a
         </label>
@@ -728,6 +772,7 @@ function SessionControls({ session }: { session: ClassSession }) {
               {
                 onSuccess: () => {
                   setNewDate("");
+                  setOpen(false);
                   notify("Clase reprogramada: se creó una sesión de recuperación", "success");
                 },
                 onError: onMutationError("No se pudo reprogramar"),
@@ -739,15 +784,20 @@ function SessionControls({ session }: { session: ClassSession }) {
         </Button>
       </div>
 
-      <Button
-        variant="secondary"
-        size="sm"
-        className="border-red-200 text-red-700 hover:bg-red-50"
-        disabled={cancel.isPending}
-        onClick={() => setCancelling(true)}
-      >
-        Cancelar clase
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="border-red-200 text-red-700 hover:bg-red-50"
+          disabled={cancel.isPending}
+          onClick={() => setCancelling(true)}
+        >
+          Cancelar clase
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+          Cerrar
+        </Button>
+      </div>
 
       {cancelling && (
         <PromptModal
@@ -854,7 +904,7 @@ function SessionSheet({
     return (
       <EmptyState
         icon={<IconLock className="h-5 w-5" />}
-        title={`La clase del ${sessionDate} aún no empieza`}
+        title={`La clase del ${sessionDate ? shortDate(sessionDate) : ""} aún no empieza`}
         message="La lista y las notas diarias se habilitan el mismo día de la clase."
       />
     );

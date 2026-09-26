@@ -45,7 +45,7 @@ export function StudentGrades() {
       <EmptyState
         icon={<IconLock className="h-5 w-5" />}
         title="Ponte al día para ver tus notas"
-        message="Tienes cuotas pendientes en alguna matrícula activa. El acceso a calificaciones y certificados se restablece en cuanto se registre el pago."
+        message="Tienes cuotas pendientes en alguna matrícula activa. El acceso a tus calificaciones se restablece en cuanto se registre el pago."
       />
     );
   }
@@ -102,13 +102,12 @@ export function StudentGrades() {
         </div>
       </Card>
 
-      <Card>
-        <SectionHeading>Promedio por curso</SectionHeading>
-        {radarData.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Necesitas notas en al menos un curso para ver este gráfico.
-          </p>
-        ) : (
+      {/* Un radar necesita al menos tres ejes para dibujar una forma: con uno o
+          dos cursos era un punto o una raya en una caja vacía, que además
+          repetía el promedio que cada curso ya enseña arriba. */}
+      {radarData.length >= 3 && (
+        <Card>
+          <SectionHeading>Promedio por curso</SectionHeading>
           <div style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} outerRadius="72%">
@@ -131,11 +130,11 @@ export function StudentGrades() {
               </RadarChart>
             </ResponsiveContainer>
           </div>
-        )}
-        <p className="mt-1 text-center text-xs text-slate-400">
-          Promedio de tus evaluaciones en cada curso (0–{MAX_SCORE}).
-        </p>
-      </Card>
+          <p className="mt-1 text-center text-xs text-slate-400">
+            Promedio de tus evaluaciones en cada curso (0–{MAX_SCORE}).
+          </p>
+        </Card>
+      )}
     </div>
   );
 }

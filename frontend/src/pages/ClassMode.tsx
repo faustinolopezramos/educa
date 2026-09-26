@@ -4,13 +4,12 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button, EmptyState } from "../components/ui";
 import { IconCheck, IconChevronLeft } from "../components/icons";
 import { apiErrorDetail, apiErrorMessage } from "../lib/api";
+import { useAttendanceQueue } from "../lib/attendanceQueue";
 import { formatTime, modalityLabel } from "../lib/format";
 import { notify } from "../lib/toast";
 import {
-  useBulkAttendance,
   useClassBoard,
   useCloseRegister,
-  useCreateAttendance,
   useMarkMakeupVisitor,
   useReopenRegister,
 } from "../lib/queries";
@@ -26,13 +25,26 @@ import type { AttendanceStatus, BoardStudent, MakeUpVisitor } from "../lib/types
  *
  * El teclado es la vía rápida: P, T, A y J marcan al alumno enfocado y bajan al
  * siguiente, así que una lista de veinte se pasa sin tocar el ratón.
+ *
+ * En el móvil —que es con lo que se pasa lista dentro del aula— cada alumno
+ * lleva los cuatro botones a todo el ancho, bajo su nombre, y el camino corto es
+ * marcar sólo las faltas y pulsar «Los demás, presentes». Las marcas se ven al
+ * instante y se guardan en el teléfono hasta que el servidor las confirma
+ * (`useAttendanceQueue`): una wifi que se cae a mitad de clase no pierde nada.
  */
 
-const MARKS: { key: AttendanceStatus; letter: string; label: string; on: string }[] = [
-  { key: "present", letter: "P", label: "Presente", on: "bg-emerald-600 border-emerald-600 text-white" },
-  { key: "late", letter: "T", label: "Tarde", on: "bg-amber-600 border-amber-600 text-white" },
-  { key: "absent", letter: "A", label: "Ausente", on: "bg-red-600 border-red-600 text-white" },
-  { key: "excused", letter: "J", label: "Justificada", on: "bg-slate-600 border-slate-600 text-white" },
+const MARKS: {
+  key: AttendanceStatus;
+  letter: string;
+  label: string;
+  /** La etiqueta bajo la letra en el móvil, donde no hay teclado que la recuerde. */
+  short: string;
+  on: string;
+}[] = [
+  { key: "present", letter: "P", label: "Presente", short: "Presente", on: "bg-emerald-600 border-emerald-600 text-white" },
+  { key: "late", letter: "T", label: "Tarde", short: "Tarde", on: "bg-amber-600 border-amber-600 text-white" },
+  { key: "absent", letter: "A", label: "Ausente", short: "Falta", on: "bg-red-600 border-red-600 text-white" },
+  { key: "excused", letter: "J", label: "Justificada", short: "Justif.", on: "bg-slate-600 border-slate-600 text-white" },
 ];
 
 const BY_LETTER: Record<string, AttendanceStatus> = {
@@ -48,8 +60,7 @@ export default function ClassMode() {
   const navigate = useNavigate();
   const { data: board, isLoading, isError } = useClassBoard(id);
 
-  const mark = useCreateAttendance();
-  const bulk = useBulkAttendance();
+  const queue = useAttendanceQueue(id);
   const markVisitor = useMarkMakeupVisitor(id);
   const close = useCloseRegister();
   const reopen = useReopenRegister();
@@ -58,7 +69,16 @@ export default function ClassMode() {
   const [confirming, setConfirming] = useState(false);
   const rowsRef = useRef<HTMLDivElement | null>(null);
 
-  const students = board?.students ?? [];
+  // Lo que se ve es lo último que tocó el profesor, confirmado o no.
+  const students = useMemo(
+    () =>
+      (board?.students ?? []).map((s) => ({
+        ...s,
+        mark: queue.pending[s.enrollment_id] ?? s.mark,
+        unsent: s.enrollment_id in queue.pending,
+      })),
+    [board?.students, queue.pending],
+  );
   const visitors = board?.visitors ?? [];
   const session = board?.session;
 
@@ -75,12 +95,9 @@ export default function ClassMode() {
   const markStudent = useCallback(
     (student: BoardStudent, status: AttendanceStatus) => {
       if (closed) return;
-      mark.mutate(
-        { enrollment_id: student.enrollment_id, session_id: id, status },
-        { onError: (e) => notify(apiErrorMessage(e, "No se pudo marcar"), "error") },
-      );
+      queue.mark(student.enrollment_id, status);
     },
-    [closed, id, mark],
+    [closed, queue],
   );
 
   // El foco avanza solo: marcar es una tecla por alumno, no una tecla más una
@@ -122,17 +139,8 @@ export default function ClassMode() {
   }, [focused]);
 
   function markEveryoneLeft() {
-    const items = students
-      .filter((s) => !s.mark)
-      .map((s) => ({ enrollment_id: s.enrollment_id, status: "present" as AttendanceStatus }));
-    if (items.length === 0) return;
-    bulk.mutate(
-      { sessionId: id, items },
-      {
-        onSuccess: () => notify("Marcados como presentes", "success"),
-        onError: (e) => notify(apiErrorMessage(e, "No se pudo marcar a todos"), "error"),
-      },
-    );
+    const ids = students.filter((s) => !s.mark).map((s) => s.enrollment_id);
+    if (ids.length > 0) queue.markMany(ids, "present");
   }
 
   function closeRegister(force: boolean) {
@@ -188,7 +196,7 @@ export default function ClassMode() {
             <IconChevronLeft className="h-3.5 w-3.5" />
             Hoy
           </Link>
-          <h1 className="mt-1.5 truncate text-2xl font-bold text-slate-900">
+          <h1 className="mt-1.5 truncate text-xl font-bold text-slate-900 sm:text-2xl">
             {session.course_name}
           </h1>
           <p className="tabular mt-1 text-sm text-slate-600">{header}</p>
@@ -232,11 +240,13 @@ export default function ClassMode() {
           />
         </div>
         {!closed && missing > 0 && (
-          <Button variant="secondary" disabled={bulk.isPending} onClick={markEveryoneLeft}>
-            {bulk.isPending ? "Marcando…" : "Los demás, presentes"}
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={markEveryoneLeft}>
+            {marked === 0 ? "Todos presentes" : "Los demás, presentes"}
           </Button>
         )}
       </div>
+
+      <ConnectionNotice count={queue.count} offline={queue.offline} />
 
       <div ref={rowsRef} className="mt-4 flex-1 space-y-1">
         {students.map((student, i) => (
@@ -245,6 +255,7 @@ export default function ClassMode() {
             name={student.full_name}
             meta={student.enrollment_code}
             mark={student.mark}
+            unsent={student.unsent}
             focused={i === focused && !closed}
             disabled={closed}
             onFocus={() => setFocused(i)}
@@ -308,7 +319,11 @@ export default function ClassMode() {
         </div>
       )}
 
-      <div className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-slate-50/95 py-4 backdrop-blur-xs">
+      <div
+        className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/95 pt-3 backdrop-blur-xs sm:gap-4 sm:pt-4"
+        // El borde inferior del iPhone tapa el botón de cerrar sin este margen.
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+      >
         {closed ? (
           <>
             <p className="text-xs text-slate-600">
@@ -335,7 +350,10 @@ export default function ClassMode() {
           </>
         ) : (
           <>
-            <p className="flex flex-wrap items-center gap-2 text-2xs text-slate-600">
+            <p className="text-2xs text-slate-600 sm:hidden">
+              Marca sólo las faltas y pulsa «Los demás, presentes».
+            </p>
+            <p className="hidden flex-wrap items-center gap-2 text-2xs text-slate-600 sm:flex">
               <span>Sin soltar el teclado:</span>
               {MARKS.map((m) => (
                 <span key={m.key} className="inline-flex items-center gap-1">
@@ -349,11 +367,18 @@ export default function ClassMode() {
             </p>
             {mayClose ? (
               <Button
-                disabled={close.isPending || total === 0}
+                // Con marcas todavía en el teléfono, cerrar dejaría fuera justo
+                // las que no han llegado: primero que se envíen.
+                disabled={close.isPending || total === 0 || queue.count > 0}
                 variant={complete ? "primary" : "secondary"}
+                className="w-full sm:w-auto"
                 onClick={() => closeRegister(false)}
               >
-                {complete ? "Cerrar lista" : `Cerrar lista · faltan ${missing}`}
+                {queue.count > 0
+                  ? "Enviando marcas…"
+                  : complete
+                    ? "Cerrar lista"
+                    : `Cerrar lista · faltan ${missing}`}
               </Button>
             ) : (
               <p className="text-2xs text-slate-600">
@@ -371,6 +396,7 @@ function StudentRow({
   name,
   meta,
   mark,
+  unsent,
   focused,
   disabled,
   onFocus,
@@ -379,6 +405,7 @@ function StudentRow({
   name: string;
   meta: string;
   mark: AttendanceStatus | null;
+  unsent: boolean;
   focused: boolean;
   disabled: boolean;
   onFocus: () => void;
@@ -387,18 +414,34 @@ function StudentRow({
   return (
     <div
       data-row
-      className={`flex items-center gap-3.5 rounded-xl px-3 py-1.5 ${
+      className={`flex flex-col gap-2 rounded-xl px-3 py-2 sm:flex-row sm:items-center sm:gap-3.5 sm:py-1.5 ${
         mark ? "" : "border border-slate-100 bg-white"
       } ${focused ? "ring-2 ring-brand-500/40" : ""}`}
     >
-      <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-2xs font-bold text-slate-600">
-        {initials(name)}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-slate-900">{name}</div>
-        <div className="tabular text-2xs text-slate-500">{meta}</div>
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-2xs font-bold text-slate-600">
+          {initials(name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-slate-900">{name}</div>
+          <div className="tabular flex items-center gap-1.5 text-2xs text-slate-500">
+            {meta}
+            {unsent && (
+              <span className="inline-flex items-center gap-1 font-semibold text-amber-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+                sin enviar
+              </span>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="flex flex-none gap-1.5" role="group" aria-label={`Asistencia de ${name}`}>
+      {/* En el móvil, los cuatro botones a todo el ancho y con su nombre:
+          un dedo acierta mejor en un cuarto de pantalla que en 44 px. */}
+      <div
+        className="grid flex-none grid-cols-4 gap-1.5 sm:flex"
+        role="group"
+        aria-label={`Asistencia de ${name}`}
+      >
         {MARKS.map((m) => (
           <button
             key={m.key}
@@ -408,16 +451,38 @@ function StudentRow({
             aria-label={`${m.label} — ${name}`}
             onFocus={onFocus}
             onClick={() => onMark(m.key)}
-            className={`h-11 w-11 rounded-lg border text-sm font-bold transition-colors disabled:opacity-50 ${
+            className={`flex h-12 flex-col items-center justify-center rounded-lg border text-sm font-bold transition-colors disabled:opacity-50 sm:h-11 sm:w-11 ${
               mark === m.key
                 ? m.on
                 : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
             }`}
           >
-            {m.letter}
+            <span>{m.letter}</span>
+            <span className="text-2xs font-medium leading-tight sm:hidden">{m.short}</span>
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Qué pasa con las marcas que todavía no llegaron. Sin conexión lo dice claro
+ * —y tranquiliza—; con conexión no molesta: el punto "sin enviar" de cada fila
+ * basta mientras el envío tarda un instante.
+ */
+function ConnectionNotice({ count, offline }: { count: number; offline: boolean }) {
+  if (count === 0 || !offline) return null;
+  return (
+    <div
+      role="status"
+      className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+    >
+      <p className="font-semibold">Sin conexión</p>
+      <p className="text-xs text-amber-800">
+        {count === 1 ? "Una marca guardada" : `${count} marcas guardadas`} en este teléfono. Se
+        enviarán solas en cuanto vuelva la conexión; puedes seguir pasando lista.
+      </p>
     </div>
   );
 }

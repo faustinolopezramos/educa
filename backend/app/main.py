@@ -26,6 +26,7 @@ from app.routers import (
     notifications,
     payments,
     push,
+    renewals,
     reports,
     rooms,
     schedules,
@@ -193,6 +194,7 @@ app.include_router(sessions.router)
 app.include_router(holidays.router)
 app.include_router(locations.router)
 app.include_router(enrollments.router)
+app.include_router(renewals.router)
 app.include_router(assignments.router)
 app.include_router(attendance.router)
 app.include_router(grades.router)

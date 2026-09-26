@@ -10,13 +10,13 @@
 
 ## 1. ¿Qué es Educa?
 
-Educa es el sistema con el que una academia de idiomas y de competencias digitales/de negocios administra todo su día a día: qué cursos ofrece, quién los dicta, quién está inscrito, cómo se toma asistencia y se califica, cómo se entregan certificados, y cómo alumnos y profesores se conectan a las clases en línea.
+Educa es el sistema con el que una academia de idiomas y de competencias digitales/de negocios administra todo su día a día: qué cursos ofrece, quién los dicta, quién está inscrito, cómo se toma asistencia y se califica, y cómo alumnos y profesores se conectan a las clases en línea.
 
 Lo usan tres tipos de personas:
 
 - **Administración**: organiza el catálogo de cursos, arma horarios, matricula alumnos, y tiene visibilidad total de la academia.
 - **Profesores**: dan sus clases, pasan lista, califican, y proponen dónde se dicta cada clase (aula o link virtual).
-- **Alumnos**: ven sus cursos, notas y asistencia, entran a la clase virtual, y descargan sus certificados.
+- **Alumnos**: ven sus cursos, notas y asistencia, y entran a la clase virtual.
 
 Tanto alumnos como profesores pueden tener registrado su **teléfono, dirección y nacionalidad** (los tres son opcionales). La nacionalidad se elige de una lista que administración mantiene igual que el resto del catálogo — hoy trae de ejemplo la lista de países que llegó en el requerimiento original, agrupada bajo "Centroamérica" aunque en realidad ninguno de esos países lo es; falta que confirmes la lista real de países a ofrecer.
 
@@ -41,7 +41,7 @@ Cada curso tiene fechas de inicio y fin, un cupo máximo de alumnos y una nota m
 
 En la pantalla de catálogo, administración ve la oferta agrupada en esas tres áreas.
 
-**A tener en cuenta:** si se elimina un idioma o un nivel completo del catálogo, se eliminan automáticamente todos los cursos que dependían de él — y con ellos, las matrículas, notas y certificados de los alumnos que pasaron por esos cursos. No hay una pantalla intermedia de "esto tiene alumnos, ¿seguro?".
+**A tener en cuenta:** si se elimina un idioma o un nivel completo del catálogo, se eliminan automáticamente todos los cursos que dependían de él — y con ellos, las matrículas y notas de los alumnos que pasaron por esos cursos. No hay una pantalla intermedia de "esto tiene alumnos, ¿seguro?".
 
 ---
 
@@ -93,7 +93,7 @@ Si hay un choque de horario, quien matricula puede decidir forzar la inscripció
 
 Cada matrícula recibe automáticamente un **código correlativo** propio (por ejemplo `2026-00001`), que es el "Código/Carné" con el que se identifica la inscripción.
 
-El estado de la matrícula tiene ahora **cinco** valores en vez de tres: **Inscrito**, **Activo**, **Inactivo**, **Certificado** (equivalente a "Graduado") y **Desistió** (antes "cancelada"). Este es, a propósito, el único "estatus" que existe para un alumno — no hay un estatus separado a nivel de persona, distinto del de sus matrículas.
+El estado de la matrícula tiene ahora **cinco** valores en vez de tres: **Inscrito**, **Activo**, **Inactivo**, **Graduado** (terminó y aprobó el curso; antes se llamaba "Certificado") y **Desistió** (antes "cancelada"). Este es, a propósito, el único "estatus" que existe para un alumno — no hay un estatus separado a nivel de persona, distinto del de sus matrículas.
 
 Además del estado de pago (pendiente, pagado, vencido — mientras esté **vencido**, el alumno pierde acceso a ver sus notas y reportes), cada matrícula puede llevar una **cuota** y un registro de **cobros y pagos** (ver la sección de Finanzas más abajo). También existe un bloqueo disciplinario independiente que le impide al alumno abrir el detalle de una clase puntual.
 
@@ -125,11 +125,7 @@ Las notas van de 0.0 a 10.0. La nota final del curso se calcula como un promedio
 
 ## 8. Certificados
 
-- Solo se puede emitir un certificado si el alumno aprobó el curso.
-- Por cada inscripción solo puede existir un certificado (no se pueden emitir duplicados).
-- El certificado queda con un código único y se puede descargar en PDF.
-- El certificado guarda la nota con la que se aprobó en el momento de emitirse: si más adelante se corrige esa nota, el certificado ya emitido no cambia.
-- Verificar un certificado por su código **requiere tener una cuenta y sesión iniciada en el sistema** — hoy no es algo que un tercero externo (por ejemplo, un futuro empleador) pueda hacer sin ser usuario de la plataforma.
+Educa **no emite certificados**: la certificación se gestiona fuera del sistema. Lo que Educa sí da es la nota final ponderada y el veredicto aprobado/no aprobado, y el estado de matrícula **Graduado** para quien terminó y aprobó.
 
 ---
 
@@ -154,12 +150,15 @@ El alumno ve una cuenta regresiva y puede probar su cámara/micrófono 15 minuto
 
 ## 11. Reportes
 
-Los reportes (diarios, semanales o mensuales) muestran: clases dictadas vs. canceladas, porcentaje de asistencia, promedio de notas, y una lista de **alumnos en riesgo** (asistencia por debajo del 70% o promedio por debajo de 6.0).
+Los reportes (diarios, semanales o mensuales) muestran: clases dictadas vs. canceladas, porcentaje de asistencia, promedio de notas, y una lista de **alumnos en riesgo**. Un alumno aparece en esa lista, en un curso concreto, por cualquiera de estos motivos:
+- **Asistencia baja**: por debajo del 70 % (las faltas justificadas no cuentan).
+- **Promedio bajo**: por debajo de 6.0, contando tanto las notas del día a día como los exámenes y evaluaciones del curso.
+- **Una habilidad baja** (por ejemplo, *speaking*) por debajo de 6.0.
+- **Faltas seguidas**: sus dos últimas clases registradas fueron faltas. Es la señal más temprana: dejar de venir de golpe suele ser el comienzo de un abandono, y la tasa de asistencia tarda semanas en reflejarlo.
 
 **Puntos a tener en cuenta:**
 - Una clase que todavía no ocurrió, pero cae dentro del período del reporte, ya se cuenta como "dictada".
 - Cuando se reprograma una clase a otra fecha, el reporte la contabiliza igual que si se hubiera cancelado.
-- El promedio de notas y el cálculo de "alumno en riesgo" **solo toman en cuenta la nota del día a día**, no los exámenes ni la nota final del curso. Un alumno con mal desempeño en el examen final, pero buena participación diaria, no aparecería como "en riesgo".
 
 Administración ve reportes de toda la academia; cada profesor solo de sus cursos; cada alumno solo el suyo (si está al día con el pago).
 
@@ -173,7 +172,15 @@ Hay una campana de notificaciones dentro de la aplicación. Avisa automáticamen
 - El **correo** viene activado para todos; cada persona puede apagarlo en su perfil.
 - **WhatsApp** viene apagado: Meta exige que la persona lo haya aceptado. Lo activa el propio alumno en su perfil, o administración al editar su ficha si el consentimiento se recogió en la matrícula. Hace falta un teléfono registrado.
 - Si un envío falla se reintenta durante aproximadamente una hora. Un aviso que no pudo salir en 12 horas se descarta en vez de mandarse tarde.
-- Los mensajes de WhatsApp usan plantillas que Meta tiene que aprobar antes (el texto está en `DEPLOYMENT.md`). Además, un profesor o administración puede disparar manualmente un aviso de "alumnos en riesgo" — ese aviso llega a los **profesores** del curso, no directamente a los alumnos ni a un responsable de seguimiento académico, y no ocurre de forma automática ni periódica.
+- Los mensajes de WhatsApp usan plantillas que Meta tiene que aprobar antes (el texto está en `DEPLOYMENT.md`).
+
+**Avisos en el teléfono (push).** Educa se puede instalar como una app en el teléfono (Android: botón "Instalar la app" en el perfil; iPhone: Compartir → Añadir a pantalla de inicio). Desde el perfil, cada persona activa **"Avisos en este dispositivo"** y recibe en ese teléfono u ordenador los mismos avisos que la campana, aunque no tenga Educa abierta. Se activa dispositivo por dispositivo, y el permiso que pide el teléfono es el consentimiento. Al cerrar sesión, ese dispositivo deja de recibir los avisos de esa persona. En iPhone sólo funciona con la app instalada.
+
+**Alerta semanal de alumnos en riesgo.** Todos los **lunes a partir de las 7:00** (hora de la academia) el sistema revisa las **últimas cuatro semanas** de cada curso en marcha y avisa, sin que nadie tenga que pulsar nada:
+- A cada **profesor**, con los alumnos en riesgo de sus cursos y el motivo.
+- A **administración y asistentes** de la academia, con la lista completa (nombre, curso y motivo).
+
+Sale una sola vez por semana y academia. Si el sistema estaba apagado el lunes, sale en cuanto vuelve, esa misma semana. Una semana sin alumnos en riesgo no genera avisos. El día y la hora se pueden cambiar. El aviso manual de "alumnos en riesgo" sigue disponible para lanzarlo en cualquier momento. Los alumnos no reciben esta alerta: el seguimiento lo hace la academia.
 
 ---
 
@@ -191,11 +198,12 @@ Hay una campana de notificaciones dentro de la aplicación. Avisa automáticamen
 | Entrar al aula virtual | Sí | Sí | Sí |
 | Ver reportes | Toda la academia | Sus cursos | Solo el propio, si está al día con el pago |
 | Ver historial de auditoría (quién hizo qué) | Sí | No | No |
-| Certificados | Emite | Puede verlos | Descarga el propio |
+
+**Los profesores no ven nada de pagos.** De sus alumnos ven sólo lo necesario para dar la clase: nombre, código de matrícula, estado de la matrícula, asistencia y notas. Nunca la cuota, el saldo ni si el alumno está al día — ni en listados, ni en la alerta de riesgo, ni en ningún otro aviso.
 
 Además, ningún usuario puede cambiarse a sí mismo su propio rol, correo o tope de horas. Administración no puede eliminar su propia cuenta, y no se puede eliminar a un profesor que todavía tiene horarios asignados.
 
-**Sobre el historial de auditoría**: hoy queda registro de quién hizo qué en asistencia, calificaciones, usuarios, matrículas y certificados. **No queda registro** de cambios en el catálogo (crear/editar/borrar un curso, nivel, idioma, o asignación de profesor), ni de quién cancela o reprograma una clase.
+**Sobre el historial de auditoría**: hoy queda registro de quién hizo qué en asistencia, calificaciones, usuarios y matrículas. **No queda registro** de cambios en el catálogo (crear/editar/borrar un curso, nivel, idioma, o asignación de profesor), ni de quién cancela o reprograma una clase.
 
 ---
 
@@ -215,7 +223,7 @@ Estos son comportamientos que **el sistema ya tiene implementados de una forma c
 
 5. **Integración real con Zoom/Meet/Teams.** Existe una base construida para conectarse directamente con esos proveedores (con enlaces separados y credenciales protegidas), pero no está en uso — hoy el profesor simplemente pega un enlace manualmente. ¿Se planea usar esa integración en esta fase, o el enlace manual es suficiente por ahora? (Afecta si vale la pena terminarla o dejarla de lado.)
 
-6. **Criterio de "alumno en riesgo".** Hoy solo mira la nota de participación diaria, no exámenes ni la nota final. ¿Debería incluir también esas notas para reflejar mejor el desempeño real del alumno?
+6. ~~Criterio de "alumno en riesgo".~~ **Resuelto**: incluye exámenes y evaluaciones del curso, y además las faltas seguidas (sección 11).
 
 7. **Trazabilidad de cancelaciones y reprogramaciones.** Ambas operaciones quedan registradas en la auditoría (`entity=class_session`, actions `cancel` y `reschedule`) con actor, timestamp y before/after. ✅ **Resuelto**
 
@@ -225,9 +233,9 @@ Estos son comportamientos que **el sistema ya tiene implementados de una forma c
 
 9. **Profesores nuevos sin configuración.** Un profesor recién dado de alta, sin idiomas ni disponibilidad cargada, puede ser asignado a cualquier curso y horario sin ninguna advertencia. ¿Es el comportamiento deseado, o debería exigirse configurar al profesor antes de asignarlo?
 
-10. **Alertas de alumnos en riesgo.** Hoy son manuales (alguien tiene que disparar la acción) y avisan al profesor, no al alumno ni a un responsable de seguimiento. ¿Debería ser automático y/o llegar a otras personas?
+10. ~~Alertas de alumnos en riesgo.~~ **Resuelto**: salen solas cada semana, a los profesores y a administración (sección 12). La **mora no cuenta** como motivo de riesgo: los profesores no deben saber si un alumno debe (ver sección 13).
 
-11. **Eliminar un idioma o nivel con cursos activos.** Hoy se borra todo en cadena (cursos, matrículas, notas, certificados) sin una confirmación adicional. ¿Debería impedirse o requerir una confirmación explícita si tiene alumnos asociados?
+11. **Eliminar un idioma o nivel con cursos activos.** Hoy se borra todo en cadena (cursos, matrículas, notas) sin una confirmación adicional. ¿Debería impedirse o requerir una confirmación explícita si tiene alumnos asociados?
 
 12. ~~Cierre de sesión al cambiar contraseña o dar de baja a un usuario.~~ **Resuelto parcialmente**: cambiar la contraseña ahora sí cierra automáticamente cualquier sesión abierta en otros dispositivos. Dar de baja a un usuario **todavía no** lo hace — sigue teniendo acceso hasta que expire su sesión, hasta por un mes. ¿Quieres que dar de baja a un usuario también cierre sus sesiones activas de inmediato?
 
@@ -235,7 +243,7 @@ Estos son comportamientos que **el sistema ya tiene implementados de una forma c
 
 13. ~~Notificaciones solo dentro de la app.~~ **Resuelto**: los avisos salen también por correo y WhatsApp (sección 12). Queda por decidir si los avisos de alumnos en riesgo deben ir también por WhatsApp — hoy sólo van por campana y correo.
 
-14. **Verificación de certificados.** Requiere tener cuenta en el sistema; alguien externo (ej. un empleador) no puede verificar un certificado sin ser usuario. ¿Debería habilitarse una verificación pública?
+14. ~~Verificación de certificados.~~ **Descartado**: Educa no emite certificados.
 
 15. **Asistencia y notas sobre clases o matrículas ya canceladas/desistidas.** El sistema hoy permite pasar lista o calificar aunque la clase o la matrícula ya estén en ese estado. ¿Debería bloquearse?
 

@@ -15,6 +15,7 @@ from app.models import (
     Enrollment,
     PaymentStatus,
     Permission,
+    Tenant,
     User,
     UserRole,
 )
@@ -52,7 +53,24 @@ def get_current_user(
     # working for up to the lifetime of their access token.
     if not user.is_active:
         raise _credentials_exc
+    # Lo mismo para la academia entera: suspenderla tiene que cerrar las
+    # sesiones abiertas, no sólo impedir la próxima. Un 401 y no un 403 para
+    # que el cliente dé la sesión por terminada y vuelva al login, que es donde
+    # se explica el motivo.
+    if tenant_suspended(db, user):
+        raise _credentials_exc
     return user
+
+
+def tenant_suspended(db: Session, user: User) -> bool:
+    """Whether the user's academy has been suspended by the platform.
+
+    A superadmin belongs to no academy and is never suspended this way.
+    """
+    if user.tenant_id is None:
+        return False
+    tenant = db.get(Tenant, user.tenant_id)
+    return tenant is not None and not tenant.is_active
 
 
 # A superadmin is an admin plus tenant management, not a parallel role: every

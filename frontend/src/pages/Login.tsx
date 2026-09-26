@@ -54,10 +54,14 @@ export default function Login() {
         }
         setError("Este correo está registrado en varias academias. Por favor selecciona a cuál deseas ingresar.");
       } else {
+        // Un 403 trae el motivo (academia suspendida) en español; el 401 de la
+        // API dice "Could not validate credentials", que aquí salía tal cual.
         setError(
-          typeof err.response?.data?.detail === "string"
+          err.response?.status === 403 && typeof err.response?.data?.detail === "string"
             ? err.response.data.detail
-            : "Credenciales incorrectas"
+            : err.response?.status === 401
+              ? "Correo o contraseña incorrectos."
+              : "No se pudo iniciar sesión. Inténtalo de nuevo."
         );
       }
     }

@@ -17,7 +17,7 @@
 Educa es una plataforma integral para la gestión de una academia que ofrece **idiomas y programas de competencias digitales y de negocios**. Su objetivo es centralizar en un solo lugar:
 
 - La **gestión académica** (alumnos, profesores, cursos, horarios, matrículas)
-- El **control de clases** (asistencia, calificaciones, certificados)
+- El **control de clases** (asistencia y calificaciones)
 - El **aula virtual** (lobby para clases en vivo con Zoom/Meet/Teams)
 
 ---
@@ -29,7 +29,7 @@ Educa es una plataforma integral para la gestión de una academia que ofrece **i
 | **Admin** | Dirección/administración de la academia | CRUD completo de usuarios, catálogo, horarios, matrículas; acceso a reportes globales y auditoría |
 | **Assistant** | Personal administrativo con alcance recortado | Lo mismo que un admin, **pero sólo en las secciones que se le concedan** una a una (ver abajo). Nunca auditoría |
 | **Teacher** | Profesor (idiomas o competencias) | Ver sus horarios, pasar lista, calificar, proponer ubicación de clase, acceder al lobby |
-| **Student** | Alumno | Ver sus cursos, calificaciones, asistencia; acceder al lobby virtual; descargar certificados |
+| **Student** | Alumno | Ver sus cursos, calificaciones, asistencia; acceder al lobby virtual |
 
 ### Asistente: permisos por sección
 
@@ -133,7 +133,7 @@ El Catálogo Académico (pantalla de administración) agrupa la lista de idiomas
 
 **Con auditoría**: crear/editar/borrar idioma, nivel, curso, nacionalidad y asignación de profesor **sí quedan registrados** en la auditoría, igual que matrículas y calificaciones.
 
-**⚠️ Borrado en cascada**: eliminar un idioma o un nivel borra en cascada sus cursos, y con ellos matrículas, notas y certificados asociados, sin ningún aviso o confirmación adicional a nivel de negocio.
+**⚠️ Borrado en cascada**: eliminar un idioma o un nivel borra en cascada sus cursos, y con ellos matrículas y notas asociadas, sin ningún aviso o confirmación adicional a nivel de negocio.
 
 ---
 
@@ -266,7 +266,7 @@ El estado de la matrícula ahora tiene **cinco** valores (antes eran tres: activ
 | **Inscrito** | Recién matriculado, aún no arrancó o no se activó formalmente | Sí | Sí | Sí |
 | **Activo** | Cursando con normalidad | Sí | Sí | Sí |
 | **Inactivo** | En pausa (sin ser baja definitiva) | No — libera el cupo | No | Sí |
-| **Certificado** | Terminó y aprobó el curso (equivalente a "Graduado") | No | No | No |
+| **Graduado** | Terminó y aprobó el curso (antes "Certificado") | No | No | No |
 | **Desistió** | Dio de baja el curso (antes "cancelada") | No | No | No |
 
 Las tres columnas de la derecha son **la definición del estado**, no una descripción de él: viven en un solo sitio del código (`ENROLLMENT_OCCUPIES_SEAT`, `ENROLLMENT_HAS_ACCESS`, `ENROLLMENT_OWES`) y todos los módulos las consultan de ahí.
@@ -279,13 +279,13 @@ El ciclo de vida es un camino, no cinco etiquetas intercambiables. El backend re
 
 ```
 Inscrito  → Activo, Inactivo, Desistió
-Activo    → Inactivo, Certificado, Desistió
+Activo    → Inactivo, Graduado, Desistió
 Inactivo  → Activo, Desistió
-Certificado → (final)
+Graduado  → (final)
 Desistió    → (final)
 ```
 
-**Certificado** y **Desistió** son estados finales a propósito: contra el primero ya se emitió un certificado, y readmitir a quien desistió es una **matrícula nueva con su propio código** — que el índice único parcial sobre (alumno, curso) permite explícitamente. Volver a *Activo* desde cualquiera de los dos requiere reactivar el cupo y el horario, revalidados en ese momento.
+**Graduado** y **Desistió** son estados finales a propósito: el primero cerró el curso con una nota final aprobatoria, y readmitir a quien desistió es una **matrícula nueva con su propio código** — que el índice único parcial sobre (alumno, curso) permite explícitamente. Volver a *Activo* desde cualquiera de los dos requiere reactivar el cupo y el horario, revalidados en ese momento.
 
 ### Bloqueos
 - **`attendance_blocked`**: bloqueo disciplinario. En la práctica solo impide abrir el **detalle** de una sesión puntual (donde está el enlace de la clase); el alumno sigue viendo el listado/calendario general de sesiones
@@ -310,9 +310,22 @@ La **morosidad** se recalcula con un barrido (`POST /payments/refresh-statuses`)
 
 El **saldo pendiente** de cada matrícula (`cargado − pagado`) se muestra ahora en el propio listado de matrículas, junto al estado de pago: el badge dice si el dinero está en mora, la columna dice cuánto. Se calcula para toda la lista en una sola consulta agregada, no una por fila.
 
+### Renovación al siguiente nivel
+
+Quien se **gradúa** de un curso ve en su inicio la tarjeta «Tu siguiente nivel»: los grupos abiertos del nivel siguiente del mismo idioma o área, con horario, cupo restante y aviso si chocan con otra clase suya. Elige uno y **pide plaza** (`POST /renewals`).
+
+- **Pedir no es matricularse.** La solicitud no ocupa cupo ni genera deuda. Dirección (admin, o asistente con `manage_enrollments`) la ve en la bandeja «Requiere tu atención» del inicio y la aprueba o rechaza desde **Matrículas**; no hay sección nueva.
+- **Aprobar abre la matrícula por la misma puerta que la manual** (`open_enrollment`): se vuelven a comprobar cupo, choque de horario y estado del curso, porque pudieron cambiar desde que el alumno pidió. Nace como **Inscrito**.
+- **Cuota:** la de la matrícula que el alumno termina, fijada al pedir. Vence al inicio del nuevo grupo (o hoy, si ya empezó). Dirección puede ajustarla después como cualquier otra.
+- **Rechazar** admite un motivo opcional que el alumno ve; puede elegir otro grupo enseguida.
+- Una sola solicitud **pendiente** por curso terminado (índice único parcial); el alumno puede cancelarla mientras siga pendiente.
+- Un alumno **en mora** no puede pedir plaza: la tarjeta le pide ponerse al día.
+- «Nivel siguiente» es el siguiente `Level` del mismo idioma/área por orden de creación (A1 → A2, Módulo 2 → Módulo 10), no por código.
+- Se notifica a dirección al pedir y al alumno al aprobar o rechazar (in-app, correo y push; no WhatsApp, que exige plantillas aprobadas).
+
 ### Borrado vs. baja
 
-**Una matrícula con expediente académico no se puede borrar** (409 `has_academic_record`). Si tiene notas, asistencia registrada o un certificado emitido, el DELETE se rechaza y el error dice cuánto hay de cada cosa; la vía para darla de baja es marcarla **Desistió**, que conserva todo. El borrado arrastraba ese expediente en cascada y la fila de auditoría sólo guardaba la matrícula — no las notas que desaparecían con ella, de modo que era la única operación del sistema capaz de destruir historial sin dejar rastro de qué había.
+**Una matrícula con expediente académico no se puede borrar** (409 `has_academic_record`). Si tiene notas o asistencia registrada, el DELETE se rechaza y el error dice cuánto hay de cada cosa; la vía para darla de baja es marcarla **Desistió**, que conserva todo. El borrado arrastraba ese expediente en cascada y la fila de auditoría sólo guardaba la matrícula — no las notas que desaparecían con ella, de modo que era la única operación del sistema capaz de destruir historial sin dejar rastro de qué había.
 
 El DELETE sigue existiendo para lo que sí es un error de captura: una matrícula recién creada sobre la que todavía nadie escribió nada. Borrar un **curso** con matrículas está directamente bloqueado (409): hay que vaciarlo antes.
 
@@ -344,7 +357,7 @@ La **falta justificada sale del cálculo por completo**: no es una asistencia qu
 - Todos los cambios quedan registrados en la **auditoría**
 
 ### Validaciones de estado
-- **No se puede pasar lista sobre una matrícula cerrada** (Desistió, Certificado o Inactivo): quien ya no está en el aula no puede estar presente ni ausente de ella, y registrarlo movía en silencio la tasa de asistencia sobre la que se calculan los reportes y los alumnos en riesgo. Responde 409.
+- **No se puede pasar lista sobre una matrícula cerrada** (Desistió, Graduado o Inactivo): quien ya no está en el aula no puede estar presente ni ausente de ella, y registrarlo movía en silencio la tasa de asistencia sobre la que se calculan los reportes y los alumnos en riesgo. Responde 409.
 - **No se puede pasar lista sobre una sesión cancelada**: nadie asistió a una clase que no se dio. Responde 409.
 - Ambas reglas valen igual para las **calificaciones** (sección 8).
 
@@ -376,7 +389,7 @@ La distinción importa porque antes no existía: bastaba marcar a un alumno para
 - **Upsert idempotente**: recalificar reemplaza, no acumula
 - Las notas se guardan automáticamente al salir del campo (autosave)
 - Todas las modificaciones quedan en auditoría
-- **No se califica sobre una sesión cancelada** ni sobre una **matrícula cerrada** (409). Lo segundo importa especialmente en *Certificado*: el certificado se emitió contra la nota final, y recalificar después lo dejaría en desacuerdo con el documento que el alumno ya tiene en la mano
+- **No se califica sobre una sesión cancelada** ni sobre una **matrícula cerrada** (409). Lo segundo importa especialmente en *Graduado*: la matrícula se cerró con esa nota final, y recalificar después la dejaría en desacuerdo con el veredicto que el alumno ya recibió
 
 ### Nota final
 - Se calcula como **promedio ponderado** usando los pesos configurados por evaluación
@@ -389,13 +402,7 @@ La distinción importa porque antes no existía: bastaba marcar a un alumno para
 
 ## 9. Certificados
 
-### Emisión
-- Solo se emite si el alumno **aprueba** el curso
-- **Un solo certificado por matrícula** (no se puede emitir duplicado)
-- El certificado incluye un **código único verificable** con prefijo `EDUCA-`
-- Se puede descargar en **PDF**
-- El certificado guarda una "fotografía" de la nota final y el nivel al momento de emitirse — si luego se recalifica al alumno o cambia el curso, el certificado ya emitido no se actualiza
-- **La verificación por código requiere iniciar sesión en el sistema** — no es un endpoint público abierto a cualquier persona externa a la academia, como podría entenderse de "cualquiera puede verificar"
+Educa **no emite certificados**: la certificación se gestiona fuera del sistema. Lo que Educa sí da es la nota final ponderada y el veredicto aprobado/no aprobado, y el estado de matrícula **Graduado** para quien terminó y aprobó. La tabla `certificates` se eliminó (`drop_certificates_table`) y el estado `certified` pasó a llamarse `graduated`.
 
 ---
 
@@ -481,7 +488,7 @@ El módulo de proveedores de reunión (Manual/Zoom/Google/Teams, credenciales ci
 - Sesiones realizadas / canceladas
 - % de asistencia por curso
 - Promedio de notas
-- **Alumnos en riesgo** (asistencia < 70% o promedio < 6.0 — umbrales confirmados en el código)
+- **Alumnos en riesgo** (asistencia < 70 %, promedio < 6.0, una habilidad < 6.0, o las `CONSECUTIVE_ABSENCES_ALERT` = 2 últimas clases registradas como falta — `app/services/reports.py`)
 
 ### Precisiones importantes sobre las métricas
 - **"Sesiones realizadas" ahora significa "clase con lista pasada"**, no "clase que nadie canceló". Antes se calculaba como `total − canceladas`, de modo que un reporte semanal generado el lunes ya contaba la clase del viernes como dictada. Lo que no está ni dictado ni cancelado aparece aparte, como **"Sin registrar"** — que es a la vez lo que está por venir y lo que pasó sin que nadie pasara lista
@@ -500,7 +507,7 @@ El módulo de proveedores de reunión (Manual/Zoom/Google/Teams, credenciales ci
 
 - Campana con contador de no leídos
 - Se genera notificación automática (in-app, más correo/WhatsApp si están configurados) al cancelar/reprogramar una clase, solo a alumnos con matrícula activa
-- **"Alertas de alumnos en riesgo" son manuales, no automáticas**: un admin o profesor debe disparar la acción bajo demanda. El efecto es notificar **a los profesores** del curso sobre sus alumnos en riesgo — no notifica a los propios alumnos ni genera ninguna acción de seguimiento automática
+- **Alertas de alumnos en riesgo: semanales y automáticas** (`app/services/risk_sweep.py`). La API las lanza desde su bucle de fondo (`app/services/background.py`) los lunes desde las 7:00 de la academia, sobre las últimas cuatro semanas (`period="last4w"`) de los cursos en `open`/`in_progress`. Avisan a los profesores de cada curso y a admins/asistentes de la academia con la lista nominal. `at_risk_sweeps` registra cada barrido y su índice único `(COALESCE(tenant_id,0), week_start)` garantiza uno por semana y academia aunque haya varios procesos. Se conserva el disparo manual (`POST /notifications/alerts/at-risk`).
 
 ---
 
@@ -512,7 +519,7 @@ El módulo de proveedores de reunión (Manual/Zoom/Google/Teams, credenciales ci
 - Solo accesible para **admin**
 
 ### Cobertura
-La auditoría cubre hoy: asistencia, calificaciones, usuarios (incluida el alta), **matrículas — incluida su creación**, certificados (sin valor anterior/nuevo), propuestas de ubicación, **el catálogo completo**, **cancelar/reprogramar/editar sesiones**, **el borrado de horarios**, **el módulo de Finanzas** (cobros, pagos y emisión de facturas), **aulas**, **festivos**, **las academias mismas (alta y edición)**, y **las cualificaciones y la disponibilidad de los profesores**.
+La auditoría cubre hoy: asistencia, calificaciones, usuarios (incluida el alta), **matrículas — incluida su creación**, propuestas de ubicación, **el catálogo completo**, **cancelar/reprogramar/editar sesiones**, **el borrado de horarios**, **el módulo de Finanzas** (cobros, pagos y emisión de facturas), **aulas**, **festivos**, **las academias mismas (alta y edición)**, y **las cualificaciones y la disponibilidad de los profesores**.
 
 Crear una matrícula era el hueco más notorio: es la puerta de entrada académica *y* financiera del sistema — sienta a un alumno, abre un libro de movimientos y emite un código — y editarla y borrarla ya se auditaban, pero crearla no dejaba rastro.
 
@@ -563,7 +570,6 @@ El **estado del alumno no se almacena**: se deriva de sus matrículas (Cursando 
 | Acceder al Lobby | ✅ (como anfitrión) | ✅ (anfitrión sólo de las franjas que imparte) | ✅ (como asistente) |
 | Ver reportes | ✅ (global) | ✅ (sus cursos) | ✅ (solo propio, si solvente) |
 | Auditoría | ✅ | ❌ | ❌ |
-| Certificados | ✅ (emite) | ✅ (ver) | ✅ (descargar propio; verificar código requiere sesión iniciada) |
 
 ### Aislamiento entre academias (multi-tenant)
 
@@ -643,7 +649,7 @@ Cuatro incoherencias estructurales, encontradas contrastando el código contra e
 
 27. ~~**Los cinco estados de matrícula significaban cosas distintas según el módulo.**~~ — **RESUELTO**: el cupo contaba sólo *Activo*, el aula virtual admitía *Activo* e *Inscrito*, y la lista para pasar lista volvía a contar sólo *Activo*. Un alumno **Inscrito** entraba a clase y recibía tareas pero no salía en la lista, no ocupaba cupo, no disparaba validación de choque de horario y no recibía aviso de cancelación. Hoy las tres preguntas se responden en un solo sitio (`ENROLLMENT_OCCUPIES_SEAT` / `ENROLLMENT_HAS_ACCESS` / `ENROLLMENT_OWES`). Ver sección 6.
 28. ~~**El cupo era evitable sin forzar nada.**~~ — **RESUELTO**: creando las matrículas como *Inscrito* se podía llenar un curso de 10 plazas sin límite, porque sólo se contaban las activas. Ahora cuenta cualquier matrícula que ocupe plaza, y la creación sólo admite estados de apertura.
-29. ~~**El ciclo de vida no era un camino.**~~ — **RESUELTO**: un `PATCH` podía llevar una matrícula de *Desistió* de vuelta a *Activo*, o des-certificar a alguien cuyo certificado ya estaba emitido. Ahora hay tabla de transiciones (409 `illegal_transition`) y el panel sólo ofrece los movimientos legales.
+29. ~~**El ciclo de vida no era un camino.**~~ — **RESUELTO**: un `PATCH` podía llevar una matrícula de *Desistió* de vuelta a *Activo*, o sacar de *Graduado* a alguien cuyo curso ya estaba cerrado. Ahora hay tabla de transiciones (409 `illegal_transition`) y el panel sólo ofrece los movimientos legales.
 30. ~~**El rol `assistant` estaba a medio cablear.**~~ — **RESUELTO**: el menú ofrecía Aulas, Festivos, Horarios, Finanzas y editar usuarios, y la API respondía 403 a todo ello; Reportes devolvía un informe vacío sin explicar por qué; y `view_reports` no gateaba nada. Ver sección 2.
 31. ~~**Ninguna sesión llegaba nunca a `held`.**~~ — **RESUELTO**: pasar lista marca la clase como realizada, y los reportes distinguen realizada / sin registrar / cancelada.
 32. ~~**Crear una matrícula no dejaba traza.**~~ — **RESUELTO**. También se auditan ahora aulas, festivos, cualificaciones y disponibilidad de profesores.
@@ -658,17 +664,19 @@ Desfases de esquema encontrados al contrastar los modelos contra una base migrad
 36. ~~**Autogenerate podía volver a borrar los índices únicos de `grades`.**~~ — **RESUELTO (preventivo)**: los índices parciales `uq_grade_session`/`uq_grade_course` ahora están declarados en el modelo (`Index(..., postgresql_where=...)`), de modo que `alembic check` no los ve como deriva.
 37. ~~**Auditar disponibilidad de profesor o borrar un horario daba 500.**~~ — **RESUELTO**: `_jsonable()` no serializaba `datetime.time`, y la disponibilidad y los horarios guardan horas. Ahora `time` se serializa con `isoformat()` como `date` y `datetime`.
 38. ~~**Crear un festivo duplicado daba 500 en vez de 409.**~~ — **RESUELTO**: el `db.flush()` estaba fuera del `try/except IntegrityError`; el conflicto estalla en el flush y la excepción quedaba sin capturar.
+39. ~~**Las propuestas de ubicación se veían y aprobaban entre academias.**~~ — **RESUELTO**: `GET /location-proposals` no filtraba por academia, y aprobar/rechazar buscaba la propuesta sólo por id. Un admin de una academia leía los enlaces y aulas propuestos en otra, y podía cambiar dónde se daban sus clases. Ahora el listado se acota por el curso del horario y aprobar/rechazar una ajena responde 404 (`test_location_proposals_are_per_academy`).
+40. ~~**Suspender una academia no cortaba el acceso.**~~ — **RESUELTO**: la pantalla prometía «sin acceso hasta reactivar», pero su gente seguía iniciando sesión y usando la API; sólo el barrido de riesgo la saltaba. Ahora el login responde 403 con el motivo (después de comprobar la contraseña, para no revelar cuentas), y el refresco de sesión y cada petición responden 401, así que las sesiones abiertas también se cierran. El superadmin no pertenece a ninguna academia y no se ve afectado (`test_tenant_suspension.py`).
 
 ### Medio impacto — pendientes de confirmar con negocio
 15. Un profesor recién creado, sin cualificaciones ni disponibilidad configuradas, puede ser asignado a cualquier curso y horario sin advertencia (postura "optimista" por diseño).
-16. Las alertas de "alumnos en riesgo" son manuales y notifican a los profesores, no a los alumnos ni a un responsable de seguimiento.
-17. ~~Borrar un **curso** arrastra en cascada matrículas, notas y certificados.~~ — **RESUELTO**: borrar un curso con matrículas responde 409; hay que vaciarlo antes. Borrar una **matrícula** sí sigue arrastrando su historial, pero la confirmación ahora lo dice y sugiere marcar *Desistió* en su lugar.
+16. ~~Las alertas de "alumnos en riesgo" son manuales.~~ Resuelto: barrido semanal automático a profesores y administración.
+17. ~~Borrar un **curso** arrastra en cascada matrículas y notas.~~ — **RESUELTO**: borrar un curso con matrículas responde 409; hay que vaciarlo antes. Borrar una **matrícula** sí sigue arrastrando su historial, pero la confirmación ahora lo dice y sugiere marcar *Desistió* en su lugar.
 18. El principio "404 en vez de 403" no se aplica de forma uniforme en toda la API (sí lo hace, de forma consistente, para el aislamiento entre academias).
 19. ~~Aulas, festivos, proveedores de video, tareas y notificaciones siguen sin auditarse.~~ — **PARCIAL**: aulas, festivos y disponibilidad ya se auditan. Siguen sin auditarse **proveedores de video, tareas y notificaciones**.
 
 ### Bajo impacto — matices para no generar expectativas equivocadas
 20. ~~Las notificaciones son solo internas (in-app).~~ Resuelto: cola de envío por canal (`notification_deliveries`) escrita en la misma transacción, despachada cada 20 s con reintentos y caducidad a las 12 h.
-21. Verificar un certificado por código requiere sesión iniciada, no es un enlace público.
+21. ~~Verificar un certificado por código requiere sesión iniciada.~~ Descartado: Educa no emite certificados.
 22. ~~La asistencia y las calificaciones pueden registrarse sobre matrículas o sesiones ya canceladas, sin bloqueo.~~ — **RESUELTO** (ver 33).
 
 ### Nuevo — pendiente de definición de negocio (requerimientos recién incorporados)

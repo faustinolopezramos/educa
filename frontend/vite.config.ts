@@ -25,7 +25,7 @@ export default defineConfig(({ command, mode }) => {
         // Los prefijos son los de `include_router` en backend/app/main.py. Los que
         // faltaban (makeups, payments, dashboard, grading) no llegaban a la API en
         // desarrollo: Vite los servía como index.html y la pantalla salía vacía.
-        "^/(auth|users|catalog|holidays|location-proposals|enrollments|schedules|sessions|grades|grading|rooms|attendance|makeups|meetings|payments|dashboard|reports|notifications|audit|teachers|tenants|assignments)(/|$|\\?)":
+        "^/(auth|users|catalog|holidays|location-proposals|enrollments|renewals|schedules|sessions|grades|grading|rooms|attendance|makeups|meetings|payments|dashboard|reports|notifications|push|audit|teachers|tenants|assignments)(/|$|\\?)":
           {
             target: "http://localhost:8000",
             changeOrigin: true,

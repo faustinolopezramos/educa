@@ -6,11 +6,14 @@ Usage:
     python -m app.cli dispatch-notifications [--limit N]
     python -m app.cli at-risk-sweep [--force]
     python -m app.cli generate-vapid-keys
+    python -m app.cli bootstrap --email EMAIL [--name NOMBRE] [--reset-password]
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
 import sys
 from collections.abc import Callable
 from datetime import date, datetime
@@ -209,6 +212,62 @@ def cmd_generate_vapid_keys(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bootstrap(
+    args: argparse.Namespace, session_factory: Callable[[], Session] = SessionLocal
+) -> int:
+    """Prepara una instalación nueva: nacionalidades y superadmin, sin demo.
+
+    La contraseña se lee de `EDUCA_SUPERADMIN_PASSWORD` o se pregunta sin eco;
+    nunca de un argumento, que quedaría en el historial de la terminal.
+    Con `--reset-password` cambia la de un superadmin existente y cierra sus
+    sesiones: es la forma de cerrar una instalación hecha con el seed de demo.
+    """
+    from app.bootstrap import ensure_nationalities, ensure_superadmin
+
+    password = os.environ.get("EDUCA_SUPERADMIN_PASSWORD")
+    if password is None:
+        if not sys.stdin.isatty():
+            print(
+                "Define EDUCA_SUPERADMIN_PASSWORD o ejecuta el comando en una terminal "
+                "interactiva para escribir la contraseña.",
+                file=sys.stderr,
+            )
+            return 2
+        password = getpass.getpass("Contraseña del superadmin: ")
+        if getpass.getpass("Repítela: ") != password:
+            print("Las contraseñas no coinciden.", file=sys.stderr)
+            return 2
+
+    db = session_factory()
+    try:
+        added = ensure_nationalities(db)
+        outcome = ensure_superadmin(
+            db,
+            email=args.email,
+            full_name=args.name,
+            password=password,
+            reset_password=args.reset_password,
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        print(f"No se hizo nada: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+    print(f"Nacionalidades añadidas: {added}.")
+    print(
+        {
+            "created": f"Superadmin {args.email} creado.",
+            "password_reset": f"Contraseña de {args.email} cambiada; sus sesiones abiertas se cerraron.",
+            "exists": f"{args.email} ya existía; no se tocó (usa --reset-password para cambiarla).",
+        }[outcome]
+    )
+    print("Siguiente paso: entra como superadmin y crea la primera academia en «Academias».")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Herramientas de línea de comandos de Educa")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -271,6 +330,19 @@ def main() -> None:
         "generate-vapid-keys", help="Generar las claves VAPID de los avisos push (una vez)"
     )
     parser_vapid.set_defaults(func=cmd_generate_vapid_keys)
+
+    parser_bootstrap = subparsers.add_parser(
+        "bootstrap",
+        help="Preparar una instalación nueva (nacionalidades y superadmin), sin datos de demo",
+    )
+    parser_bootstrap.add_argument("--email", required=True, help="Correo del superadmin")
+    parser_bootstrap.add_argument("--name", default="Administrador de la plataforma")
+    parser_bootstrap.add_argument(
+        "--reset-password",
+        action="store_true",
+        help="Si el superadmin ya existe, cambiar su contraseña y cerrar sus sesiones",
+    )
+    parser_bootstrap.set_defaults(func=cmd_bootstrap)
 
     args = parser.parse_args()
     exit_code = args.func(args)

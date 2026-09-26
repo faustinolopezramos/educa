@@ -29,6 +29,14 @@ import {
   useTeacherLoad,
   useUpdateMe,
 } from "../../lib/queries";
+import {
+  disablePush,
+  enablePush,
+  PushUnavailableError,
+  useInstallPrompt,
+  usePushState,
+  type PushState,
+} from "../../lib/push";
 import { notify } from "../../lib/toast";
 import type { User } from "../../lib/types";
 import {
@@ -64,6 +72,8 @@ export function ProfilePanel() {
       <div className="max-w-2xl">
         <NotificationChannelsForm user={user} />
       </div>
+
+      <InstallAppCard />
 
       <div className="max-w-2xl">
         <PasswordForm />
@@ -257,8 +267,108 @@ function NotificationChannelsForm({ user }: { user: User }) {
             </span>
           </label>
         ))}
+        <DevicePushRow />
       </div>
     </Card>
+  );
+}
+
+const PUSH_DETAIL: Record<PushState, string> = {
+  on: "Activados en este dispositivo",
+  off: "Te avisamos aunque no tengas Educa abierta",
+  denied: "Los bloqueaste: actívalos en los ajustes del navegador para este sitio",
+  "needs-install": "En iPhone, primero instala la app (abajo) y actívalos desde ella",
+  unsupported: "Este navegador no admite avisos",
+};
+
+/**
+ * Avisos push en *este* dispositivo. A diferencia del correo y WhatsApp, no es
+ * una preferencia de la cuenta: cada teléfono u ordenador se activa por su
+ * lado, y el permiso que pide el navegador es el consentimiento.
+ */
+function DevicePushRow() {
+  const [state, setState] = usePushState();
+  const [busy, setBusy] = useState(false);
+  if (state === null) return null;
+  const actionable = state === "on" || state === "off";
+
+  async function toggle(on: boolean) {
+    setBusy(true);
+    try {
+      const next = on ? await enablePush() : await disablePush();
+      setState(next);
+      if (on && next === "on") notify("Avisos activados en este dispositivo", "success");
+      if (on && next === "denied") notify("El navegador bloqueó los avisos", "error");
+    } catch (e) {
+      notify(
+        e instanceof PushUnavailableError
+          ? e.message
+          : apiErrorMessage(e, "No se pudieron activar los avisos"),
+        "error",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <label
+      className={`flex items-start gap-2.5 rounded-lg border border-slate-200 p-3 text-sm ${
+        actionable ? "cursor-pointer hover:bg-slate-50" : "opacity-60"
+      }`}
+    >
+      <input
+        type="checkbox"
+        className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+        checked={state === "on"}
+        disabled={!actionable || busy}
+        onChange={(e) => void toggle(e.target.checked)}
+      />
+      <span>
+        <span className="font-medium text-slate-800">Avisos en este dispositivo</span>
+        <span className="block text-xs text-slate-500">{PUSH_DETAIL[state]}</span>
+      </span>
+    </label>
+  );
+}
+
+/**
+ * Instalar Educa como app: un icono en la pantalla de inicio que se abre sin
+ * la barra del navegador. En Android/Chrome hay botón; en iPhone sólo se puede
+ * explicar el paso, porque Safari no deja que una web lo ofrezca.
+ */
+function InstallAppCard() {
+  const { installed, canPrompt, iosManual, install } = useInstallPrompt();
+  if (installed || (!canPrompt && !iosManual)) return null;
+  return (
+    <div className="max-w-2xl">
+      <Card>
+        <SectionHeading>Instalar Educa</SectionHeading>
+        <p className="mb-3 text-sm text-slate-500">
+          Tenla en la pantalla de inicio como una app más: se abre directa en tus clases.
+        </p>
+        {canPrompt ? (
+          <Button
+            onClick={() =>
+              void install().then((ok) => ok && notify("Educa quedó instalada", "success"))
+            }
+          >
+            Instalar la app
+          </Button>
+        ) : (
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
+            <li>
+              Toca <strong>Compartir</strong> (el cuadrado con la flecha hacia arriba) en la barra
+              de Safari.
+            </li>
+            <li>
+              Elige <strong>Añadir a pantalla de inicio</strong>.
+            </li>
+            <li>Abre Educa desde el icono nuevo y activa aquí los avisos.</li>
+          </ol>
+        )}
+      </Card>
+    </div>
   );
 }
 

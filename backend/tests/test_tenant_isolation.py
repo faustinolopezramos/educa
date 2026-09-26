@@ -553,6 +553,46 @@ def test_conflict_probing_does_not_reveal_another_academys_timetable(client, aca
         assert res.status_code == 404
 
 
+def test_location_proposals_are_per_academy(client, academies):
+    """Listing, approving and rejecting all reached every academy's proposals.
+
+    `GET /location-proposals` had no tenant filter at all, and approve/reject
+    looked the proposal up by id alone: an admin of alfa could read beta's
+    class links and rooms, and rewrite where beta's classes are held.
+    """
+    beta_teacher = auth(client, "teacher@beta.com")
+    proposal = client.post(
+        f"/schedules/{academies['b']['schedule'].id}/location/propose",
+        headers=beta_teacher,
+        json={"modality": "virtual", "join_url": "https://meet.example.com/beta"},
+    ).json()
+
+    alfa = auth(client, "admin@alfa.com")
+    assert client.get("/location-proposals", headers=alfa).json() == []
+    assert client.get(
+        "/location-proposals?status_filter=pending", headers=alfa
+    ).json() == []
+    assert (
+        client.post(f"/location-proposals/{proposal['id']}/approve", headers=alfa).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/location-proposals/{proposal['id']}/reject", headers=alfa, json={}
+        ).status_code
+        == 404
+    )
+
+    beta = auth(client, "admin@beta.com")
+    assert [p["id"] for p in client.get("/location-proposals", headers=beta).json()] == [
+        proposal["id"]
+    ]
+    assert (
+        client.post(f"/location-proposals/{proposal['id']}/approve", headers=beta).status_code
+        == 200
+    )
+
+
 def test_a_superadmin_still_sees_every_academy(client, db):
     """Tenant-less on purpose — tightening the scope must not lock them out."""
     academy = _academy(db, "gamma")

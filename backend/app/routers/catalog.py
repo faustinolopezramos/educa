@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -15,6 +16,7 @@ from app.core.deps import (
 )
 from app.core.http import commit_or_conflict
 from app.models import (
+    COURSE_IS_ACTIVE,
     COURSE_IS_ARCHIVED,
     ENROLLMENT_OCCUPIES_SEAT,
     Course,
@@ -57,6 +59,7 @@ from app.services.audit import record, snapshot
 from app.services.courses import attach_course_stats, check_transition
 from app.services.enrollments import seats_taken
 from app.services.scheduling import teacher_qualified_for_course
+from app.services.sessions import generate_course_sessions
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -664,7 +667,30 @@ def change_course_status(
         before=before,
         after=snapshot(course),
     )
-    db.commit()
+    # Un curso abierto tiene que tener sus clases en la agenda de su profesor y
+    # de sus alumnos desde ese momento. Idempotente: reabrir no duplica nada.
+    if payload.status in COURSE_IS_ACTIVE:
+        try:
+            generate_course_sessions(db, course.id)
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "reason": "session_conflict",
+                    "message": (
+                        "No se pudieron crear las clases del curso: alguna choca con otra "
+                        "clase del mismo profesor o aula. Revisa sus horarios."
+                    ),
+                },
+            )
+    commit_or_conflict(
+        db,
+        {
+            "reason": "session_conflict",
+            "message": "No se pudieron crear las clases del curso: choque de profesor o aula.",
+        },
+    )
     db.refresh(course)
     return attach_course_stats(db, [course])[0]
 

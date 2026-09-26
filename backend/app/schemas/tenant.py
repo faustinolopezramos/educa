@@ -1,6 +1,7 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.base import PatchModel
 
@@ -21,8 +22,20 @@ class TenantBase(BaseModel):
     address: str | None = Field(None, max_length=255)
 
 
+def _known_timezone(value: str | None) -> str | None:
+    """Una zona que `ZoneInfo` no conoce rompe la ventana del aula virtual de
+    toda la academia en cuanto alguien abre una clase: mejor rechazarla aquí."""
+    if value is None:
+        return value
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"Zona horaria desconocida: {value}")
+    return value
+
+
 class TenantCreate(TenantBase):
-    pass
+    _tz = field_validator("timezone")(_known_timezone)
 
 
 class TenantUpdate(PatchModel):
@@ -40,6 +53,7 @@ class TenantUpdate(PatchModel):
     phone: str | None = Field(None, max_length=50)
     address: str | None = Field(None, max_length=255)
 
+    _tz = field_validator("timezone")(_known_timezone)
 
 
 class TenantRead(TenantBase):
@@ -49,3 +63,14 @@ class TenantRead(TenantBase):
 
     class Config:
         from_attributes = True
+
+
+class TenantSummary(TenantRead):
+    """An academy as the platform owner scans the list: identity plus usage."""
+
+    #: Seats held right now — what `max_active_students` is measured against.
+    active_students: int = 0
+    #: Admins of the academy. Zero means nobody can run it.
+    admins: int = 0
+    #: Every active account, i.e. who loses access if the academy is suspended.
+    active_users: int = 0

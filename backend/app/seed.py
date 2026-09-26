@@ -23,7 +23,6 @@ from app.models import (
     Level,
     MeetingProvider,
     Modality,
-    Nationality,
     ProviderName,
     Room,
     Schedule,
@@ -35,38 +34,9 @@ from app.models import (
     UserRole,
     VirtualMeeting,
 )
+from app.bootstrap import ensure_nationalities
 from app.services.sequences import next_enrollment_code
 
-_NATIONALITIES = [
-    "Guatemala",
-    "El Salvador",
-    "Honduras",
-    "Nicaragua",
-    "Costa Rica",
-    "Panamá",
-    "México",
-    "Colombia",
-    "Venezuela",
-    "Perú",
-    "Ecuador",
-    "Bolivia",
-    "Chile",
-    "Argentina",
-    "Uruguay",
-    "Paraguay",
-    "Brasil",
-    "Cuba",
-    "República Dominicana",
-    "Puerto Rico",
-    "España",
-    "Estados Unidos",
-    "Canadá",
-    "Egipto",
-    "Siria",
-    "Líbano",
-    "China",
-    "Taiwán",
-]
 
 _SKILL_TRACKS: dict[str, TrackKind] = {
     "Computación básica para adultos": TrackKind.digital_skill,
@@ -110,6 +80,14 @@ def _get_or_create_user(
 
 
 def seed() -> None:
+    # Esto crea una academia de demostración con contraseñas publicadas en el
+    # código (superadmin123, teacher123…). En producción la instalación se
+    # prepara con `python -m app.cli bootstrap`.
+    if settings.is_production:
+        raise SystemExit(
+            "El seed de demostración no se ejecuta en producción: crea cuentas con "
+            "contraseñas conocidas. Usa `python -m app.cli bootstrap --email ...`."
+        )
     db = SessionLocal()
     try:
         # --- Tenant ---
@@ -181,10 +159,7 @@ def seed() -> None:
                 )
 
         # --- Nationalities ---
-        for name in _NATIONALITIES:
-            if db.scalar(select(Nationality).where(Nationality.name == name)) is None:
-                db.add(Nationality(name=name))
-        db.flush()
+        ensure_nationalities(db)
 
         # --- Catalog ---
         english = db.scalar(select(Language).where(Language.name == "Inglés"))

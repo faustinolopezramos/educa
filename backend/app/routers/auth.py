@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, tenant_suspended
 from app.core.http import commit_or_conflict
 from app.core.security import (
     _DUMMY_PASSWORD_HASH,
@@ -120,6 +120,23 @@ def _tenant_required_exc(db: Session, users: list[User]) -> HTTPException:
     )
 
 
+def _refuse_if_suspended(db: Session, user: User) -> None:
+    """403 con el motivo, para quien ya demostró ser de la academia.
+
+    Se comprueba después de la contraseña: decir "esta academia está
+    suspendida" a quien sólo prueba correos confirmaría que la cuenta existe.
+    """
+    if tenant_suspended(db, user):
+        logger.info("Refused login for account %s: academy suspended", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Tu academia está suspendida en la plataforma. Contacta con su "
+                "dirección o con el administrador de Educa."
+            ),
+        )
+
+
 @router.post("/login", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -156,6 +173,7 @@ def login(
     if not user.is_active:
         logger.info("Refused login for deactivated account %s", user.id)
         raise _credentials_exc
+    _refuse_if_suspended(db, user)
 
     _purge_old_revoked_sessions(db, user.id)
     token = _issue_tokens(db, user)
@@ -182,7 +200,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Token:
     # tampoco por esta: sin esta línea seguía rotando refresh tokens hasta que
     # el suyo expirara. El access token que salía de ahí ya no servía —
     # `get_current_user` lo rechaza— pero la sesión no moría donde debía.
-    if not user.is_active:
+    if not user.is_active or tenant_suspended(db, user):
         raise _credentials_exc
     if token_data.get("tv") != user.token_version:
         raise _credentials_exc
@@ -383,6 +401,7 @@ def supabase_login(
     if not user.is_active:
         logger.info("Refused Supabase login for deactivated account %s", user.id)
         raise _credentials_exc
+    _refuse_if_suspended(db, user)
 
     _purge_old_revoked_sessions(db, user.id)
     token = _issue_tokens(db, user)

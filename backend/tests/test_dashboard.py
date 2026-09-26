@@ -138,6 +138,32 @@ def test_a_future_class_is_not_a_pending_register(client, db, world):
     assert _item(client, teacher, "unregistered_sessions") is None
 
 
+def test_a_co_teacher_is_not_told_about_slots_someone_else_closes(client, db, world):
+    """Assigned to a course is not the same as holding its slot.
+
+    teacher_a also helps on course B, whose slot teacher_b holds. Only the slot
+    holder can close that register, so it is teacher_b's pending item, not
+    teacher_a's — counting it told a co-teacher "25 clases sin pasar lista" when
+    four of them were theirs.
+    """
+    from app.models import CourseTeacher
+
+    db.add(CourseTeacher(course_id=world["course_b"].id, teacher_id=world["teacher_a"].id))
+    make_session(db, world["schedule_b"], TODAY - timedelta(days=2))
+    db.flush()
+
+    assert "unregistered_sessions" not in _kinds(client, auth(client, "teacher_a@test.com"))
+    assert "unregistered_sessions" in _kinds(client, auth(client, "teacher_b@test.com"))
+
+
+def test_an_old_open_register_still_counts(client, db, world):
+    """The agenda lists every open register of the term; the tray has to agree
+    with it, or the teacher reads two different numbers for the same thing."""
+    make_session(db, world["schedule_a"], TODAY - timedelta(days=45))
+    item = _item(client, auth(client, "teacher_a@test.com"), "unregistered_sessions")
+    assert item is not None and item["count"] == 1
+
+
 def test_the_teacher_sees_only_their_own_unregistered_classes(client, db, world):
     make_session(db, world["schedule_b"], TODAY - timedelta(days=2))  # teacher_b's course
 
@@ -250,3 +276,35 @@ def test_get_executive_kpis(client, world):
     assert "active_teachers" in data
     assert "occupancy_rate" in data
 
+
+
+# ---------------- First steps of a brand-new academy ----------------
+def test_a_new_academy_sees_its_first_steps_in_order(client, db):
+    from app.core.security import hash_password
+    from app.models import Language, Tenant, User, UserRole
+
+    tenant = Tenant(name="Nueva", slug="nueva")
+    db.add(tenant)
+    db.flush()
+    db.add(User(email="dir@nueva.com", full_name="Dir", role=UserRole.admin,
+                password_hash=hash_password("secret123"), tenant_id=tenant.id))
+    db.flush()
+    admin = auth(client, "dir@nueva.com")
+
+    steps = client.get("/dashboard", headers=admin).json()["setup"]
+    assert [s["key"] for s in steps] == [
+        "areas", "levels", "teachers", "courses", "open", "students", "enroll"
+    ]
+    assert not any(s["done"] for s in steps)
+    assert all(s["section"] for s in steps)
+
+    db.add(Language(name="Inglés", tenant_id=tenant.id))
+    db.flush()
+    steps = {s["key"]: s["done"] for s in client.get("/dashboard", headers=admin).json()["setup"]}
+    assert steps["areas"] and not steps["levels"]
+
+
+def test_only_an_academy_admin_gets_first_steps(client, db, world):
+    # world's admin runs no single academy; teachers and students never see it.
+    assert client.get("/dashboard", headers=auth(client, "admin@test.com")).json()["setup"] is None
+    assert client.get("/dashboard", headers=auth(client, "teacher_a@test.com")).json()["setup"] is None

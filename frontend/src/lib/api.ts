@@ -121,7 +121,9 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if (stat === 403) {
+    // Un 403 al iniciar sesión no es "no tienes permisos para esta acción":
+    // es la academia suspendida, y la pantalla de login ya lo explica.
+    if (stat === 403 && !req?.url?.startsWith("/auth/")) {
       window.dispatchEvent(
         new CustomEvent(FORBIDDEN_EVENT, {
           detail: "No tienes permisos para esta acción.",

@@ -249,3 +249,69 @@ def test_status_cannot_be_smuggled_through_a_generic_patch(client, world, ready_
     assert res.status_code in (200, 422), res.text
     if res.status_code == 200:
         assert res.json()["status"] == "draft"
+
+
+# ---------------- Opening a course puts its classes on the calendar ----------------
+def test_opening_a_course_creates_its_classes(client, db, world, ready_course):
+    """Una academia nueva abría un curso y nadie veía ninguna clase: las sesiones
+    sólo existían si alguien pulsaba «Generar sesiones» en el detalle."""
+    from app.models import ClassSession
+
+    schedule = world["schedule_a"]
+    assert db.query(ClassSession).filter_by(schedule_id=schedule.id).count() == 0
+
+    admin = auth(client, "admin@test.com")
+    assert _status(client, admin, ready_course.id, "open").status_code == 200
+
+    created = db.query(ClassSession).filter_by(schedule_id=schedule.id).count()
+    # One per Monday of the ~90-day term.
+    assert created >= 12
+    # The teacher's agenda and the student's list are no longer empty.
+    teacher = auth(client, "teacher_a@test.com")
+    assert client.get("/sessions", headers=teacher).json()
+    student = auth(client, "student@test.com")
+    assert client.get("/sessions", headers=student).json()
+
+    # Idempotent: moving on to in_progress does not duplicate a single class.
+    assert _status(client, admin, ready_course.id, "in_progress").status_code == 200
+    assert db.query(ClassSession).filter_by(schedule_id=schedule.id).count() == created
+
+
+def test_a_new_slot_in_an_open_course_brings_its_classes(client, db, world):
+    from app.models import ClassSession
+
+    admin = auth(client, "admin@test.com")
+    res = client.post(
+        "/schedules",
+        headers=admin,
+        json={
+            "course_id": world["course_a"].id,  # open by default
+            "teacher_id": world["teacher_a"].id,
+            "day_of_week": 3,
+            "start_time": "17:00",
+            "end_time": "18:00",
+        },
+        params={"force": True},
+    )
+    assert res.status_code == 201, res.text
+    assert db.query(ClassSession).filter_by(schedule_id=res.json()["id"]).count() >= 12
+
+
+def test_a_slot_in_a_draft_course_waits_until_it_opens(client, db, world, ready_course):
+    from app.models import ClassSession
+
+    admin = auth(client, "admin@test.com")
+    res = client.post(
+        "/schedules",
+        headers=admin,
+        json={
+            "course_id": ready_course.id,
+            "teacher_id": world["teacher_a"].id,
+            "day_of_week": 3,
+            "start_time": "17:00",
+            "end_time": "18:00",
+        },
+        params={"force": True},
+    )
+    assert res.status_code == 201, res.text
+    assert db.query(ClassSession).filter_by(schedule_id=res.json()["id"]).count() == 0

@@ -109,6 +109,18 @@ def generate_sessions(db: Session, schedule: Schedule) -> list[ClassSession]:
     return created
 
 
+def generate_course_sessions(db: Session, course_id: int) -> int:
+    """Materialize the whole term of every slot of a course. Returns how many.
+
+    Lo llama abrir el curso: hasta ahora las clases sólo existían si alguien
+    pulsaba «Generar sesiones» en el detalle de la clase, así que en una
+    academia nueva el profesor abría «Hoy» y lo encontraba vacío, y el alumno no
+    tenía ninguna clase a la que entrar.
+    """
+    schedules = db.scalars(select(Schedule).where(Schedule.course_id == course_id)).all()
+    return sum(len(generate_sessions(db, s)) for s in schedules)
+
+
 def ensure_session(db: Session, schedule: Schedule, on: date) -> ClassSession:
     """Get — or create — the session of a schedule on a specific date.
 

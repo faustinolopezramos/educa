@@ -2,6 +2,7 @@ from datetime import date, time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,7 +15,7 @@ from app.core.deps import (
     teacher_teaches_course,
 )
 from app.core.http import commit_or_conflict
-from app.models import Course, Permission, Room, Schedule, User, UserRole
+from app.models import COURSE_IS_ACTIVE, Course, Permission, Room, Schedule, User, UserRole
 from app.schemas.schedule import (
     ConflictCheck,
     ConflictInfo,
@@ -25,6 +26,7 @@ from app.schemas.schedule import (
 )
 from app.schemas.teacher import AvailableTeacher
 from app.services.audit import record, snapshot
+from app.services.sessions import generate_sessions
 from app.services.scheduling import (
     room_conflicts,
     teacher_available,
@@ -379,6 +381,21 @@ def create_schedule(
         **payload.model_dump(), term_start=term_start, term_end=term_end
     )
     db.add(schedule)
+    # Una franja nueva en un curso ya abierto trae sus clases consigo; en un
+    # borrador se generan al abrirlo (`change_course_status`).
+    if course.status in COURSE_IS_ACTIVE:
+        try:
+            db.flush()
+            generate_sessions(db, schedule)
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Choque de horario detectado (profesor o aula ocupada)",
+                    "reason": "constraint",
+                },
+            )
     _commit_or_conflict(db)
     db.refresh(schedule)
     return _to_read(schedule, current_user)

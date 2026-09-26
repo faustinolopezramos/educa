@@ -15,6 +15,9 @@ export const useDashboard = () =>
     queryKey: ["dashboard"],
     queryFn: async () => (await api.get<DashboardSummary>("/dashboard")).data,
     staleTime: 30_000,
+    // Volver al inicio tras dar un paso (crear el área, abrir un curso) tiene
+    // que verlo marcado; con la caché de 30 s seguía pendiente.
+    refetchOnMount: "always",
   });
 
 export const useExecutiveKpis = () =>

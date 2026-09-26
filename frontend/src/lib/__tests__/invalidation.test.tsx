@@ -15,8 +15,8 @@ import { useCancelSession, useRescheduleSession } from "../queries/sessions";
  * la nota final sale de las notas, el reporte y la bandeja de pendientes salen
  * de la asistencia. Nada de eso se invalidaba, así que la pantalla seguía
  * mostrando la respuesta anterior a un cálculo que ya había cambiado — y en el
- * caso de la nota final, esa cifra obsoleta es contra la que se decide emitir
- * un certificado.
+ * caso de la nota final, esa cifra obsoleta es con la que se decide graduar
+ * al alumno.
  *
  * Se prueba sobre las claves y no sobre la interfaz porque la clave es el
  * contrato: cualquier pantalla que lea `["final-grade", id]` queda cubierta,

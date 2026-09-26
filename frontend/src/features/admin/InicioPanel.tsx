@@ -4,9 +4,17 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { ActionTray } from "../../components/ActionTray";
 import { AcademyKpis } from "./AcademyKpis";
+import { FirstSteps } from "./FirstSteps";
 import { Badge, Button, Card, PageHeader, SectionHeading } from "../../components/ui";
 import { adminStatusLine } from "../../lib/adminHome";
-import { DAYS, dayName, formatTime, localDow, modalityColor, modalityLabel } from "../../lib/format";
+import {
+  DAYS,
+  dayName,
+  formatTime,
+  localDow,
+  modalityColor,
+  modalityLabel,
+} from "../../lib/format";
 import { useCourses, useDashboard, useRooms, useSchedules } from "../../lib/queries";
 import { canSeeSection } from "../../lib/nav";
 
@@ -35,6 +43,7 @@ export function InicioPanel() {
   const { data: dashboard } = useDashboard();
 
   const firstName = user?.full_name?.split(" ")[0] ?? "";
+  const setupPending = Boolean(dashboard?.setup?.some((step) => !step.done));
   const canEnroll = canSeeSection(user, "enrollments");
   const canSeeCourses = canSeeSection(user, "courses");
   const canSeeHorarios = canSeeSection(user, "horarios");
@@ -43,28 +52,38 @@ export function InicioPanel() {
     <div>
       <PageHeader
         title={firstName ? `Hola, ${firstName}` : "Resumen"}
-        description={adminStatusLine(dashboard?.items ?? [])}
+        description={
+          setupPending
+            ? "Tu academia aún se está montando. Sigue los pasos de abajo."
+            : adminStatusLine(dashboard?.items ?? [])
+        }
         actions={
-          <>
-            {canSeeCourses && (
-              <Button variant="secondary" onClick={() => setParams({ m: "courses" })}>
-                Cursos
-              </Button>
-            )}
-            {canEnroll && (
-              <Button onClick={() => setParams({ m: "enrollments" })}>
-                Nueva matrícula
-              </Button>
-            )}
-          </>
+          setupPending ? undefined : (
+            <>
+              {canSeeCourses && (
+                <Button variant="secondary" onClick={() => setParams({ m: "courses" })}>
+                  Cursos
+                </Button>
+              )}
+              {canEnroll && (
+                <Button onClick={() => setParams({ m: "enrollments" })}>Nueva matrícula</Button>
+              )}
+            </>
+          )
         }
       />
 
-      <AcademyKpis />
+      {/* Una academia a medio montar ve primero cómo terminar de montarla; sus
+          KPI a cero y un «todo al día» no le dicen nada. */}
+      {setupPending && <FirstSteps steps={dashboard!.setup!} />}
 
-      <ActionTray emptyMessage="No hay nada pendiente en la academia. Todo al día." />
+      {!setupPending && <AcademyKpis />}
 
-      {canSeeHorarios && <WeekPreview />}
+      {!(setupPending && (dashboard?.items.length ?? 0) === 0) && (
+        <ActionTray emptyMessage="No hay nada pendiente en la academia. Todo al día." />
+      )}
+
+      {canSeeHorarios && !setupPending && <WeekPreview />}
     </div>
   );
 }
@@ -107,9 +126,7 @@ function WeekPreview() {
       </div>
 
       {upcoming.length === 0 ? (
-        <p className="py-6 text-center text-xs text-slate-500">
-          Todavía no hay horarios armados.
-        </p>
+        <p className="py-6 text-center text-xs text-slate-500">Todavía no hay horarios armados.</p>
       ) : (
         <div className="space-y-1.5">
           {upcoming.map((s) => (
@@ -118,7 +135,8 @@ function WeekPreview() {
               className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs"
             >
               <span className="tabular w-24 flex-none font-semibold text-slate-600">
-                {DAYS[s.day_of_week]?.slice(0, 3) ?? dayName(s.day_of_week)} {formatTime(s.start_time)}
+                {DAYS[s.day_of_week]?.slice(0, 3) ?? dayName(s.day_of_week)}{" "}
+                {formatTime(s.start_time)}
               </span>
               <span className="min-w-0 flex-1 truncate font-semibold text-slate-900">
                 {courseName(s.course_id)}

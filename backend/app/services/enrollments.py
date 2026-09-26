@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     ENROLLMENT_OCCUPIES_SEAT,
     Enrollment,
+    Level,
     Payment,
     PaymentKind,
     Tenant,
@@ -61,6 +62,21 @@ def check_tenant_student_quota(
             },
         )
 
+
+
+def level_after(db: Session, level: Level) -> Level | None:
+    """The level that follows `level` in its language or track, if any.
+
+    Levels are ordered by creation (`id`), which is how the catalogue builds a
+    track: A1 before A2, "Módulo 2" before "Módulo 10". Ordering by `code`
+    would put M10 straight after M1.
+    """
+    return db.scalar(
+        select(Level)
+        .where(Level.language_id == level.language_id, Level.id > level.id)
+        .order_by(Level.id)
+        .limit(1)
+    )
 
 
 def seats_taken(

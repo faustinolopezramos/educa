@@ -17,8 +17,18 @@ export interface Tenant {
   logo_url: string | null;
   is_active: boolean;
   max_active_students: number;
+  timezone: string;
+  phone: string | null;
+  tax_id: string | null;
+  address: string | null;
   created_at: string;
   updated_at: string;
+  /** Seats held now — what `max_active_students` is measured against. */
+  active_students: number;
+  /** Active admins. Zero means nobody can run the academy. */
+  admins: number;
+  /** Active accounts: who loses access if the academy is suspended. */
+  active_users: number;
 }
 
 export interface User {
@@ -215,9 +225,14 @@ export interface TeacherAvailability {
   end_time: string;
 }
 
-export type EnrollmentStatus = "enrolled" | "active" | "inactive" | "certified" | "withdrawn";
+export type EnrollmentStatus = "enrolled" | "active" | "inactive" | "graduated" | "withdrawn";
 export type PaymentStatus = "pending" | "paid" | "overdue";
 
+/**
+ * Una matrícula tal como la ven administración y el propio alumno. A un
+ * profesor `GET /enrollments` le devuelve la misma fila **sin** `payment_status`,
+ * `amount` ni `balance`: sólo lo necesario para dar la clase.
+ */
 export interface Enrollment {
   id: number;
   student_id: number;
@@ -493,6 +508,17 @@ export interface DashboardSummary {
   next_session_id: number | null;
   /** Staff only; `null` for everyone else. */
   kpis: AcademyKpis | null;
+  /** Admin of an academy only: the steps from empty to its first class. */
+  setup?: SetupStep[] | null;
+}
+
+export interface SetupStep {
+  key: string;
+  label: string;
+  hint: string;
+  /** The `?m=` section where the step is done. */
+  section: string;
+  done: boolean;
 }
 
 export interface AcademyKpis {
@@ -741,4 +767,55 @@ export interface AcademyPayrollSummary {
   total_hours: number;
   total_amount: number;
   teachers: TeacherPayrollSummary[];
+}
+
+/** A graduated student's request for a seat in the next level. */
+export interface RenewalRequest {
+  id: number;
+  student_id: number;
+  student_name: string;
+  from_enrollment_id: number;
+  from_course_name: string;
+  course_id: number;
+  course_name: string;
+  level_name: string;
+  status: ProposalStatus;
+  /** The cuota the new matrícula will carry: the one of the course just finished. */
+  amount: number;
+  review_note: string | null;
+  enrollment_id: number | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export interface RenewalCourseOption {
+  id: number;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  seats_left: number;
+  schedules: {
+    day_of_week: number;
+    start_time: string;
+    end_time: string;
+    modality: Modality;
+  }[];
+  /** Clashes with a class the student already holds a seat in. */
+  clashes: boolean;
+}
+
+export interface RenewalOption {
+  from_enrollment_id: number;
+  from_course_name: string;
+  current_level_name: string;
+  next_level_name: string;
+  amount: number;
+  courses: RenewalCourseOption[];
+  /** Latest pending or rejected request from this matrícula. */
+  request: RenewalRequest | null;
+}
+
+export interface RenewalOptions {
+  blocked_reason: "delinquent" | null;
+  options: RenewalOption[];
 }
