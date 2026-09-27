@@ -72,6 +72,16 @@ def get_report(
     return _report(db, current_user, period, anchor, course_id, teacher_id)
 
 
+def _sanitize_csv_cell(value: object) -> object:
+    if isinstance(value, str) and value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{value}"
+    return value
+
+
+def _safe_row(row: list[object]) -> list[object]:
+    return [_sanitize_csv_cell(cell) for cell in row]
+
+
 @router.get("/export")
 def export_report(
     period: str = Period,
@@ -97,37 +107,37 @@ def export_report(
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
-        ["Reporte", report.period, str(report.date_from), str(report.date_to)]
+        _safe_row(["Reporte", report.period, str(report.date_from), str(report.date_to)])
     )
     writer.writerow([])
     writer.writerow(["Sesiones (total / realizadas / sin registrar / canceladas)"])
     writer.writerow(
-        [
+        _safe_row([
             report.sessions_total,
             report.sessions_held,
             report.sessions_pending,
             report.sessions_cancelled,
-        ]
+        ])
     )
     writer.writerow([])
     writer.writerow(["Asistencia por curso"])
     writer.writerow(["Curso", "Presentes", "Total", "Tasa"])
     for c in report.attendance_by_course:
         writer.writerow(
-            [c.course_name, c.present, c.total, c.rate if c.rate is not None else ""]
+            _safe_row([c.course_name, c.present, c.total, c.rate if c.rate is not None else ""])
         )
     writer.writerow([])
     writer.writerow(["Alumnos en riesgo"])
     writer.writerow(["Alumno", "Curso", "Asistencia", "Promedio", "Motivos"])
     for r in report.at_risk:
         writer.writerow(
-            [
+            _safe_row([
                 r.student_name,
                 r.course_name,
                 r.attendance_rate if r.attendance_rate is not None else "",
                 r.average if r.average is not None else "",
                 "; ".join(r.reasons),
-            ]
+            ])
         )
 
     buffer.seek(0)

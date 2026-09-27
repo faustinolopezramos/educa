@@ -1,9 +1,23 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.base import PatchModel
 from app.schemas.user import UserBrief
+
+
+def _validate_safe_url(v: str | None) -> str | None:
+    if v is None:
+        return None
+    cleaned = v.strip()
+    if not cleaned:
+        return None
+    # Allow attachments format or standard web URLs
+    if cleaned.startswith("attachment://"):
+        return cleaned
+    if not (cleaned.startswith("http://") or cleaned.startswith("https://")):
+        raise ValueError("La URL debe comenzar con http:// o https://")
+    return cleaned
 
 
 class AssignmentBase(BaseModel):
@@ -12,6 +26,11 @@ class AssignmentBase(BaseModel):
     description: str | None = None
     resource_url: str | None = Field(None, max_length=500)
     due_date: datetime | None = None
+
+    @field_validator("resource_url")
+    @classmethod
+    def validate_resource_url(cls, v: str | None) -> str | None:
+        return _validate_safe_url(v)
 
 
 class AssignmentCreate(AssignmentBase):
@@ -30,6 +49,11 @@ class AssignmentRead(AssignmentBase):
 class SubmissionCreate(BaseModel):
     content: str | None = None
     submission_url: str | None = Field(None, max_length=500)
+
+    @field_validator("submission_url")
+    @classmethod
+    def validate_submission_url(cls, v: str | None) -> str | None:
+        return _validate_safe_url(v)
 
 
 class SubmissionGrade(PatchModel):

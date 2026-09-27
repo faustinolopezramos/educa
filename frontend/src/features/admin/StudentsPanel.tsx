@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   Badge, Button, Card, ConfirmDialog, EmptyState, PageHeader, SearchInput,
@@ -13,6 +14,7 @@ import { onMutationError } from "./shared";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
 import { Student360Drawer } from "./Student360Drawer";
 import { CreateUserModal } from "./UsersPanel";
+import { StudentBulkImportModal } from "./StudentBulkImportModal";
 
 type Tab = "activos" | "sin_curso" | "morosos" | "baja" | "todos";
 
@@ -56,6 +58,7 @@ function deriveStatus(student: User, enrolments: Enrollment[]): DerivedStatus {
 }
 
 export function StudentsPanel() {
+  const queryClient = useQueryClient();
   const { data: students = [] } = useUsers("student");
   const { data: enrolments = [] } = useEnrollments();
   const { data: nationalities = [] } = useNationalities();
@@ -64,6 +67,7 @@ export function StudentsPanel() {
   const [selected, setSelected] = useState<number[]>([]);
   const [enrolling, setEnrolling] = useState(false);
   const [showCreateStudent, setShowCreateStudent] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [drawerStudent, setDrawerStudent] = useState<User | null>(null);
   const [deactivating, setDeactivating] = useState<User | null>(null);
 
@@ -121,7 +125,13 @@ export function StudentsPanel() {
         title="Alumnos"
         description="Gestión integral de estudiantes, inscripciones y estado académico."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowImportModal(true)}
+            >
+              📥 Importar CSV / Excel
+            </Button>
             <Button
               variant="secondary"
               onClick={() => setEnrolling(true)}
@@ -341,6 +351,17 @@ export function StudentsPanel() {
           hideRoleSelect={true}
           nationalities={nationalities}
           onClose={() => setShowCreateStudent(false)}
+        />
+      )}
+
+      {/* Bulk Import Students Modal */}
+      {showImportModal && (
+        <StudentBulkImportModal
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+            queryClient.invalidateQueries({ queryKey: ["enrollments"] });
+          }}
         />
       )}
 

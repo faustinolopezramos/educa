@@ -36,6 +36,7 @@ from app.models import (
     ProviderName,
     Schedule,
     SessionStatus,
+    Tenant,
     User,
     UserRole,
     VirtualMeeting,

@@ -392,6 +392,35 @@ def _teacher_items(db: DbSession, user: User, course_ids: list[int]) -> list[Act
                 detail="Dirección todavía no ha revisado dónde darás la clase.",
             )
         )
+
+    # Entregas de tareas esperando calificación
+    if course_ids:
+        ungraded_count = (
+            db.scalar(
+                select(func.count())
+                .select_from(AssignmentSubmission)
+                .join(Assignment, AssignmentSubmission.assignment_id == Assignment.id)
+                .where(
+                    Assignment.course_id.in_(course_ids),
+                    AssignmentSubmission.status != "graded",
+                )
+            )
+            or 0
+        )
+        if ungraded_count:
+            items.append(
+                ActionItem(
+                    kind="pending_grading",
+                    label="entrega por calificar"
+                    if ungraded_count == 1
+                    else "entregas por calificar",
+                    count=ungraded_count,
+                    severity="warning",
+                    section="tareas",
+                    detail="Tus alumnos esperan calificación y retroalimentación en SpeedGrader.",
+                )
+            )
+
     return items
 
 

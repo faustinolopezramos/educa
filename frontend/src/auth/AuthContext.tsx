@@ -11,12 +11,13 @@ import { api, getRefreshToken, getToken, LOGOUT_EVENT, setToken } from "../lib/a
 import { forgetDeviceOnLogout } from "../lib/push";
 import { isSupabaseConfigured, signInWithSupabase, signOutFromSupabase } from "../lib/supabase";
 import { queryClient } from "../lib/queryClient";
-import type { LoginResponse, Permission, Role, User } from "../lib/types";
+import type { AcademyRegisterRequest, LoginResponse, Permission, Role, User } from "../lib/types";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string, tenantSlug?: string) => Promise<User>;
+  registerAcademy?: (data: AcademyRegisterRequest) => Promise<User>;
   logout: () => void;
   hasRole: (...roles: Role[]) => boolean;
   hasPermission: (permission: Permission) => boolean;
@@ -109,6 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function registerAcademy(data: AcademyRegisterRequest): Promise<User> {
+    const res = await api.post<LoginResponse>("/auth/register-academy", data);
+    return applySession(res.data);
+  }
+
   function logout() {
     // Read the refresh token before clearing it locally, and best-effort ask
     // the server to revoke it — a "logged out" refresh token shouldn't still
@@ -148,7 +154,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, hasRole, hasPermission, updateUser: setUser }),
+    () => ({
+      user,
+      loading,
+      login,
+      registerAcademy,
+      logout,
+      hasRole,
+      hasPermission,
+      updateUser: setUser,
+    }),
     [user, loading],
   );
 

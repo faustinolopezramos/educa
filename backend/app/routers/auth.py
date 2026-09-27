@@ -19,8 +19,13 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models import RefreshSession, Tenant, User
-from app.schemas.auth import RefreshRequest, SupabaseLoginRequest, Token
+from app.models import RefreshSession, Tenant, User, UserRole
+from app.schemas.auth import (
+    AcademyRegisterRequest,
+    RefreshRequest,
+    SupabaseLoginRequest,
+    Token,
+)
 from app.schemas.user import UserRead, UserSelfUpdate
 from app.services import supabase_auth
 from app.services.audit import record, snapshot
@@ -177,6 +182,77 @@ def login(
 
     _purge_old_revoked_sessions(db, user.id)
     token = _issue_tokens(db, user)
+    db.commit()
+    return token
+
+
+@router.post(
+    "/register-academy",
+    response_model=Token,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_academy(
+    payload: AcademyRegisterRequest,
+    db: Session = Depends(get_db),
+) -> Token:
+    """Self-service onboarding: creates a new academy tenant and primary admin account."""
+    slug = payload.slug.strip().lower()
+    existing_tenant = db.scalar(select(Tenant).where(Tenant.slug == slug))
+    if existing_tenant is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El subdominio o identificador ya está en uso. Por favor elige otro.",
+        )
+
+    tier_limits = {
+        "free": 15,
+        "starter": 100,
+        "pro": 300,
+        "scale": 1000,
+    }
+    plan_tier = payload.plan_tier.strip().lower()
+    max_students = tier_limits.get(plan_tier, 15)
+
+    tenant = Tenant(
+        name=payload.academy_name.strip(),
+        slug=slug,
+        max_active_students=max_students,
+        phone=payload.phone.strip() if payload.phone else None,
+        is_active=True,
+    )
+    db.add(tenant)
+    db.flush()
+
+    admin_user = User(
+        tenant_id=tenant.id,
+        email=str(payload.admin_email).strip().lower(),
+        full_name=payload.admin_name.strip(),
+        password_hash=hash_password(payload.password),
+        role=UserRole.admin,
+        phone=payload.phone.strip() if payload.phone else None,
+        is_active=True,
+        notify_email=True,
+    )
+    db.add(admin_user)
+    db.flush()
+
+    record(
+        db,
+        admin_user,
+        "create",
+        "tenant",
+        tenant.id,
+        None,
+        {
+            "name": tenant.name,
+            "slug": tenant.slug,
+            "plan_tier": plan_tier,
+            "max_active_students": max_students,
+            "admin_email": admin_user.email,
+        },
+    )
+
+    token = _issue_tokens(db, admin_user)
     db.commit()
     return token
 

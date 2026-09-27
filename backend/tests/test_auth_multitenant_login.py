@@ -171,3 +171,42 @@ def test_login_multitenant_same_password_prompts_tenant_required(client, db):
     slugs = [t["slug"] for t in detail["tenants"]]
     assert "sede1" in slugs
     assert "sede2" in slugs
+
+
+def test_register_academy_free_tier_limits_to_15_students(client, db):
+    payload = {
+        "academy_name": "Tutorías Pequeñas",
+        "slug": "tutorias-pequenas",
+        "admin_name": "Profe Juan",
+        "admin_email": "juan@pequenas.com",
+        "password": "Password123!",
+        "plan_tier": "free",
+    }
+    res = client.post("/auth/register-academy", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert "access_token" in data
+    assert data["user"]["email"] == "juan@pequenas.com"
+
+    tenant = db.query(Tenant).filter(Tenant.slug == "tutorias-pequenas").first()
+    assert tenant is not None
+    assert tenant.max_active_students == 15
+    assert tenant.is_active is True
+
+
+def test_register_academy_default_plan_is_free(client, db):
+    payload = {
+        "academy_name": "Tutorías Default",
+        "slug": "tutorias-default",
+        "admin_name": "Profe Ana",
+        "admin_email": "ana@default.com",
+        "password": "Password123!",
+    }
+    res = client.post("/auth/register-academy", json=payload)
+    assert res.status_code == 200
+
+    tenant = db.query(Tenant).filter(Tenant.slug == "tutorias-default").first()
+    assert tenant is not None
+    assert tenant.max_active_students == 15
+
+

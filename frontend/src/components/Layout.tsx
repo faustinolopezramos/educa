@@ -8,6 +8,7 @@ import { syncPushSubscription } from "../lib/push";
 import { useLocationProposals } from "../lib/queries";
 import { CommandPalette, openCommandPalette } from "./CommandPalette";
 import {
+  IconBell,
   IconBook,
   IconBuilding,
   IconCalendar,
@@ -59,6 +60,7 @@ const ITEM_ICONS: Record<string, IconComponent> = {
   catalog: IconLayers,
   rooms: IconDoor,
   video_providers: IconVideo,
+  notifications_settings: IconBell,
   holidays: IconCalendar,
   audit: IconShield,
   tenants: IconBuilding,

@@ -152,6 +152,12 @@ class Settings(BaseSettings):
             sep = "&" if "?" in self.database_url else "?"
             self.database_url = f"{self.database_url}{sep}sslmode=require"
 
+        if self.is_production and not self.fernet_key.strip():
+            raise ValueError(
+                "FERNET_KEY is required in production for database field encryption. Generate one with: "
+                'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+            )
+
         weak = self.jwt_secret.strip() in _PLACEHOLDER_SECRETS
         if not weak:
             return self

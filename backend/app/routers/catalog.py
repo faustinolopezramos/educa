@@ -27,6 +27,7 @@ from app.models import (
     Nationality,
     Permission,
     Schedule,
+    TrackKind,
     User,
     UserRole,
 )
@@ -176,6 +177,70 @@ def delete_nationality(
     record(db, current_user, "delete", "nationality", nationality.id, before=before)
     db.delete(nationality)
     db.commit()
+
+
+@router.post("/quick-setup-template", status_code=status.HTTP_201_CREATED)
+def apply_quick_setup_template(
+    template_type: str = "english",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(admin_only),
+) -> dict[str, str]:
+    """Provisions a starter catalog template (Language + standard Levels) in one transaction."""
+    tenant_id = current_user.tenant_id
+
+    if template_type == "digital_skills":
+        lang_name = "Desarrollo y Competencias Digitales"
+        track_kind = TrackKind.digital_skill
+        levels_data = [
+            ("MOD-1", "Fundamentos y Principios"),
+            ("MOD-2", "Desarrollo Frontend e Interfaces"),
+            ("MOD-3", "Backend y Bases de Datos"),
+            ("MOD-4", "Proyecto Final y Despliegue"),
+        ]
+    else:
+        lang_name = "Inglés General"
+        track_kind = TrackKind.language
+        levels_data = [
+            ("A1", "Principiante"),
+            ("A2", "Elemental"),
+            ("B1", "Intermedio"),
+            ("B2", "Intermedio Alto"),
+        ]
+
+    existing = db.scalar(
+        select(Language).where(
+            Language.tenant_id == tenant_id, Language.name == lang_name
+        )
+    )
+    if existing:
+        return {
+            "status": "exists",
+            "message": f"El área '{lang_name}' ya está en tu catálogo.",
+        }
+
+    lang = Language(tenant_id=tenant_id, name=lang_name, kind=track_kind)
+    db.add(lang)
+    db.flush()
+
+    for code, name in levels_data:
+        lvl = Level(language_id=lang.id, code=code, name=name)
+        db.add(lvl)
+
+    record(
+        db,
+        current_user,
+        "create",
+        "catalog_template",
+        lang.id,
+        None,
+        {"language": lang_name, "levels": [c for c, _ in levels_data]},
+    )
+    db.commit()
+    return {
+        "status": "created",
+        "message": f"Se creó exitosamente '{lang_name}' con {len(levels_data)} niveles.",
+    }
 
 
 # ---------------- Languages ----------------

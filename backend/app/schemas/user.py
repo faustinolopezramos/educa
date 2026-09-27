@@ -160,3 +160,42 @@ class UserBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     full_name: str
+
+
+# --- Bulk Student Import Schemas ---
+
+
+class StudentImportRow(BaseModel):
+    full_name: str
+    email: EmailStr
+    cui_passport: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    password: str | None = None
+    course_id: int | None = None
+
+
+class BulkImportRequest(BaseModel):
+    students: list[StudentImportRow]
+    default_course_id: int | None = None
+    default_password: str | None = "Educa2026!"
+
+
+class BulkImportRowResult(BaseModel):
+    row_number: int
+    full_name: str
+    email: str
+    status: str  # "created", "skipped", "error"
+    user_id: int | None = None
+    enrolled_course_id: int | None = None
+    message: str | None = None
+
+
+class BulkImportResponse(BaseModel):
+    total_processed: int
+    created_count: int
+    enrolled_count: int
+    skipped_count: int
+    error_count: int
+    results: list[BulkImportRowResult]
+

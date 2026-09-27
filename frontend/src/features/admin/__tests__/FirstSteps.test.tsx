@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 
-import { render, screen } from "../../../test/utils";
+import { render, screen, fireEvent } from "../../../test/utils";
 import { FirstSteps } from "../FirstSteps";
 import type { SetupStep } from "../../../lib/types";
 
-const step = (key: string, done: boolean): SetupStep => ({
+const step = (key: string, done: boolean, section = "catalog"): SetupStep => ({
   key,
   label: `Paso ${key}`,
   hint: `Pista ${key}`,
-  section: "catalog",
+  section,
   done,
 });
 
@@ -25,5 +25,46 @@ describe("FirstSteps", () => {
   it("disappears once everything is done", () => {
     const { container } = render(<FirstSteps steps={[step("a", true), step("b", true)]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("allows toggling minimized state to give admin breathing room", () => {
+    render(<FirstSteps steps={[step("a", true), step("b", false)]} />);
+
+    const minimizeBtn = screen.getByRole("button", { name: "Minimizar" });
+    fireEvent.click(minimizeBtn);
+
+    expect(screen.getByText("50% completado")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar guía" })).toBeInTheDocument();
+
+    // Clicking Continuar restores the expanded checklist
+    fireEvent.click(screen.getByRole("button", { name: "Continuar guía" }));
+    expect(screen.getByText("Pista b")).toBeInTheDocument();
+  });
+
+  it("shows template quick-loader buttons when active step is areas or levels", () => {
+    render(<FirstSteps steps={[step("areas", false), step("levels", false)]} />);
+
+    expect(
+      screen.getByText("⚡ ¿Quieres ahorrar tiempo en la configuración?")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Cargar Inglés/i })
+    ).toBeInTheDocument();
+  });
+
+  it("offers direct CSV bulk import button when active step is students", () => {
+    render(
+      <FirstSteps
+        steps={[
+          step("areas", true),
+          step("teachers", true),
+          step("students", false, "students"),
+        ]}
+      />
+    );
+
+    expect(
+      screen.getByRole("button", { name: "📥 Importar CSV" })
+    ).toBeInTheDocument();
   });
 });

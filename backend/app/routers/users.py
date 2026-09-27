@@ -15,14 +15,24 @@ from app.core.deps import (
 )
 from app.core.http import commit_or_conflict
 from app.core.security import hash_password
-from app.models import Permission, User, UserRole
+from app.models import EnrollmentStatus, Permission, User, UserRole
 from app.models.refresh_session import RefreshSession
 from app.services.staff import live_assignments
 from app.schemas.base import PaginatedResponse
+from app.schemas.enrollment import EnrollmentCreate
 from app.schemas.kardex import StudentKardexResponse
-from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.schemas.user import (
+    BulkImportRequest,
+    BulkImportResponse,
+    BulkImportRowResult,
+    UserCreate,
+    UserRead,
+    UserUpdate,
+    normalize_cui_passport,
+)
 from app.services.audit import record, snapshot
 from app.services.student_kardex import get_student_kardex
+from app.routers.enrollments import open_enrollment
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -255,6 +265,209 @@ def create_user(
     commit_or_conflict(db, _DUPLICATE_IDENTITY)
     db.refresh(user)
     return user
+
+
+@router.post("/bulk-import", response_model=BulkImportResponse)
+def bulk_import_students(
+    payload: BulkImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_get_staff_actor),
+) -> BulkImportResponse:
+    """Importación masiva de estudiantes desde CSV o planillas.
+
+    Crea las cuentas de alumnos, normaliza identificaciones, detecta duplicados
+    y opcionalmente matricula en un curso objetivo.
+    """
+    _assert_may_manage(current_user, UserRole.student)
+    tenant_id = _resolve_tenant_id(current_user, None)
+
+    created_count = 0
+    enrolled_count = 0
+    skipped_count = 0
+    error_count = 0
+    results: list[BulkImportRowResult] = []
+
+    default_pwd = payload.default_password or "Educa2026!"
+
+    for idx, row in enumerate(payload.students, start=1):
+        clean_email = row.email.strip().lower()
+        clean_name = row.full_name.strip()
+
+        if not clean_name:
+            error_count += 1
+            results.append(
+                BulkImportRowResult(
+                    row_number=idx,
+                    full_name=clean_name or "Sin nombre",
+                    email=clean_email,
+                    status="error",
+                    message="El nombre completo es requerido",
+                )
+            )
+            continue
+
+        # Check if email exists in tenant
+        existing = db.scalar(
+            select(User).where(User.email == clean_email, User.tenant_id == tenant_id)
+        )
+        if existing:
+            target_course_id = row.course_id or payload.default_course_id
+            was_enrolled = False
+            enroll_msg = ""
+            if target_course_id and existing.role == UserRole.student:
+                try:
+                    open_enrollment(
+                        db,
+                        current_user,
+                        EnrollmentCreate(
+                            student_id=existing.id,
+                            course_id=target_course_id,
+                            status=EnrollmentStatus.enrolled,
+                        ),
+                    )
+                    was_enrolled = True
+                    enrolled_count += 1
+                    enroll_msg = f" (Matriculado en curso #{target_course_id})"
+                except Exception as e:
+                    detail = getattr(e, "detail", str(e))
+                    if isinstance(detail, dict):
+                        detail = detail.get("message", str(detail))
+                    enroll_msg = f" (No se pudo matricular: {detail})"
+
+            skipped_count += 1
+            results.append(
+                BulkImportRowResult(
+                    row_number=idx,
+                    full_name=clean_name,
+                    email=clean_email,
+                    status="skipped",
+                    user_id=existing.id,
+                    enrolled_course_id=target_course_id if was_enrolled else None,
+                    message=f"El correo ya existe en esta academia.{enroll_msg}",
+                )
+            )
+            continue
+
+        # Document/CUI validation & normalization
+        normalized_cui = None
+        if row.cui_passport and row.cui_passport.strip():
+            try:
+                normalized_cui = normalize_cui_passport(row.cui_passport.strip())
+                if len(normalized_cui) < 4:
+                    raise ValueError("Documento debe tener al menos 4 caracteres")
+            except Exception as e:
+                error_count += 1
+                results.append(
+                    BulkImportRowResult(
+                        row_number=idx,
+                        full_name=clean_name,
+                        email=clean_email,
+                        status="error",
+                        message=f"Identificación personal inválida: {str(e)}",
+                    )
+                )
+                continue
+
+            # Check unique CUI in tenant
+            if db.scalar(
+                select(User).where(
+                    User.cui_passport == normalized_cui, User.tenant_id == tenant_id
+                )
+            ):
+                error_count += 1
+                results.append(
+                    BulkImportRowResult(
+                        row_number=idx,
+                        full_name=clean_name,
+                        email=clean_email,
+                        status="error",
+                        message=f"La identificación '{normalized_cui}' ya pertenece a otro usuario",
+                    )
+                )
+                continue
+
+        password_to_hash = row.password or default_pwd
+        try:
+            new_student = User(
+                tenant_id=tenant_id,
+                email=clean_email,
+                full_name=clean_name,
+                cui_passport=normalized_cui,
+                role=UserRole.student,
+                timezone=current_user.timezone or "UTC",
+                phone=row.phone.strip() if row.phone else None,
+                address=row.address.strip() if row.address else None,
+                notify_email=True,
+                is_active=True,
+                password_hash=hash_password(password_to_hash),
+            )
+            db.add(new_student)
+            db.flush()
+            record(db, current_user, "create", "user", new_student.id, after=snapshot(new_student))
+
+            # Auto-enroll if course specified
+            target_course_id = row.course_id or payload.default_course_id
+            was_enrolled = False
+            enroll_error = None
+            if target_course_id:
+                try:
+                    open_enrollment(
+                        db,
+                        current_user,
+                        EnrollmentCreate(
+                            student_id=new_student.id,
+                            course_id=target_course_id,
+                            status=EnrollmentStatus.enrolled,
+                        ),
+                    )
+                    was_enrolled = True
+                    enrolled_count += 1
+                except Exception as enroll_e:
+                    detail = getattr(enroll_e, "detail", str(enroll_e))
+                    if isinstance(detail, dict):
+                        detail = detail.get("message", str(detail))
+                    enroll_error = str(detail)
+
+            created_count += 1
+            msg = "Estudiante creado exitosamente"
+            if was_enrolled:
+                msg += f" y matriculado en curso #{target_course_id}"
+            elif enroll_error:
+                msg += f" (pero no se pudo matricular: {enroll_error})"
+
+            results.append(
+                BulkImportRowResult(
+                    row_number=idx,
+                    full_name=clean_name,
+                    email=clean_email,
+                    status="created",
+                    user_id=new_student.id,
+                    enrolled_course_id=target_course_id if was_enrolled else None,
+                    message=msg,
+                )
+            )
+        except Exception as e:
+            error_count += 1
+            results.append(
+                BulkImportRowResult(
+                    row_number=idx,
+                    full_name=clean_name,
+                    email=clean_email,
+                    status="error",
+                    message=f"Error al registrar: {str(e)}",
+                )
+            )
+
+    db.commit()
+
+    return BulkImportResponse(
+        total_processed=len(payload.students),
+        created_count=created_count,
+        enrolled_count=enrolled_count,
+        skipped_count=skipped_count,
+        error_count=error_count,
+        results=results,
+    )
 
 
 @router.get("/{user_id}", response_model=UserRead)

@@ -22,6 +22,7 @@ import { TeachersPanel } from "../features/admin/TeachersPanel";
 import { TeacherPayrollPanel } from "../features/admin/TeacherPayrollPanel";
 import { UsersPanel } from "../features/admin/UsersPanel";
 import { VideoProvidersPanel } from "../features/admin/VideoProvidersPanel";
+import { NotificationSettingsPanel } from "../features/admin/NotificationSettingsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 
 /**
@@ -52,6 +53,7 @@ export default function AdminDashboard() {
     students: <StudentsPanel />,
     rooms: <RoomsPanel />,
     video_providers: <VideoProvidersPanel />,
+    notifications_settings: <NotificationSettingsPanel />,
     holidays: <HolidaysPanel />,
     reports: <ReportView />,
     audit: <AuditPanel />,

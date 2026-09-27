@@ -7,8 +7,10 @@ import { Layout } from "./components/Layout";
 
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const ClassMode = lazy(() => import("./pages/ClassMode"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
 const Lobby = lazy(() => import("./pages/Lobby"));
 const Login = lazy(() => import("./pages/Login"));
+const RegisterAcademy = lazy(() => import("./pages/RegisterAcademy"));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
 const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard"));
 
@@ -58,6 +60,28 @@ function RootBoundary() {
 }
 
 export const router = createBrowserRouter([
+  {
+    path: "/landing",
+    element: (
+      <SuspenseWrapper>
+        <LandingPage />
+      </SuspenseWrapper>
+    ),
+    errorElement: <RootBoundary />,
+  },
+  {
+    path: "/crear-academia",
+    element: (
+      <SuspenseWrapper>
+        <RegisterAcademy />
+      </SuspenseWrapper>
+    ),
+    errorElement: <RootBoundary />,
+  },
+  {
+    path: "/registro",
+    element: <Navigate to="/crear-academia" replace />,
+  },
   {
     path: "/login",
     element: (

@@ -1,6 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.schemas.user import UserRead
+from app.schemas.user import Password, UserRead
 
 
 class Token(BaseModel):
@@ -17,3 +17,14 @@ class RefreshRequest(BaseModel):
 
 class SupabaseLoginRequest(BaseModel):
     supabase_token: str
+
+
+class AcademyRegisterRequest(BaseModel):
+    academy_name: str = Field(..., min_length=2, max_length=150)
+    slug: str = Field(..., min_length=2, max_length=50, pattern="^[a-z0-9-]+$")
+    admin_name: str = Field(..., min_length=2, max_length=255)
+    admin_email: EmailStr
+    password: Password
+    phone: str | None = Field(None, max_length=50)
+    plan_tier: str = Field("free", max_length=50)
+

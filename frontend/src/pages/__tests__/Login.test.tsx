@@ -40,7 +40,7 @@ describe("Login", () => {
 
     expect(screen.getByText("Educa")).toBeInTheDocument();
     expect(screen.getByText("Control Académico y Aula Virtual")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("admin@educa.com")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("tu@correo.com")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("••••••••")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Entrar" })).toBeInTheDocument();
   });
@@ -49,7 +49,7 @@ describe("Login", () => {
     const user = userEvent.setup();
     render(<Login />);
 
-    const emailInput = screen.getByPlaceholderText("admin@educa.com");
+    const emailInput = screen.getByPlaceholderText("tu@correo.com");
     const submitButton = screen.getByRole("button", { name: "Entrar" });
 
     await user.type(emailInput, "invalid");
@@ -64,7 +64,7 @@ describe("Login", () => {
     const user = userEvent.setup();
     render(<Login />);
 
-    const emailInput = screen.getByPlaceholderText("admin@educa.com");
+    const emailInput = screen.getByPlaceholderText("tu@correo.com");
     const submitButton = screen.getByRole("button", { name: "Entrar" });
 
     await user.type(emailInput, "admin@educa.com");
@@ -81,7 +81,7 @@ describe("Login", () => {
     const user = userEvent.setup();
     render(<Login />);
 
-    const emailInput = screen.getByPlaceholderText("admin@educa.com");
+    const emailInput = screen.getByPlaceholderText("tu@correo.com");
     const passwordInput = screen.getByPlaceholderText("••••••••");
     const submitButton = screen.getByRole("button", { name: "Entrar" });
 
@@ -99,7 +99,7 @@ describe("Login", () => {
     mockLogin.mockRejectedValueOnce(error);
     const user = userEvent.setup();
     render(<Login />);
-    await user.type(screen.getByPlaceholderText("admin@educa.com"), "admin@educa.com");
+    await user.type(screen.getByPlaceholderText("tu@correo.com"), "admin@educa.com");
     await user.type(screen.getByPlaceholderText("••••••••"), "wrong");
     await user.click(screen.getByRole("button", { name: "Entrar" }));
   }
@@ -141,7 +141,7 @@ describe("Login", () => {
     const user = userEvent.setup();
     render(<Login />);
 
-    const emailInput = screen.getByPlaceholderText("admin@educa.com");
+    const emailInput = screen.getByPlaceholderText("tu@correo.com");
     const passwordInput = screen.getByPlaceholderText("••••••••");
     const submitButton = screen.getByRole("button", { name: "Entrar" });
 

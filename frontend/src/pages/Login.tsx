@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 
 import { useAuth } from "../auth/AuthContext";
@@ -89,7 +89,7 @@ export default function Login() {
               </label>
               <Input
                 type="email"
-                placeholder="admin@educa.com"
+                placeholder="tu@correo.com"
                 {...register("email")}
                 onChange={() => {
                   if (availableTenants) setAvailableTenants(null);
@@ -134,9 +134,22 @@ export default function Login() {
             </Button>
           </form>
         </Card>
-        <p className="mt-4 text-center text-xs text-slate-400">
-          Demo: admin@educa.com / admin123
-        </p>
+        <div className="mt-5 rounded-xl border border-stone-200 bg-white/80 p-4 text-center shadow-xs">
+          <p className="text-xs text-slate-600">
+            ¿Diriges un instituto o academia?
+          </p>
+          <Link
+            to="/crear-academia"
+            className="mt-1.5 inline-block text-xs font-bold text-brand-700 hover:text-brand-800 underline"
+          >
+            Crea tu academia gratis (Hasta 15 alumnos) →
+          </Link>
+        </div>
+        <div className="mt-4 flex items-center justify-center gap-3 text-xs text-slate-400">
+          <Link to="/landing" className="hover:text-slate-600 underline">
+            Conoce más sobre Educa
+          </Link>
+        </div>
       </div>
     </div>
   );

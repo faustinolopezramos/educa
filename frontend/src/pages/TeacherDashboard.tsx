@@ -930,7 +930,12 @@ function SessionSheet({
         sessionId,
         items: pending.map((e) => ({ enrollment_id: e.id, status: "present" as const })),
       });
-      notify("Todos marcados como presentes", "success");
+      notify(
+        pending.length === enrollments.length
+          ? "Todos presentes. Toca a quien faltó o llegó tarde."
+          : `${pending.length} alumno(s) más marcados como presentes`,
+        "success",
+      );
     } catch (err) {
       notify(apiErrorMessage(err, "No se pudo pasar lista"), "error");
     } finally {
@@ -1311,14 +1316,36 @@ function RegisterBar({
     );
   }
 
+  // Lo normal es que venga casi todo el grupo, así que una lista en blanco
+  // empieza por "todos presentes" y el profesor sólo corrige las excepciones.
+  // Mientras no haya ninguna marca, esa es la única acción que se ofrece.
+  if (marked === 0) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-brand-200 bg-brand-50/60 p-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900">¿Vino todo el grupo?</p>
+          <p className="text-xs text-slate-600">
+            Márcalos presentes y después toca sólo a quien faltó o llegó tarde.
+          </p>
+        </div>
+        <Button disabled={busy} onClick={onMarkAll} className="w-full sm:w-auto">
+          <IconCheck className="h-4 w-4" />
+          {busy ? "Marcando…" : `Todos presentes (${total})`}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="sm" disabled={busy || complete} onClick={onMarkAll}>
-              {busy ? "Marcando…" : "Marcar todos presentes"}
-            </Button>
+            {stats.unmarked > 0 && (
+              <Button variant="secondary" size="sm" disabled={busy} onClick={onMarkAll}>
+                {busy ? "Marcando…" : `Resto presentes (${stats.unmarked})`}
+              </Button>
+            )}
             {stats.unmarked > 0 && (
               <Button
                 variant="secondary"

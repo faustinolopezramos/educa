@@ -72,6 +72,41 @@ export interface LoginResponse {
   user: User;
 }
 
+export interface AcademyRegisterRequest {
+  academy_name: string;
+  slug: string;
+  admin_name: string;
+  admin_email: string;
+  password: string;
+  phone?: string;
+  plan_tier?: "free" | "starter" | "pro" | "scale";
+}
+
+export interface NotificationSettings {
+  whatsapp_enabled: boolean;
+  whatsapp_mode: "managed" | "custom";
+  whatsapp_phone_number_id: string;
+  whatsapp_token_masked: string;
+  whatsapp_default_country_code: string;
+  email_enabled: boolean;
+  push_enabled: boolean;
+  triggers: Record<string, boolean>;
+  students_with_whatsapp: number;
+  total_students: number;
+  messages_sent_30d: number;
+}
+
+export interface NotificationSettingsUpdatePayload {
+  whatsapp_enabled: boolean;
+  whatsapp_mode: "managed" | "custom";
+  whatsapp_phone_number_id?: string;
+  whatsapp_token?: string;
+  whatsapp_default_country_code: string;
+  email_enabled: boolean;
+  push_enabled: boolean;
+  triggers?: Record<string, boolean>;
+}
+
 export interface TeacherLoad {
   teacher_id: number;
   assigned_hours: number;
@@ -819,3 +854,39 @@ export interface RenewalOptions {
   blocked_reason: "delinquent" | null;
   options: RenewalOption[];
 }
+
+export interface StudentImportRow {
+  full_name: string;
+  email: string;
+  cui_passport?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  password?: string | null;
+  course_id?: number | null;
+}
+
+export interface BulkImportRequest {
+  students: StudentImportRow[];
+  default_course_id?: number | null;
+  default_password?: string | null;
+}
+
+export interface BulkImportRowResult {
+  row_number: number;
+  full_name: string;
+  email: string;
+  status: "created" | "skipped" | "error";
+  user_id?: number | null;
+  enrolled_course_id?: number | null;
+  message?: string | null;
+}
+
+export interface BulkImportResponse {
+  total_processed: number;
+  created_count: number;
+  enrolled_count: number;
+  skipped_count: number;
+  error_count: number;
+  results: BulkImportRowResult[];
+}
+

@@ -63,6 +63,7 @@ const ADMIN_GROUPS: NavGroup[] = [
       { id: "catalog", label: "Estructura académica" },
       { id: "rooms", label: "Aulas" },
       { id: "video_providers", label: "Videoconferencias" },
+      { id: "notifications_settings", label: "Notificaciones & WhatsApp" },
       { id: "holidays", label: "Festivos" },
       { id: "audit", label: "Auditoría" },
     ],
@@ -180,7 +181,8 @@ export function canSeeSection(user: User | null, sectionId: string): boolean {
     return perms.has("manage_catalog");
   // Meeting providers hang off the schedule a class is held on, which is the
   // permission the API gates them with.
-  if (sectionId === "video_providers") return perms.has("manage_schedules");
+  if (sectionId === "video_providers" || sectionId === "notifications_settings")
+    return perms.has("manage_schedules") || perms.has("manage_catalog");
   // Auditoría stays admin-only: it replays every change in the academy,
   // including those made by the people an assistant reports to.
   return false;
