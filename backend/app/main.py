@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.routers import (
+    academy,
     assignments,
     attendance,
     audit,
@@ -39,12 +40,13 @@ from app.services.background import start_background_jobs
 from app.webhooks import router as webhooks
 
 # ---- Rate limiter for login & refresh (In-memory or Redis) ----
-from app.core.rate_limiter import MemoryRateLimiter, RedisRateLimiter
+from app.core.rate_limiter import MemoryRateLimiter, RedisRateLimiter, set_rate_limiter
 
 _login_attempts: dict[str, list[datetime]] = defaultdict(list)
 _memory_limiter = MemoryRateLimiter(_login_attempts)
 _redis_limiter = RedisRateLimiter(settings.redis_url) if settings.redis_url else None
 _rate_limiter = _redis_limiter if _redis_limiter else _memory_limiter
+set_rate_limiter(_rate_limiter)
 
 LOGIN_RATE_LIMIT = 5  # max *failed* attempts
 LOGIN_RATE_WINDOW = 60  # seconds
@@ -59,7 +61,13 @@ _RATE_LIMITED_PATHS: dict[str, int] = {
     # Canjear un token de Supabase por uno propio es otra puerta de entrada a
     # una cuenta, así que cuesta lo mismo que la principal.
     "/auth/supabase-login": LOGIN_RATE_LIMIT,
+    # Crear una academia no falla con 401: lo que hay que frenar son las altas
+    # en masa, así que aquí cuenta cada intento y no sólo los fallidos.
+    "/auth/register-academy": 3,
 }
+
+# Rutas en las que cada intento gasta presupuesto, salga bien o mal.
+_COUNT_EVERY_ATTEMPT: frozenset[str] = frozenset({"/auth/register-academy"})
 
 
 def _client_key(request: Request) -> str:
@@ -107,7 +115,7 @@ async def rate_limit_middleware(request: Request, call_next):
     # Only *failed* logins count. Charging successful ones locked out shared
     # networks — a classroom behind one NAT address ran out of budget after
     # five students signed in normally.
-    if response.status_code == 401:
+    if response.status_code == 401 or request.url.path in _COUNT_EVERY_ATTEMPT:
         _rate_limiter.record_failed_attempt(client_ip, LOGIN_RATE_WINDOW)
     return response
 
@@ -197,6 +205,7 @@ def health() -> dict[str, str]:
 
 app.include_router(auth.router)
 app.include_router(tenants.router)
+app.include_router(academy.router)
 app.include_router(users.router)
 app.include_router(catalog.router)
 app.include_router(rooms.router)

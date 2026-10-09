@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -22,22 +22,35 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
  * token de Supabase, que ésta no acepta: cada petición daba 401 y cerraba la
  * sesión del usuario.
  */
-export const supabase: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+/**
+ * El cliente se carga bajo demanda, la primera vez que hace falta: la librería
+ * pesa bastante y antes viajaba en el paquete inicial de toda la aplicación,
+ * aunque sólo la usa el inicio de sesión y sólo si Supabase está configurado.
+ */
+let clientPromise: Promise<SupabaseClient> | null = null;
+
+function getSupabase(): Promise<SupabaseClient> | null {
+  if (!isSupabaseConfigured) return null;
+  clientPromise ??= import("@supabase/supabase-js").then(({ createClient }) =>
+    createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
         detectSessionInUrl: false,
       },
-    })
-  : null;
+    }),
+  );
+  return clientPromise;
+}
 
 /** Inicia sesión en Supabase y devuelve su access token, para canjearlo. */
 export async function signInWithSupabase(
   email: string,
   password: string,
 ): Promise<string> {
-  if (!supabase) throw new Error("Supabase no está configurado");
+  const pending = getSupabase();
+  if (!pending) throw new Error("Supabase no está configurado");
+  const supabase = await pending;
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   const token = data.session?.access_token;
@@ -47,8 +60,10 @@ export async function signInWithSupabase(
 
 /** Cierra la sesión de Supabase. Nunca bloquea el cierre de sesión local. */
 export async function signOutFromSupabase(): Promise<void> {
-  if (!supabase) return;
+  const pending = getSupabase();
+  if (!pending) return;
   try {
+    const supabase = await pending;
     await supabase.auth.signOut();
   } catch {
     // La sesión local ya se limpió; esto es sólo aseo del lado de Supabase.

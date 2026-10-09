@@ -6,6 +6,13 @@ import * as queries from "../../../lib/queries";
 import type { RenewalOption, RenewalOptions, RenewalRequest } from "../../../lib/types";
 
 vi.mock("../../../lib/queries");
+// Fuera de un AuthProvider: la academia de prueba cobra en quetzales.
+vi.mock("../../../lib/useMoney", async () => {
+  const { formatMoney } = await import("../../../lib/currency");
+  return {
+    useMoney: () => ({ currency: "GTQ", symbol: "Q", money: (n: number) => formatMoney(n, "GTQ") }),
+  };
+});
 
 const group = (over: Partial<RenewalOption["courses"][number]> = {}) => ({
   id: 7,

@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api } from "../api";
-import type { StudentKardexResponse, User } from "../types";
+import { api, setToken } from "../api";
+import type { StudentKardexResponse, User, UserCreated } from "../types";
+
+/** `PATCH /auth/me`: el perfil, más un par de tokens nuevo si cambió la contraseña. */
+export interface SelfUpdateResult extends User {
+  tokens: { access_token: string; refresh_token: string } | null;
+}
 
 /**
  * `enabled` lets a caller skip the request entirely rather than fire one it
@@ -33,8 +38,9 @@ export const useStudentKardex = (studentId?: number, enabled = true) =>
 export function useCreateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: Partial<User> & { password: string }) =>
-      (await api.post<User>("/users", payload)).data,
+    // Sin `password`, el servidor genera una y la devuelve en `generated_password`.
+    mutationFn: async (payload: Partial<User> & { password?: string }) =>
+      (await api.post<UserCreated>("/users", payload)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
   });
 }
@@ -73,8 +79,17 @@ export interface ProfilePatch {
 export function useUpdateMe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (patch: ProfilePatch) => (await api.patch<User>("/auth/me", patch)).data,
-    // Keeps the admin's own row in sync if it's showing in the users list.
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    mutationFn: async (patch: ProfilePatch) =>
+      (await api.patch<SelfUpdateResult>("/auth/me", patch)).data,
+    onSuccess: (result) => {
+      // Cambiar la contraseña invalida todos los tokens anteriores, también los
+      // de esta sesión: el servidor manda un par nuevo y hay que quedárselo, o
+      // la siguiente petición acaba en el login.
+      if (result.tokens) {
+        setToken(result.tokens.access_token, result.tokens.refresh_token);
+      }
+      // Keeps the admin's own row in sync if it's showing in the users list.
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
   });
 }

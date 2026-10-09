@@ -93,9 +93,14 @@ describe("RegisterAcademy", () => {
     fireEvent.change(screen.getByPlaceholderText("Mínimo 8 caracteres"), {
       target: { value: "secret1234" },
     });
+    // El director elige en qué moneda cobra su academia.
+    expect(screen.getByLabelText("Moneda de tu academia")).toHaveValue("GTQ");
+    fireEvent.change(screen.getByLabelText("Moneda de tu academia"), {
+      target: { value: "USD" },
+    });
 
     const submitBtn = screen.getByRole("button", {
-      name: /Comenzar Prueba Gratis/i,
+      name: /Crear Academia y Solicitar Plan/i,
     });
     fireEvent.click(submitBtn);
 
@@ -108,6 +113,7 @@ describe("RegisterAcademy", () => {
         password: "secret1234",
         phone: undefined,
         plan_tier: "pro",
+        currency: "USD",
       });
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
@@ -142,7 +148,7 @@ describe("RegisterAcademy", () => {
     });
 
     const submitBtn = screen.getByRole("button", {
-      name: /Comenzar Prueba Gratis/i,
+      name: /Crear Academia y Solicitar Plan/i,
     });
     fireEvent.click(submitBtn);
 
@@ -203,6 +209,7 @@ describe("RegisterAcademy", () => {
         password: "clave12345",
         phone: undefined,
         plan_tier: "free",
+        currency: "GTQ",
       });
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });

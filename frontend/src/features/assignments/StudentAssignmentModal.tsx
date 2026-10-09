@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Badge, Button, Field, Input, Modal, ModalActions } from "../../components/ui";
 import { api, apiErrorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
@@ -13,10 +13,10 @@ interface StudentAssignmentModalProps {
   onSubmitted: () => void;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+/** Una entrega antigua que guardó sólo el nombre de un archivo, nunca el archivo:
+ * el selector de archivos simulaba la subida. */
+function isPhantomAttachment(url: string | null | undefined): boolean {
+  return !!url && url.startsWith("attachment://");
 }
 
 export function StudentAssignmentModal({
@@ -26,75 +26,22 @@ export function StudentAssignmentModal({
   onClose,
   onSubmitted,
 }: StudentAssignmentModalProps) {
-  const [activeTab, setActiveTab] = useState<"file" | "text" | "link">("file");
+  const [activeTab, setActiveTab] = useState<"text" | "link">("link");
   const [content, setContent] = useState(existingSubmission?.content || "");
-  const [submissionUrl, setSubmissionUrl] = useState(existingSubmission?.submission_url || "");
-  const [attachedFile, setAttachedFile] = useState<{
-    name: string;
-    size: number;
-    type: string;
-  } | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const [isDragging, setIsDragging] = useState(false);
+  const phantom = isPhantomAttachment(existingSubmission?.submission_url);
+  // Un `attachment://` antiguo no es un enlace que se pueda volver a enviar.
+  const [submissionUrl, setSubmissionUrl] = useState(
+    phantom ? "" : existingSubmission?.submission_url || "",
+  );
   const [saving, setSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isGraded = existingSubmission?.status === "graded";
   const isPastDue =
     assignment.due_date && new Date(assignment.due_date).getTime() < Date.now();
 
-  function handleFileSelect(file: File) {
-    setAttachedFile({
-      name: file.name,
-      size: file.size,
-      type: file.type || "application/octet-stream",
-    });
-    setUploadProgress(15);
-
-    // Smooth simulated upload progress
-    const timer = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(timer);
-          return 100;
-        }
-        return prev + 30;
-      });
-    }, 70);
-
-    const prettySize = formatBytes(file.size);
-    setContent(`Documento adjunto: ${file.name} (${prettySize})`);
-    setSubmissionUrl(`attachment://${encodeURIComponent(file.name)}`);
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
-  }
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragging(true);
-  }
-
-  function handleDragLeave() {
-    setIsDragging(false);
-  }
-
-  function removeAttachedFile() {
-    setAttachedFile(null);
-    setUploadProgress(0);
-    setContent("");
-    setSubmissionUrl("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
   async function handleSubmit() {
-    if (!content.trim() && !submissionUrl.trim() && !attachedFile) {
-      notify("Agrega un archivo, texto o enlace para tu entrega", "error");
+    if (!content.trim() && !submissionUrl.trim()) {
+      notify("Agrega un texto o un enlace para tu entrega", "error");
       return;
     }
 
@@ -120,9 +67,7 @@ export function StudentAssignmentModal({
     return <Badge color="amber">Requiere Refuerzo</Badge>;
   }
 
-  const hasDeliverable = Boolean(
-    attachedFile || content.trim() || submissionUrl.trim()
-  );
+  const hasDeliverable = Boolean(content.trim() || submissionUrl.trim());
 
   return (
     <Modal
@@ -142,7 +87,7 @@ export function StudentAssignmentModal({
           hint={
             isGraded
               ? "Esta tarea ya ha sido evaluada y cerrada por el docente."
-              : "Verifica que tu archivo o enlace esté listo antes de presionar enviar."
+              : "Verifica que tu enlace se pueda abrir antes de presionar enviar."
           }
         >
           <Button variant="secondary" onClick={onClose}>
@@ -269,17 +214,6 @@ export function StudentAssignmentModal({
               <div className="flex rounded-md bg-slate-100 p-0.5 text-2xs font-semibold">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("file")}
-                  className={`rounded px-2.5 py-1 transition ${
-                    activeTab === "file"
-                      ? "bg-white text-slate-900 shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  📄 Archivo / Dropzone
-                </button>
-                <button
-                  type="button"
                   onClick={() => setActiveTab("text")}
                   className={`rounded px-2.5 py-1 transition ${
                     activeTab === "text"
@@ -303,88 +237,10 @@ export function StudentAssignmentModal({
               </div>
             </div>
 
-            {/* TAB 1: FILE DRAG & DROP ZONE */}
-            {activeTab === "file" && (
-              <div className="space-y-3">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.doc,.docx,.zip,.png,.jpg,.jpeg"
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handleFileSelect(e.target.files[0]);
-                    }
-                  }}
-                />
-
-                {!attachedFile ? (
-                  <div
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
-                      isDragging
-                        ? "border-brand-500 bg-brand-50/60 scale-[1.01]"
-                        : "border-slate-300 hover:border-brand-400 hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                      📄
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-slate-800">
-                      Arrastra tu archivo aquí o haz clic para explorar
-                    </p>
-                    <p className="mt-1 text-2xs text-slate-400">
-                      Soporta PDF, DOCX, ZIP o imágenes (hasta 25 MB)
-                    </p>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white font-bold text-xs">
-                          PDF
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900">
-                            {attachedFile.name}
-                          </div>
-                          <div className="text-2xs text-slate-500">
-                            {formatBytes(attachedFile.size)} · Documento listo
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={removeAttachedFile}
-                        className="text-xs font-medium text-red-600 hover:text-red-700"
-                      >
-                        Quitar
-                      </button>
-                    </div>
-
-                    {uploadProgress < 100 ? (
-                      <div className="space-y-1">
-                        <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-brand-600 transition-all duration-200"
-                            style={{ width: `${uploadProgress}%` }}
-                          />
-                        </div>
-                        <div className="text-right text-2xs text-slate-500 font-mono">
-                          Procesando {uploadProgress}%
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 text-2xs font-semibold text-emerald-700">
-                        <span>✓</span>
-                        <span>Archivo verificado y listo para entrega</span>
-                      </div>
-                    )}
-                  </div>
-                )}
+            {phantom && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                Tu entrega anterior adjuntaba un archivo que no llegó a enviarse. Súbelo a
+                Google Drive u OneDrive y pega aquí el enlace compartido.
               </div>
             )}
 
@@ -414,7 +270,8 @@ export function StudentAssignmentModal({
                   />
                 </Field>
                 <p className="text-2xs text-slate-500">
-                  Asegúrate de que los permisos de lectura de tu archivo en Google Drive o enlace estén abiertos para que el profesor pueda revisarlo.
+                  Sube tu archivo a Google Drive u OneDrive y pega aquí el enlace compartido.
+                  Asegúrate de que el profesor tenga permiso de lectura.
                 </p>
               </div>
             ) : null}
@@ -430,7 +287,12 @@ export function StudentAssignmentModal({
                 {existingSubmission.content}
               </div>
             )}
-            {existingSubmission.submission_url && (
+            {phantom && (
+              <div className="pt-1 text-amber-700">
+                El archivo de esta entrega no llegó a enviarse.
+              </div>
+            )}
+            {existingSubmission.submission_url && !phantom && (
               <div className="pt-1">
                 <a
                   href={existingSubmission.submission_url}

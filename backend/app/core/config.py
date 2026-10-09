@@ -116,10 +116,9 @@ class Settings(BaseSettings):
     at_risk_sweep_weekday: int = 0
     at_risk_sweep_hour: int = 7
 
-    # Seed
-    seed_admin_email: str = "admin@educa.com"
-    seed_admin_password: str = "admin123"
-    seed_admin_name: str = "Administrador"
+    # WebAuthn / Passkeys
+    webauthn_rp_id: str = "localhost"
+    webauthn_origin: str = "http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -13,6 +13,8 @@ export interface TenantPayload {
   is_active?: boolean;
   max_active_students?: number;
   timezone?: string;
+  /** Moneda en que la academia cobra a sus alumnos (ISO 4217). */
+  currency?: string;
   phone?: string | null;
   tax_id?: string | null;
   address?: string | null;
@@ -55,6 +57,26 @@ export function useUpdateTenant() {
       ...patch
     }: Partial<TenantPayload> & { id: number }) =>
       (await api.patch<Tenant>(`/tenants/${id}`, patch)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tenants"] }),
+  });
+}
+
+/** Superadmin: poner a una academia en un plan (normalmente el que pidió). */
+export function useActivatePlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tenantId, plan }: { tenantId: number; plan: string }) =>
+      (await api.post<Tenant>(`/tenants/${tenantId}/plan`, { plan })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tenants"] }),
+  });
+}
+
+/** Superadmin: rechazar la solicitud de plan de una academia. */
+export function useRejectPlanRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tenantId, reason }: { tenantId: number; reason?: string }) =>
+      (await api.post<Tenant>(`/tenants/${tenantId}/plan-request/reject`, { reason })).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tenants"] }),
   });
 }

@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import Select, select
+from sqlalchemy import Select, select, text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -59,6 +59,26 @@ def get_current_user(
     # se explica el motivo.
     if tenant_suspended(db, user):
         raise _credentials_exc
+
+    # Configure session context for PostgreSQL Row Level Security (RLS)
+    try:
+        if user.tenant_id is not None:
+            db.execute(
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+                {"tid": str(user.tenant_id)},
+            )
+        if user.id is not None:
+            db.execute(
+                text("SELECT set_config('app.current_user_id', :uid, true)"),
+                {"uid": str(user.id)},
+            )
+        if user.role == UserRole.superadmin:
+            db.execute(
+                text("SELECT set_config('app.is_superadmin', 'true', true)")
+            )
+    except Exception:
+        pass
+
     return user
 
 

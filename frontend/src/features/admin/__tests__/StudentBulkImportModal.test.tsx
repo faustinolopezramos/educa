@@ -20,6 +20,8 @@ describe("StudentBulkImportModal (Priority P1)", () => {
     } else {
       vi.spyOn(window.URL, "createObjectURL").mockReturnValue("blob:test");
     }
+    // jsdom no lo implementa.
+    window.URL.revokeObjectURL = vi.fn();
   });
 
   it("renders modal with template download and upload dropzone", () => {
@@ -107,5 +109,45 @@ describe("StudentBulkImportModal (Priority P1)", () => {
       expect(screen.getByText("Total Leídos")).toBeInTheDocument();
       expect(onSuccess).toHaveBeenCalled();
     });
+  });
+
+  it("shows each generated password and offers them as a download", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        total_processed: 1,
+        created_count: 1,
+        enrolled_count: 0,
+        skipped_count: 0,
+        error_count: 0,
+        results: [
+          {
+            row_number: 1,
+            full_name: "Juan Perez",
+            email: "juan@example.com",
+            status: "created",
+            user_id: 101,
+            message: "Estudiante creado exitosamente",
+            generated_password: "k3Y-generada9",
+          },
+        ],
+      },
+    });
+
+    render(<StudentBulkImportModal onClose={vi.fn()} onSuccess={vi.fn()} />);
+    const file = new File(["Nombre Completo,Correo Electronico\nJuan Perez,juan@example.com"], "a.csv", {
+      type: "text/csv",
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [file] });
+    fireEvent.change(input);
+    await waitFor(() => screen.getByRole("button", { name: /Importar 1 Alumno/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Importar 1 Alumno/ }));
+
+    await waitFor(() => expect(screen.getByText("k3Y-generada9")).toBeInTheDocument());
+    // Ya no se manda una contraseña común para todos.
+    expect(vi.mocked(api.post).mock.calls[0][1]).not.toHaveProperty("default_password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Descargar credenciales (CSV)" }));
+    expect(window.URL.createObjectURL).toHaveBeenCalled();
   });
 });

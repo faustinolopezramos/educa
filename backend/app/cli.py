@@ -85,7 +85,7 @@ def cmd_refresh_payments(
                 "update",
                 "payment_status_sweep_cli",
                 0,
-                after={"updated": updated_count, "on": str(target_date or date.today())},
+                after={"updated": updated_count, "on": str(target_date or academy_today())},
             )
         db.commit()
         print(f"Éxito: Se actualizaron los estados de pago de {updated_count} matrícula(s).")

@@ -12,6 +12,7 @@ where it gets counted.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
@@ -28,26 +29,50 @@ from app.models import (
     Tenant,
     User,
 )
+from app.services.notifications import notify_tenant_admins
 
 
-def check_tenant_student_quota(
-    db: Session, tenant_id: int, *, additional_seats: int = 1
-) -> None:
-    """Verifies that enrolling `additional_seats` won't exceed the tenant's `max_active_students` limit."""
-    tenant = db.get(Tenant, tenant_id)
-    if tenant is None:
-        return
+def tenant_active_students(tenant_id: int | None):
+    """La consulta de los alumnos que ocupan plaza del plan en una academia.
 
-    stmt = (
-        select(func.count())
-        .select_from(Enrollment)
+    Un alumno cuenta una vez aunque esté en varios cursos: el plan se vende por
+    alumnos, y contar matrículas hacía que quien cursa dos niveles gastara dos.
+    """
+    return (
+        select(Enrollment.student_id)
         .join(User, Enrollment.student_id == User.id)
         .where(
             User.tenant_id == tenant_id,
             Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT),
         )
+        .distinct()
     )
-    current_count = db.scalar(stmt) or 0
+
+
+def check_tenant_student_quota(
+    db: Session,
+    tenant_id: int,
+    *,
+    student_id: int | None = None,
+    additional_seats: int = 1,
+) -> None:
+    """Refuse a new seat that would take the academy past its plan.
+
+    `student_id` is the student about to take the seat: one who already holds a
+    seat in another course costs the plan nothing more. The tenant row is locked
+    so two simultaneous enrollments cannot both take the last place.
+    """
+    tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id).with_for_update())
+    if tenant is None:
+        return
+
+    holders = tenant_active_students(tenant_id)
+    if student_id is not None and db.scalar(
+        holders.where(Enrollment.student_id == student_id).limit(1)
+    ) is not None:
+        return
+
+    current_count = count_tenant_active_students(db, tenant_id)
     if current_count + additional_seats > tenant.max_active_students:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -61,6 +86,44 @@ def check_tenant_student_quota(
                 "current_active_students": current_count,
             },
         )
+    _warn_if_nearly_full(db, tenant, current_count + additional_seats)
+
+
+# A partir de qué ocupación se avisa a la academia de que se acerca al tope.
+QUOTA_WARNING_RATIO = 0.8
+
+
+def count_tenant_active_students(db: Session, tenant_id: int | None) -> int:
+    """Cuántos alumnos ocupan plaza del plan ahora mismo."""
+    holders = tenant_active_students(tenant_id)
+    return db.scalar(select(func.count()).select_from(holders.subquery())) or 0
+
+
+def _warn_if_nearly_full(db: Session, tenant: Tenant, new_count: int) -> None:
+    """Avisar a los admins justo cuando la academia cruza el 80 % y el 100 %.
+
+    Sólo en el alumno que cruza cada umbral, no en todos los siguientes: un
+    aviso por umbral basta, y repetirlo con cada matrícula sería ruido. Viaja en
+    la transacción de la matrícula: si ésta no se guarda, el aviso tampoco.
+    """
+    limit = tenant.max_active_students
+    warning_at = max(1, math.ceil(limit * QUOTA_WARNING_RATIO))
+    if new_count not in (warning_at, limit):
+        return
+    if new_count >= limit:
+        title = "Tu academia llegó al límite de su plan"
+        body = (
+            f"Tienes {new_count} de {limit} alumnos activos. Para matricular a más, "
+            "solicita un plan mayor desde Inicio → Tu plan."
+        )
+    else:
+        title = "Tu academia se acerca al límite de su plan"
+        body = (
+            f"Tienes {new_count} de {limit} alumnos activos. Cuando llegues a {limit} "
+            "no podrás matricular a nadie más; puedes solicitar un plan mayor desde "
+            "Inicio → Tu plan."
+        )
+    notify_tenant_admins(db, tenant.id, "plan_quota", title, body)
 
 
 

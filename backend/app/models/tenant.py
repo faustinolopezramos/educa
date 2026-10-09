@@ -15,13 +15,22 @@ class Tenant(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     max_active_students = Column(Integer, nullable=False, default=100)
     timezone = Column(String(50), nullable=False, default="America/Guatemala")
-    currency = Column(String(10), nullable=False, default="USD")
+    # La moneda en que la academia cobra a sus alumnos (código ISO 4217, ver
+    # app.services.currencies). La elige el director al crear la academia y
+    # rige cómo se muestran cuotas, pagos, saldos, comprobantes y nómina.
+    currency = Column(String(10), nullable=False, default="GTQ")
     primary_color = Column(String(20), nullable=True)
     secondary_color = Column(String(20), nullable=True)
     custom_domain = Column(String(255), nullable=True, unique=True, index=True)
     tax_id = Column(String(50), nullable=True)
     phone = Column(String(50), nullable=True)
     address = Column(String(255), nullable=True)
+    # El plan contratado (`app.services.plans`), o NULL si el cupo es a medida.
+    # `max_active_students` sigue siendo la cifra que se hace cumplir.
+    plan_tier = Column(String(20), nullable=True)
+    # Un cambio de plan que la academia pidió y el superadmin aún no resolvió.
+    requested_plan = Column(String(20), nullable=True)
+    plan_requested_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

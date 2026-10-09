@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.enums import MeetingStatus, ProviderName
-from app.schemas.base import PatchModel
+from app.schemas.base import PatchModel, validate_http_url
 
 
 # ---- Provider ----
@@ -31,6 +31,11 @@ class VirtualMeetingCreate(BaseModel):
     # For the manual provider the teacher pastes the join URL directly.
     join_url: str | None = None
 
+    @field_validator("join_url")
+    @classmethod
+    def _validate_join_url(cls, v: str | None) -> str | None:
+        return validate_http_url(v)
+
 
 class VirtualMeetingUpdate(PatchModel):
     # The URLs and end_time are nullable; status and start_time are not.
@@ -41,6 +46,11 @@ class VirtualMeetingUpdate(PatchModel):
     recording_url: str | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
+
+    @field_validator("join_url", "host_url", "recording_url")
+    @classmethod
+    def _validate_urls(cls, v: str | None) -> str | None:
+        return validate_http_url(v)
 
 
 class VirtualMeetingRead(BaseModel):
@@ -64,3 +74,9 @@ class LobbyJoinInfo(BaseModel):
     can_join: bool = False
     reason: str | None = None
     minutes_remaining: int = 0
+
+    @field_validator("join_url", "host_url")
+    @classmethod
+    def _validate_lobby_urls(cls, v: str | None) -> str | None:
+        return validate_http_url(v)
+

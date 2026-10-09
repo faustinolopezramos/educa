@@ -16,11 +16,27 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as pdfcanvas
 
+from app.services.currencies import DEFAULT_CURRENCY, format_money
+
 BRAND = colors.HexColor("#4f46e5")
 BRAND_DARK = colors.HexColor("#4338ca")
 INK = colors.HexColor("#1e293b")
 MUTED = colors.HexColor("#64748b")
 GOLD = colors.HexColor("#b45309")
+
+
+def _pdf_money(amount: Decimal, currency: str) -> str:
+    """El importe con el símbolo de la moneda, si la fuente del PDF lo tiene.
+
+    Helvetica sólo cubre Windows-1252: "€" sí, "₡" no — saldría como un cuadro
+    negro. En ese caso se escribe el código ISO delante ("CRC 1,250.00").
+    """
+    text = format_money(amount, currency)
+    try:
+        text.encode("cp1252")
+    except UnicodeEncodeError:
+        return f"{currency.upper()} {Decimal(amount):,.2f}"
+    return text
 
 
 def build_invoice_pdf(
@@ -31,6 +47,7 @@ def build_invoice_pdf(
     total_amount: Decimal,
     code: str,
     issued_at: datetime,
+    currency: str = DEFAULT_CURRENCY,
 ) -> bytes:
     buffer = io.BytesIO()
     width, height = A4
@@ -68,7 +85,7 @@ def build_invoice_pdf(
     )
     centered(
         height - 130 * mm,
-        f"Monto: Q{total_amount:.2f}",
+        f"Monto: {_pdf_money(total_amount, currency)}",
         "Helvetica-Bold",
         14,
         GOLD,

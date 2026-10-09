@@ -260,10 +260,11 @@ def reschedule_session(
     A make-up may fall on any weekday (it is a special class), but not on a
     holiday nor on a date the schedule already has a session.
     """
-    if new_date < academy_today():
-        raise ValueError("No se puede reprogramar a una fecha pasada")
     schedule = db.get(Schedule, session.schedule_id)
-    if is_holiday(db, new_date, _tenant_of(db, schedule)):
+    tenant_id = _tenant_of(db, schedule)
+    if new_date < academy_today(db, tenant_id):
+        raise ValueError("No se puede reprogramar a una fecha pasada")
+    if is_holiday(db, new_date, tenant_id):
         raise ValueError("La nueva fecha es festivo")
     clash = db.scalar(
         select(ClassSession).where(

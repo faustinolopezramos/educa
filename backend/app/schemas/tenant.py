@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.base import PatchModel
+from app.services.currencies import DEFAULT_CURRENCY, validate_currency
 
 
 class TenantBase(BaseModel):
@@ -13,7 +14,7 @@ class TenantBase(BaseModel):
     is_active: bool = True
     max_active_students: int = Field(100, ge=1)
     timezone: str = Field("America/Guatemala", max_length=50)
-    currency: str = Field("USD", max_length=10)
+    currency: str = Field(DEFAULT_CURRENCY, max_length=10)
     primary_color: str | None = Field(None, max_length=20)
     secondary_color: str | None = Field(None, max_length=20)
     custom_domain: str | None = Field(None, max_length=255)
@@ -34,8 +35,13 @@ def _known_timezone(value: str | None) -> str | None:
     return value
 
 
+def _known_currency(value: str | None) -> str | None:
+    return None if value is None else validate_currency(value)
+
+
 class TenantCreate(TenantBase):
     _tz = field_validator("timezone")(_known_timezone)
+    _currency = field_validator("currency")(_known_currency)
 
 
 class TenantUpdate(PatchModel):
@@ -54,12 +60,16 @@ class TenantUpdate(PatchModel):
     address: str | None = Field(None, max_length=255)
 
     _tz = field_validator("timezone")(_known_timezone)
+    _currency = field_validator("currency")(_known_currency)
 
 
 class TenantRead(TenantBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    plan_tier: str | None = None
+    requested_plan: str | None = None
+    plan_requested_at: datetime | None = None
 
     class Config:
         from_attributes = True

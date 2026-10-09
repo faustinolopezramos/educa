@@ -25,6 +25,17 @@ interface TeacherSpeedGraderProps {
   onGraded: () => void;
 }
 
+/** El nombre de archivo de una entrega `attachment://` antigua. Un nombre mal
+ * codificado hace lanzar a `decodeURIComponent`, y eso tumbaba la pantalla. */
+function attachmentName(url: string): string {
+  const raw = url.replace("attachment://", "");
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export function TeacherSpeedGrader({
   assignment,
   course,
@@ -331,7 +342,7 @@ export function TeacherSpeedGrader({
                       <div className="min-w-0">
                         <div className="font-semibold text-brand-900 truncate">
                           {activeStudent.submission_url.startsWith("attachment://")
-                            ? decodeURIComponent(activeStudent.submission_url.replace("attachment://", ""))
+                            ? attachmentName(activeStudent.submission_url)
                             : "Entregable adjunto / Enlace"}
                         </div>
                         <div className="text-2xs text-brand-700 truncate max-w-xs">
@@ -340,8 +351,10 @@ export function TeacherSpeedGrader({
                       </div>
                     </div>
                     {activeStudent.submission_url.startsWith("attachment://") ? (
-                      <span className="rounded-md bg-brand-100 px-2.5 py-1 text-2xs font-semibold text-brand-800 whitespace-nowrap">
-                        ✓ Archivo Registrado
+                      // Entregas antiguas: el selector de archivos sólo guardaba el
+                      // nombre, nunca el archivo. No hay nada que abrir.
+                      <span className="rounded-md bg-amber-100 px-2.5 py-1 text-2xs font-semibold text-amber-800 whitespace-nowrap">
+                        Archivo no recibido — pide al alumno un enlace
                       </span>
                     ) : isSafeWebUrl(activeStudent.submission_url) ? (
                       <a

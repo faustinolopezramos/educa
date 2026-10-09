@@ -36,7 +36,9 @@ class Enrollment(Base):
     course_id: Mapped[int] = mapped_column(
         ForeignKey("courses.id", ondelete="CASCADE"), index=True
     )
-    enrollment_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # Único dentro de la academia, no en toda la instalación: cada academia
+    # numera sus matrículas desde 1 cada año (ver services.sequences).
+    enrollment_code: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[EnrollmentStatus] = mapped_column(
         SqlEnum(EnrollmentStatus, name="enrollment_status"),
         default=EnrollmentStatus.active,

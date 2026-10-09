@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import academy_today
@@ -31,6 +31,7 @@ from app.models import (
     Payment,
     PaymentKind,
     PaymentStatus,
+    Tenant,
     User,
 )
 
@@ -56,7 +57,14 @@ def derive_payment_status(
     db: Session, enrollment: Enrollment, *, on: date | None = None
 ) -> PaymentStatus:
     """What `enrollment.payment_status` should be right now, without writing it."""
-    today = on or academy_today()
+    if on is None:
+        # El "hoy" de la academia de la matrícula: una cuota vence a medianoche
+        # en su zona, no en la del servidor.
+        tenant_id = db.scalar(
+            select(Course.tenant_id).where(Course.id == enrollment.course_id)
+        )
+        on = academy_today(db, tenant_id)
+    today = on
     charged, paid = enrollment_balance(db, enrollment.id)
 
     # An enrollment whose ledger was never opened falls back to the agreed
@@ -120,6 +128,34 @@ def refresh_all_payment_statuses(
         .where(Enrollment.status.in_(ENROLLMENT_OWES)),
         Course.tenant_id,
         actor,
+    )
+    changed = 0
+    for enrollment in db.scalars(stmt).all():
+        previous = enrollment.payment_status
+        if refresh_payment_status(db, enrollment, on=on) is not previous:
+            changed += 1
+    return changed
+
+
+def refresh_live_payment_statuses(db: Session, *, on: date | None = None) -> int:
+    """El barrido de morosidad de toda la instalación, sin actor.
+
+    Lo lanza el bucle de fondo de la API (`app.services.background`) cada hora.
+    Antes sólo existía a demanda — un botón de admin y un comando del CLI que
+    nada programaba —, así que una cuota vencida seguía figurando como
+    "pendiente" hasta que alguien se acordaba, y todo lo que mira la solvencia
+    del alumno trabajaba con datos viejos.
+
+    Las academias suspendidas se dejan como están: nadie opera en ellas.
+    """
+    stmt = (
+        select(Enrollment)
+        .join(Course, Enrollment.course_id == Course.id)
+        .outerjoin(Tenant, Tenant.id == Course.tenant_id)
+        .where(
+            Enrollment.status.in_(ENROLLMENT_OWES),
+            or_(Course.tenant_id.is_(None), Tenant.is_active.is_(True)),
+        )
     )
     changed = 0
     for enrollment in db.scalars(stmt).all():

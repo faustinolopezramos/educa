@@ -94,17 +94,38 @@ def _find_meeting(db: Session, external_id: str | None) -> VirtualMeeting | None
     )
 
 
+async def _raw_body(request: Request) -> bytes:
+    """The request body, read once, byte for byte — the signature covers it."""
+    return await request.body()
+
+
+def _event_object(payload: dict[str, Any]) -> dict[str, Any]:
+    """The object an event is about.
+
+    Zoom nests it as `payload.object`; the flatter `object` shape is kept for
+    the other providers and for the tests written against it.
+    """
+    nested = payload.get("payload")
+    if isinstance(nested, dict) and isinstance(nested.get("object"), dict):
+        return nested["object"]
+    obj = payload.get("object")
+    return obj if isinstance(obj, dict) else {}
+
+
+# Sync on purpose: the session is synchronous, and running it inside an `async`
+# endpoint blocked the event loop for every other request while it waited on
+# the database. FastAPI runs a plain `def` endpoint in its thread pool.
 @router.post("/{provider}")
-async def receive_webhook(
+def receive_webhook(
     provider: ProviderName,
     request: Request,
+    body: bytes = Depends(_raw_body),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     # The manual provider is a URL we paste by hand; it never calls back.
     if provider is ProviderName.manual:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 
-    body = await request.body()
     if not _signature_is_valid(provider, request, body):
         raise _unauthorized
 
@@ -117,8 +138,7 @@ async def receive_webhook(
 
     # Normalize the two events we care about. Providers differ in shape; this
     # is a best-effort extraction to be refined per provider.
-    obj = payload.get("object")
-    obj = obj if isinstance(obj, dict) else {}
+    obj = _event_object(payload)
     event = payload.get("event") or payload.get("type")
     external_id = payload.get("meeting_id") or obj.get("id") or payload.get("id")
     meeting = _find_meeting(db, str(external_id) if external_id else None)
@@ -130,8 +150,10 @@ async def receive_webhook(
         meeting.status = MeetingStatus.ended
     elif event in {"recording.completed", "recording_ready"}:
         recording_url = payload.get("recording_url") or obj.get("share_url")
-        if recording_url:
-            meeting.recording_url = recording_url
+        if recording_url and isinstance(recording_url, str):
+            clean_url = recording_url.strip()
+            if clean_url.lower().startswith(("http://", "https://")):
+                meeting.recording_url = clean_url
 
     db.commit()
     return {"status": "ok", "meeting_id": meeting.id}

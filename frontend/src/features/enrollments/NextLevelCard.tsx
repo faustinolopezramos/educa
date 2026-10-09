@@ -7,6 +7,7 @@ import { DAYS, formatTime, modalityLabel } from "../../lib/format";
 import { useRenewalOptions, useRequestRenewal, useWithdrawRenewal } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { RenewalCourseOption, RenewalOption } from "../../lib/types";
+import { useMoney } from "../../lib/useMoney";
 
 /**
  * "Tu siguiente nivel", en el inicio del alumno que acaba de graduarse.
@@ -169,6 +170,7 @@ function ConfirmRequest({
   course: RenewalCourseOption;
   onClose: () => void;
 }) {
+  const { money } = useMoney();
   const ask = useRequestRenewal();
 
   function submit() {
@@ -207,7 +209,7 @@ function ConfirmRequest({
         </p>
         {option.amount > 0 && (
           <p>
-            Cuota: <strong className="tabular text-slate-900">Q{option.amount.toFixed(2)}</strong>, la
+            Cuota: <strong className="tabular text-slate-900">{money(option.amount)}</strong>, la
             misma de tu nivel anterior
             {course.start_date ? `, con vencimiento el ${longDate(course.start_date)}` : ""}.
           </p>

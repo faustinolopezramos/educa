@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import secrets
+
 import jwt
 from passlib.context import CryptContext
 
@@ -18,6 +20,16 @@ _DUMMY_PASSWORD_HASH = pwd_context.hash("educa-timing-guard-dummy-password")
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
+
+
+def generate_password() -> str:
+    """Una contraseña inicial distinta para cada cuenta nueva.
+
+    Sustituye a la contraseña fija que se sugería al dar de alta, que estaba
+    publicada en el propio JavaScript: sabiendo el correo de alguien se entraba
+    en su cuenta. 12 caracteres URL-safe, muy por debajo del límite de bcrypt.
+    """
+    return secrets.token_urlsafe(9)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -45,6 +57,20 @@ def create_refresh_token(subject: str, token_version: int, jti: str) -> str:
         "type": "refresh",
         "tv": token_version,
         "jti": jti,
+    }
+    return jwt.encode(payload, _SECRET, algorithm=_ALGORITHM)
+
+
+def create_password_reset_token(
+    subject: str, token_version: int, expire_minutes: int = 30
+) -> str:
+    """Emite un token firmado para recuperación de contraseña (30 min por defecto)."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
+    payload: dict = {
+        "sub": subject,
+        "exp": expire,
+        "type": "password_reset",
+        "tv": token_version,
     }
     return jwt.encode(payload, _SECRET, algorithm=_ALGORITHM)
 

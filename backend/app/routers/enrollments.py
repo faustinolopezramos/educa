@@ -127,7 +127,9 @@ def open_enrollment(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "student_id must be a student")
 
     if current_user.tenant_id is not None:
-        check_tenant_student_quota(db, current_user.tenant_id)
+        check_tenant_student_quota(
+            db, current_user.tenant_id, student_id=payload.student_id
+        )
 
 
     # A matrícula is born either "Inscrito" or "Activo". Accepting any status the
@@ -210,7 +212,9 @@ def open_enrollment(
     due_date = data.pop("due_date", None)
     enrollment = Enrollment(
         **data,
-        enrollment_code=next_enrollment_code(db, year=datetime.now(timezone.utc).year),
+        enrollment_code=next_enrollment_code(
+            db, year=datetime.now(timezone.utc).year, tenant_id=course.tenant_id
+        ),
     )
     db.add(enrollment)
     db.flush()
@@ -332,7 +336,9 @@ def update_enrollment(
         and enrollment.status not in ENROLLMENT_OCCUPIES_SEAT
     ):
         if current_user.tenant_id is not None:
-            check_tenant_student_quota(db, current_user.tenant_id)
+            check_tenant_student_quota(
+                db, current_user.tenant_id, student_id=enrollment.student_id
+            )
         course = db.scalar(
             select(Course).where(Course.id == enrollment.course_id).with_for_update()
         )
@@ -481,7 +487,9 @@ def bulk_enroll(
 
         if current_user.tenant_id is not None:
             try:
-                check_tenant_student_quota(db, current_user.tenant_id)
+                check_tenant_student_quota(
+                    db, current_user.tenant_id, student_id=student_id
+                )
             except HTTPException:
                 outcomes.append(
                     BulkEnrollOutcome(
@@ -554,7 +562,7 @@ def bulk_enroll(
             student_id=student_id,
             course_id=course.id,
             amount=payload.amount,
-            enrollment_code=next_enrollment_code(db, year=year),
+            enrollment_code=next_enrollment_code(db, year=year, tenant_id=course.tenant_id),
         )
         db.add(enrollment)
         db.flush()

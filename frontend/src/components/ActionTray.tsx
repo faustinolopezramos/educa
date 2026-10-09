@@ -4,6 +4,7 @@ import { useDashboard } from "../lib/queries";
 import type { ActionItem } from "../lib/types";
 import { Card, SectionHeading } from "./ui";
 import { IconCheck, IconChevronRight } from "./icons";
+import { useMoney } from "../lib/useMoney";
 
 /**
  * What is waiting on the signed-in user, at the top of their home screen.
@@ -52,6 +53,7 @@ export function ActionTray({
    */
   exclude?: string[];
 }) {
+  const { money } = useMoney();
   const { data, isLoading } = useDashboard();
   const [, setParams] = useSearchParams();
 
@@ -107,7 +109,7 @@ export function ActionTray({
                 {item.label}
                 {item.amount != null && item.amount > 0 && (
                   <span className="tabular ml-1 font-bold">
-                    · {item.amount.toFixed(2)}
+                    · {money(item.amount)}
                   </span>
                 )}
               </span>

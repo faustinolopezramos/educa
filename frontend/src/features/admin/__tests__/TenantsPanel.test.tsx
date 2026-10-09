@@ -15,6 +15,7 @@ const tenant = (over: Partial<Tenant> = {}): Tenant => ({
   is_active: true,
   max_active_students: 100,
   timezone: "America/Guatemala",
+  currency: "GTQ",
   phone: null,
   tax_id: null,
   address: null,
@@ -23,12 +24,17 @@ const tenant = (over: Partial<Tenant> = {}): Tenant => ({
   active_students: 24,
   admins: 1,
   active_users: 17,
+  plan_tier: "starter",
+  requested_plan: null,
+  plan_requested_at: null,
   ...over,
 });
 
 describe("TenantsPanel", () => {
   let updateMutate: ReturnType<typeof vi.fn>;
   let createMutate: ReturnType<typeof vi.fn>;
+  let activateMutate: ReturnType<typeof vi.fn>;
+  let rejectMutate: ReturnType<typeof vi.fn>;
 
   function withTenants(list: Tenant[]) {
     vi.mocked(queries.useTenants).mockReturnValue({ data: list, isLoading: false } as never);
@@ -41,12 +47,39 @@ describe("TenantsPanel", () => {
     vi.mocked(queries.useCreateTenant).mockReturnValue({ mutate: createMutate, isPending: false } as never);
     vi.mocked(queries.useCreateTenantAdmin).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
     vi.mocked(queries.useTenantAdmins).mockReturnValue({ data: [], isLoading: false } as never);
+    activateMutate = vi.fn();
+    rejectMutate = vi.fn();
+    vi.mocked(queries.useActivatePlan).mockReturnValue({ mutate: activateMutate, isPending: false } as never);
+    vi.mocked(queries.useRejectPlanRequest).mockReturnValue({ mutate: rejectMutate, isPending: false } as never);
+  });
+
+  it("flags plan requests and activates the requested plan from its tab", () => {
+    withTenants([tenant({ requested_plan: "pro", plan_requested_at: "2026-10-01T12:00:00Z" })]);
+    render(<TenantsPanel />);
+    expect(screen.getByText(/Una academia pidió un cambio de plan/)).toBeInTheDocument();
+    expect(screen.getByText("Pide el plan Profesional")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Academia Alfa"));
+    // Con una solicitud pendiente, la ficha abre directamente en «Plan».
+    expect(screen.getByText(/Solicita: Profesional · 300 alumnos · Q995\/mes/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Activar Profesional" }));
+    expect(activateMutate).toHaveBeenCalledWith({ tenantId: 1, plan: "pro" }, expect.anything());
+  });
+
+  it("rejects a plan request with the reason the academy will read", () => {
+    withTenants([tenant({ requested_plan: "scale" })]);
+    render(<TenantsPanel />);
+    fireEvent.click(screen.getByText("Academia Alfa"));
+    fireEvent.click(screen.getByRole("button", { name: "Rechazar" }));
+    fireEvent.change(screen.getByLabelText("Motivo del rechazo"), { target: { value: "Sin pago" } });
+    fireEvent.click(screen.getByRole("button", { name: "Rechazar solicitud" }));
+    expect(rejectMutate).toHaveBeenCalledWith({ tenantId: 1, reason: "Sin pago" }, expect.anything());
   });
 
   it("shows plan usage as enrollments against the limit", () => {
     withTenants([tenant()]);
     render(<TenantsPanel />);
-    expect(screen.getByText("Matrículas activas")).toBeInTheDocument();
+    expect(screen.getByText(/Alumnos activos/)).toBeInTheDocument();
     expect(screen.getByText("24 / 100")).toBeInTheDocument();
   });
 

@@ -5,6 +5,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { ActionTray } from "../../components/ActionTray";
 import { AcademyKpis } from "./AcademyKpis";
 import { FirstSteps } from "./FirstSteps";
+import { PlanCard } from "./PlanCard";
 import { Badge, Button, Card, PageHeader, SectionHeading } from "../../components/ui";
 import { adminStatusLine } from "../../lib/adminHome";
 import {
@@ -47,6 +48,9 @@ export function InicioPanel() {
   const canEnroll = canSeeSection(user, "enrollments");
   const canSeeCourses = canSeeSection(user, "courses");
   const canSeeHorarios = canSeeSection(user, "horarios");
+  // El plan es cosa de la dirección de una academia concreta: ni asistentes ni
+  // el superadmin, que no pertenece a ninguna.
+  const seesPlan = user?.role === "admin" && user.tenant_id != null;
 
   return (
     <div>
@@ -82,6 +86,8 @@ export function InicioPanel() {
       {!(setupPending && (dashboard?.items.length ?? 0) === 0) && (
         <ActionTray emptyMessage="No hay nada pendiente en la academia. Todo al día." />
       )}
+
+      {seesPlan && <PlanCard />}
 
       {canSeeHorarios && !setupPending && <WeekPreview />}
     </div>

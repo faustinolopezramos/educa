@@ -64,7 +64,7 @@ def _handle_excused_makeup_credit(db: Session, enrollment: Enrollment, session_i
             enrollment_id=enrollment.id,
             origin_session_id=session_id,
             status=MakeUpStatus.available,
-            expires_at=academy_today() + timedelta(days=60),
+            expires_at=academy_today(db, tenant_id) + timedelta(days=60),
             notes="Inasistencia justificada (auto-generado)",
         )
         db.add(credit)

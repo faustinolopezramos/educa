@@ -71,3 +71,19 @@ def test_update_session_recording_url(client, db):
     res_roster = client.get(f"/assignments/{assign_id}/roster-status", headers=headers)
     assert res_roster.status_code == 200
     assert isinstance(res_roster.json(), list)
+
+
+def test_a_submission_cannot_claim_an_attachment_that_was_never_uploaded():
+    """`attachment://nombre.pdf` era sólo el nombre de un archivo que nunca se
+    subía. Ya no se acepta como entrega: el alumno tiene que pegar un enlace."""
+    import pytest
+    from pydantic import ValidationError
+
+    from app.schemas.assignment import SubmissionCreate
+
+    with pytest.raises(ValidationError):
+        SubmissionCreate(submission_url="attachment://tarea.pdf")
+    assert (
+        SubmissionCreate(submission_url="https://drive.google.com/x").submission_url
+        == "https://drive.google.com/x"
+    )

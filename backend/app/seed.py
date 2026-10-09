@@ -64,6 +64,7 @@ def _get_or_create_user(
     tenant_id: int | None = None,
     phone: str | None = None,
 ) -> User:
+    email = email.strip().lower()
     user = db.scalar(select(User).where(User.email == email))
     if user is None:
         user = User(

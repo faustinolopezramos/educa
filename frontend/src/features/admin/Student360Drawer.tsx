@@ -10,6 +10,7 @@ import {
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { PaymentKind, User } from "../../lib/types";
+import { useMoney } from "../../lib/useMoney";
 
 interface KardexSummary {
   global_gpa: number;
@@ -55,6 +56,7 @@ export function Student360Drawer({
   onClose: () => void;
   onMatricular?: (studentId: number) => void;
 }) {
+  const { money, symbol } = useMoney();
   const [activeTab, setActiveTab] = useState<"kardex" | "finances">("kardex");
   const [kardexData, setKardexData] = useState<StudentKardexResponse | null>(null);
 
@@ -210,7 +212,7 @@ export function Student360Drawer({
                     (summary?.outstanding_balance ?? 0) > 0 ? "text-red-600" : "text-slate-900"
                   }`}
                 >
-                  Q{(summary?.outstanding_balance ?? 0).toFixed(2)}
+                  {money((summary?.outstanding_balance ?? 0))}
                 </div>
               </Card>
             </div>
@@ -314,7 +316,7 @@ export function Student360Drawer({
                                 item.balance > 0 ? "font-semibold text-red-600" : "text-slate-500"
                               }`}
                             >
-                              Q{item.balance.toFixed(2)}
+                              {money(item.balance)}
                             </span>
                           </Td>
                         </tr>
@@ -365,13 +367,13 @@ export function Student360Drawer({
                     <div className="px-3.5 py-2.5">
                       <div className="text-2xs text-slate-500 font-medium">Total Cobrado</div>
                       <div className="tabular text-base font-bold text-slate-900">
-                        Q{ledger.charged.toFixed(2)}
+                        {money(ledger.charged)}
                       </div>
                     </div>
                     <div className="px-3.5 py-2.5">
                       <div className="text-2xs text-slate-500 font-medium">Total Pagado</div>
                       <div className="tabular text-base font-bold text-emerald-700">
-                        Q{ledger.paid.toFixed(2)}
+                        {money(ledger.paid)}
                       </div>
                     </div>
                     <div className="px-3.5 py-2.5">
@@ -381,7 +383,7 @@ export function Student360Drawer({
                           ledger.balance > 0 ? "text-red-700" : "text-slate-900"
                         }`}
                       >
-                        Q{ledger.balance.toFixed(2)}
+                        {money(ledger.balance)}
                       </div>
                     </div>
                   </div>
@@ -402,7 +404,7 @@ export function Student360Drawer({
                         </Select>
                       </Field>
 
-                      <Field label="Monto (Q)" required={true}>
+                      <Field label={`Monto (${symbol})`} required={true}>
                         <Input
                           type="number"
                           placeholder="0.00"
@@ -464,7 +466,7 @@ export function Student360Drawer({
                                   tx.kind === "payment" ? "text-emerald-700" : "text-slate-900"
                                 }`}
                               >
-                                {tx.kind === "payment" ? "-" : "+"}Q{tx.amount.toFixed(2)}
+                                {tx.kind === "payment" ? "-" : "+"}{money(tx.amount)}
                               </span>
                             </Td>
                           </tr>

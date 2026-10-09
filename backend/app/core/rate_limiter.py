@@ -38,11 +38,28 @@ class MemoryRateLimiter:
             self.attempts.pop(bucket_key, None)
         return len(recent) >= limit
 
+    # Por encima de esta cantidad de claves se barren las caducadas al anotar.
+    # Sin barrido, cada dirección que fallaba una vez dejaba su clave para
+    # siempre: el diccionario sólo se limpiaba al volver a consultar esa misma
+    # clave, y un escaneo desde muchas direcciones lo hacía crecer sin límite.
+    PRUNE_ABOVE = 10_000
+
     def record_failed_attempt(self, bucket_key: str, window_seconds: int) -> None:
         now = datetime.now(timezone.utc)
+        if len(self.attempts) > self.PRUNE_ABOVE:
+            self._prune(now - timedelta(seconds=window_seconds))
         if bucket_key not in self.attempts:
             self.attempts[bucket_key] = []
         self.attempts[bucket_key].append(now)
+
+    def _prune(self, window_start: datetime) -> None:
+        stale = [
+            key
+            for key, stamps in self.attempts.items()
+            if not stamps or stamps[-1] <= window_start
+        ]
+        for key in stale:
+            del self.attempts[key]
 
 
 class RedisRateLimiter:
@@ -77,3 +94,30 @@ class RedisRateLimiter:
             pipe.execute()
         except Exception as e:
             logger.warning("Redis rate limiter record failed: %s", e)
+
+
+_default_limiter: RateLimiter | None = None
+
+
+def get_rate_limiter() -> RateLimiter:
+    """Return the active global rate limiter instance (Redis if configured, otherwise Memory)."""
+    global _default_limiter
+    if _default_limiter is None:
+        try:
+            from app.core.config import settings
+
+            if getattr(settings, "redis_url", None):
+                _default_limiter = RedisRateLimiter(settings.redis_url)
+            else:
+                _default_limiter = MemoryRateLimiter()
+        except Exception as e:
+            logger.warning("Could not initialize RedisRateLimiter, using MemoryRateLimiter: %s", e)
+            _default_limiter = MemoryRateLimiter()
+    return _default_limiter
+
+
+def set_rate_limiter(limiter: RateLimiter) -> None:
+    """Explicitly set the global rate limiter instance."""
+    global _default_limiter
+    _default_limiter = limiter
+

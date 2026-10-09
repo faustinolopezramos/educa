@@ -1,4 +1,5 @@
 import type { EnrollmentStatus } from "./types";
+import { formatMoney } from "./currency";
 
 /**
  * Which states each state may move to — the same table the API enforces
@@ -79,8 +80,8 @@ export function isDelinquent(enrollment: {
 }
 
 /** How money owed reads in the UI: positive is a debt, negative is credit. */
-export function formatBalance(balance: number): string {
+export function formatBalance(balance: number, currency?: string): string {
   if (Math.abs(balance) < 0.005) return "Sin saldo";
-  if (balance < 0) return `A favor ${Math.abs(balance).toFixed(2)}`;
-  return `Debe ${balance.toFixed(2)}`;
+  if (balance < 0) return `A favor ${formatMoney(Math.abs(balance), currency)}`;
+  return `Debe ${formatMoney(balance, currency)}`;
 }

@@ -9,6 +9,7 @@ import { notify } from "../../lib/toast";
 import { apiErrorMessage } from "../../lib/api";
 import { formatTime } from "../../lib/format";
 import type { TeacherPayrollSummary } from "../../lib/types";
+import { useMoney } from "../../lib/useMoney";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -35,6 +36,7 @@ function prevMonthRange(): { from: string; to: string } {
 }
 
 export function TeacherPayrollPanel() {
+  const { money, symbol } = useMoney();
   const [dateFrom, setDateFrom] = useState(firstDayOfMonth());
   const [dateTo, setDateTo] = useState(todayIso());
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherPayrollSummary | null>(null);
@@ -172,7 +174,7 @@ export function TeacherPayrollPanel() {
             Total a Liquidar
           </span>
           <div className="mt-1 text-2xl font-bold text-emerald-600">
-            ${summary?.total_amount?.toFixed(2) ?? "0.00"}
+            {money(summary?.total_amount ?? 0)}
           </div>
         </div>
       </div>
@@ -211,7 +213,7 @@ export function TeacherPayrollPanel() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium text-slate-800">
-                          ${t.hourly_rate.toFixed(2)}/h
+                          {money(t.hourly_rate)}/h
                         </span>
                         <button
                           type="button"
@@ -230,7 +232,7 @@ export function TeacherPayrollPanel() {
                       {t.total_hours.toFixed(1)} h
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-emerald-700">
-                      ${t.total_amount.toFixed(2)}
+                      {money(t.total_amount)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <Button
@@ -264,7 +266,7 @@ export function TeacherPayrollPanel() {
               vigencia no cambian.
             </p>
             <label className="block text-xs font-medium text-slate-700">
-              Tarifa por Hora ($)
+              Tarifa por Hora ({symbol})
               <Input
                 type="number"
                 step="0.5"
@@ -323,6 +325,7 @@ function TeacherDetailModal({
   dateTo: string;
   onClose: () => void;
 }) {
+  const { money } = useMoney();
   const { data: report, isLoading } = useTeacherPayroll(teacher.teacher_id, dateFrom, dateTo);
 
   return (
@@ -335,7 +338,7 @@ function TeacherDetailModal({
           </div>
           <div>
             <span className="text-slate-500">Tarifa aplicada:</span>{" "}
-            <span className="font-semibold text-slate-800">${teacher.hourly_rate.toFixed(2)}/h</span>
+            <span className="font-semibold text-slate-800">{money(teacher.hourly_rate)}/h</span>
           </div>
         </div>
 
@@ -365,7 +368,7 @@ function TeacherDetailModal({
                     </td>
                     <td className="py-2 px-2 text-right">{s.duration_hours.toFixed(1)} h</td>
                     <td className="py-2 px-2 text-right font-bold text-emerald-700">
-                      ${s.amount.toFixed(2)}
+                      {money(s.amount)}
                     </td>
                   </tr>
                 ))}
@@ -377,7 +380,7 @@ function TeacherDetailModal({
         <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-semibold">
           <span>Total devengado:</span>
           <span className="text-emerald-700 text-sm font-bold">
-            ${report?.total_amount.toFixed(2) ?? "0.00"} ({report?.total_hours.toFixed(1) ?? 0} h)
+            {money(report?.total_amount ?? 0)} ({report?.total_hours.toFixed(1) ?? 0} h)
           </span>
         </div>
       </div>

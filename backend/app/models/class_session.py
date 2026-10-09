@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date as date_type
 from datetime import datetime, time
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Time, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Index, String, Time, UniqueConstraint, text
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,14 @@ class ClassSession(Base):
     __tablename__ = "class_sessions"
     __table_args__ = (
         UniqueConstraint("schedule_id", "date", name="uq_session_schedule_date"),
+        # Declarado aquí además de en su migración (c3d4e5f6a7b8): sin él,
+        # `alembic check` proponía borrarlo en cada autogeneración.
+        Index(
+            "ix_class_sessions_open_register",
+            "schedule_id",
+            "date",
+            postgresql_where=text("register_closed_at IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

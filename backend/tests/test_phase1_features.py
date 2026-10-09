@@ -12,7 +12,7 @@ def test_tenant_schema_defaults_and_custom_fields():
     # Test TenantCreate with defaults
     t_create = TenantCreate(name="Academia Test", slug="academia-test")
     assert t_create.timezone == "America/Guatemala"
-    assert t_create.currency == "USD"
+    assert t_create.currency == "GTQ"
     assert t_create.primary_color is None
     assert t_create.max_active_students == 100
 

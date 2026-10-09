@@ -36,10 +36,12 @@ import { onMutationError } from "./shared";
 import { useAuth } from "../../auth/AuthContext";
 import { canManageEnrollments } from "../../lib/nav";
 import { allowedTransitions, formatBalance, isTerminalStatus } from "../../lib/enrollment";
+import { useMoney } from "../../lib/useMoney";
 
 const STATUS_LABELS = ENROLLMENT_LABELS as Record<EnrollmentStatus, string>;
 
 export function EnrollmentsPanel() {
+  const { money, currency } = useMoney();
   const { user } = useAuth();
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
@@ -273,7 +275,7 @@ export function EnrollmentsPanel() {
                                   : "tabular text-sm text-slate-500"
                               }
                             >
-                              {formatBalance(e.balance)}
+                              {formatBalance(e.balance, currency)}
                             </span>
                           </Td>
                           <Td>
@@ -347,7 +349,7 @@ export function EnrollmentsPanel() {
                 <>
                   {" "}
                   Esta matrícula tiene un saldo pendiente de{" "}
-                  <strong>{deleting.balance.toFixed(2)}</strong>: al eliminarla, esa
+                  <strong>{money(deleting.balance)}</strong>: al eliminarla, esa
                   deuda deja de aparecer en el sistema.
                 </>
               )}
@@ -541,6 +543,7 @@ function FinancesModal({
   enrollment: Enrollment;
   onClose: () => void;
 }) {
+  const { money, symbol } = useMoney();
   const { data: ledger } = useEnrollmentLedger(enrollment.id);
   const { data: invoices = [] } = useEnrollmentInvoices(enrollment.id);
   const createPayment = useCreatePayment();
@@ -596,7 +599,7 @@ function FinancesModal({
         <ModalActions
           hint={
             ledger
-              ? `Saldo pendiente: Q${ledger.balance.toFixed(2)}`
+              ? `Saldo pendiente: ${money(ledger.balance)}`
               : undefined
           }
         >
@@ -619,13 +622,13 @@ function FinancesModal({
             <div className="px-3 py-2.5">
               <div className="text-xs text-slate-500">Cobrado</div>
               <div className="tabular text-base font-bold text-slate-900">
-                Q{ledger.charged.toFixed(2)}
+                {money(ledger.charged)}
               </div>
             </div>
             <div className="px-3 py-2.5">
               <div className="text-xs text-slate-500">Pagado</div>
               <div className="tabular text-base font-bold text-emerald-700">
-                Q{ledger.paid.toFixed(2)}
+                {money(ledger.paid)}
               </div>
             </div>
             <div className="px-3 py-2.5">
@@ -635,7 +638,7 @@ function FinancesModal({
                   ledger.balance > 0 ? "text-red-700" : "text-slate-900"
                 }`}
               >
-                Q{ledger.balance.toFixed(2)}
+                {money(ledger.balance)}
               </div>
             </div>
           </div>
@@ -650,7 +653,7 @@ function FinancesModal({
                 <option value="charge">Cobro / cuota</option>
               </Select>
             </Field>
-            <Field label="Monto (Q)" required={true}>
+            <Field label={`Monto (${symbol})`} required={true}>
               <Input
                 type="number"
                 min="0"
@@ -718,7 +721,7 @@ function FinancesModal({
                   className="flex items-center justify-between rounded-lg border border-slate-200 px-2.5 py-1.5"
                 >
                   <span className="font-mono text-xs text-slate-700">
-                    {inv.code} · Q{inv.total_amount.toFixed(2)}
+                    {inv.code} · {money(inv.total_amount)}
                   </span>
                   <Button
                     variant="ghost"

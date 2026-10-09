@@ -12,6 +12,7 @@ import {
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { PaymentKind, User } from "../../lib/types";
+import { useMoney } from "../../lib/useMoney";
 
 export function StudentAccountStatementModal({
   student,
@@ -20,6 +21,7 @@ export function StudentAccountStatementModal({
   student: User;
   onClose: () => void;
 }) {
+  const { money, symbol } = useMoney();
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
 
@@ -89,7 +91,7 @@ export function StudentAccountStatementModal({
               <span className="font-semibold text-xs">
                 Saldo de matrícula:{" "}
                 <span className={totalBalance > 0 ? "text-red-700 font-mono" : "text-emerald-700 font-mono"}>
-                  Q{totalBalance.toFixed(2)}
+                  {money(totalBalance)}
                 </span>
               </span>
             ) : undefined
@@ -165,7 +167,7 @@ export function StudentAccountStatementModal({
                     Total Cargado
                   </div>
                   <div className="mt-1 font-mono text-lg font-bold text-slate-900">
-                    Q{ledger.charged.toFixed(2)}
+                    {money(ledger.charged)}
                   </div>
                 </div>
 
@@ -174,7 +176,7 @@ export function StudentAccountStatementModal({
                     Total Pagado
                   </div>
                   <div className="mt-1 font-mono text-lg font-bold text-emerald-700">
-                    Q{ledger.paid.toFixed(2)}
+                    {money(ledger.paid)}
                   </div>
                 </div>
 
@@ -189,7 +191,7 @@ export function StudentAccountStatementModal({
                   <div className={`mt-1 font-mono text-lg font-bold ${
                     ledger.balance > 0 ? "text-red-700" : "text-slate-900"
                   }`}>
-                    Q{ledger.balance.toFixed(2)}
+                    {money(ledger.balance)}
                   </div>
                 </div>
               </div>
@@ -212,7 +214,7 @@ export function StudentAccountStatementModal({
                     </Select>
                   </Field>
 
-                  <Field label="Monto (Q)">
+                  <Field label={`Monto (${symbol})`}>
                     <Input
                       type="number"
                       min="0"
@@ -335,7 +337,7 @@ export function StudentAccountStatementModal({
                                   isPayment ? "text-emerald-700" : "text-slate-900"
                                 }`}
                               >
-                                {isPayment ? `- Q${m.amount.toFixed(2)}` : `+ Q${m.amount.toFixed(2)}`}
+                                {isPayment ? `- ${money(m.amount)}` : `+ ${money(m.amount)}`}
                               </span>
                             </Td>
                           </tr>

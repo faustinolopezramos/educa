@@ -42,10 +42,13 @@ class EnrollmentTeachingRead(BaseModel):
     course_id: int
     enrollment_code: str
     status: EnrollmentStatus
-    attendance_blocked: bool
 
 
 class EnrollmentRead(EnrollmentTeachingRead):
+    # Fuera de lo que ve el profesor: la academia bloquea el acceso sobre todo
+    # por falta de pago, así que el bloqueo era una forma indirecta de decirle
+    # al profesor quién debe dinero.
+    attendance_blocked: bool
     payment_status: PaymentStatus
     amount: Money
     # `charged − paid` from the ledger, so the list can show what is owed

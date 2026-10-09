@@ -5,6 +5,7 @@ import { PromptModal } from "../../components/PromptModal";
 import { usePendingRenewals, useReviewRenewal } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import { onMutationError } from "./shared";
+import { useMoney } from "../../lib/useMoney";
 
 /**
  * Alumnos graduados que piden plaza en su siguiente nivel.
@@ -18,6 +19,7 @@ import { onMutationError } from "./shared";
  * solicitud sigue aquí para rechazarla con un motivo.
  */
 export function RenewalRequestsCard() {
+  const { money } = useMoney();
   const { data: pending = [] } = usePendingRenewals();
   const review = useReviewRenewal();
   const [rejecting, setRejecting] = useState<number | null>(null);
@@ -41,7 +43,7 @@ export function RenewalRequestsCard() {
               <p className="text-xs text-slate-500">
                 {r.from_course_name} → <span className="text-slate-700">{r.course_name}</span>
                 {" · "}
-                <span className="tabular">Q{r.amount.toFixed(2)}</span>
+                <span className="tabular">{money(r.amount)}</span>
               </p>
             </div>
             <div className="flex gap-1.5">

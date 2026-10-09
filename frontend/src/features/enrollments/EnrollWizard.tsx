@@ -19,6 +19,7 @@ import { notify } from "../../lib/toast";
 import type { BulkEnrollOutcome } from "../../lib/types";
 import { BulkResultDialog, type BulkOutcome } from "../admin/BulkResultDialog";
 import { CreateUserModal } from "../admin/UsersPanel";
+import { useMoney } from "../../lib/useMoney";
 
 interface Props {
   initialCourseId?: number;
@@ -51,6 +52,7 @@ export function EnrollWizard({
   initialStudentIds,
   onClose,
 }: Props) {
+  const { symbol } = useMoney();
   const { data: courses = [] } = useCourses();
   const { data: students = [] } = useUsers("student");
   const { data: teachers = [] } = usePublicTeachers();
@@ -357,7 +359,7 @@ export function EnrollWizard({
             </span>
           </div>
           <div className="grid gap-2.5 sm:grid-cols-2">
-            <Field label="Monto por alumno">
+            <Field label={`Monto por alumno (${symbol})`}>
               <Input
                 type="number"
                 min="0"

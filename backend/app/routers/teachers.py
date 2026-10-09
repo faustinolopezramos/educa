@@ -306,7 +306,7 @@ def get_academy_payroll_summary(
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Requiere permisos de nómina o dirección")
 
-    today = academy_today()
+    today = academy_today(db, current_user.tenant_id)
     start = date_from or date(today.year, today.month, 1)
     end = date_to or today
 
@@ -333,7 +333,7 @@ def get_teacher_payroll(
     if not can_view:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No tienes permiso para ver esta liquidación")
 
-    today = academy_today()
+    today = academy_today(db, current_user.tenant_id)
     start = date_from or date(today.year, today.month, 1)
     end = date_to or today
 
@@ -360,7 +360,7 @@ def update_teacher_hourly_rate(
     teacher = _require_teacher(db, teacher_id, current_user)
     before = snapshot(teacher)
 
-    effective_from = payload.effective_from or academy_today()
+    effective_from = payload.effective_from or academy_today(db, current_user.tenant_id)
     existing = db.scalar(
         select(TeacherRate).where(
             TeacherRate.teacher_id == teacher.id,
@@ -382,7 +382,7 @@ def update_teacher_hourly_rate(
 
     # `users.hourly_rate` sigue siendo la tarifa vigente que muestran las
     # pantallas. Una subida con fecha futura no la toca todavía.
-    if effective_from <= academy_today():
+    if effective_from <= academy_today(db, current_user.tenant_id):
         teacher.hourly_rate = payload.hourly_rate
 
     record(

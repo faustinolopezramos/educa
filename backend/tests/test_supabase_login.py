@@ -57,7 +57,12 @@ def test_an_unconfirmed_email_cannot_claim_an_account(client, db, monkeypatch):
 
     res = client.post(ENDPOINT, json={"supabase_token": "tok"})
 
-    assert res.status_code == 401
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "email_unverified"
+    # El aviso es el mismo exista o no la cuenta: no revela nada.
+    _supabase_says(monkeypatch, _account("nadie@test.com", confirmed=False))
+    other = client.post(ENDPOINT, json={"supabase_token": "tok"})
+    assert other.json() == res.json()
 
 
 def test_an_unknown_email_does_not_become_a_new_account(client, db, monkeypatch):
@@ -67,7 +72,10 @@ def test_an_unknown_email_does_not_become_a_new_account(client, db, monkeypatch)
 
     res = client.post(ENDPOINT, json={"supabase_token": "tok"})
 
-    assert res.status_code == 401
+    # Se le dice por qué: demostró ante el proveedor que el correo es suyo.
+    assert res.status_code == 403
+    assert res.json()["detail"]["code"] == "no_account"
+    assert res.json()["detail"]["email"] == "desconocido@test.com"
     assert db.query(User).filter(User.email == "desconocido@test.com").count() == 0
 
 

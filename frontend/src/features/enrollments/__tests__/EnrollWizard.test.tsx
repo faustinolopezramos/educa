@@ -6,6 +6,9 @@ import * as queries from "../../../lib/queries";
 import { createCourse, createUser } from "../../../test/fixtures";
 
 vi.mock("../../../lib/queries");
+vi.mock("../../../lib/useMoney", () => ({
+  useMoney: () => ({ currency: "GTQ", symbol: "Q", money: (n: number) => `Q${n.toFixed(2)}` }),
+}));
 
 /**
  * Enrolling is one screen that finishes the job.

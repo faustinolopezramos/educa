@@ -15,6 +15,7 @@ import { EnrollWizard } from "../enrollments/EnrollWizard";
 import { Student360Drawer } from "./Student360Drawer";
 import { CreateUserModal } from "./UsersPanel";
 import { StudentBulkImportModal } from "./StudentBulkImportModal";
+import { useMoney } from "../../lib/useMoney";
 
 type Tab = "activos" | "sin_curso" | "morosos" | "baja" | "todos";
 
@@ -58,6 +59,7 @@ function deriveStatus(student: User, enrolments: Enrollment[]): DerivedStatus {
 }
 
 export function StudentsPanel() {
+  const { currency } = useMoney();
   const queryClient = useQueryClient();
   const { data: students = [] } = useUsers("student");
   const { data: enrolments = [] } = useEnrollments();
@@ -282,7 +284,7 @@ export function StudentsPanel() {
                             : "tabular text-sm text-slate-500"
                         }
                       >
-                        {formatBalance(owed)}
+                        {formatBalance(owed, currency)}
                       </span>
                     </Td>
                     <Td align="right">

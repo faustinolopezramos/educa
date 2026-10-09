@@ -140,6 +140,40 @@ flyctl ssh console -a educa-backend -C "python -m app.cli expire-makeups"
 
 ---
 
+### Planes de las academias
+
+Toda academia que se registra entra en el plan **Gratis** (15 alumnos). Si eligió
+un plan de pago, queda como **solicitud pendiente** y los superadmins reciben un
+aviso. No hay cobro en línea: confirma el pago (transferencia, depósito…) y
+actívalo en **Academias → la academia → Plan**. La academia también puede pedir
+un cambio de plan desde su Inicio (tarjeta «Tu plan»), y recibe un aviso al
+llegar al 80 % y al 100 % de su cupo.
+
+Planes y precios mensuales (en `backend/app/services/plans.py`; la portada y el
+registro usan la copia de `frontend/src/lib/plans.ts`, que debe coincidir):
+
+| Plan | Alumnos | Precio |
+|---|---|---|
+| Gratis | 15 | Q0 |
+| Starter | 100 | Q375 |
+| Profesional | 300 | Q995 |
+| Escala | 1,000 | Q2,150 |
+
+---
+
+### Estados de pago (morosidad)
+
+No hace falta programarlo: la API recalcula cada hora el estado de pago de las
+matrículas, así que una cuota que vence pasa a "en mora" el mismo día. Las
+academias suspendidas no se tocan. Para forzarlo en el momento (o para una
+fecha concreta):
+
+```bash
+flyctl ssh console -a educa-backend -C "python -m app.cli refresh-payments"
+```
+
+---
+
 ### Barrido semanal de alumnos en riesgo
 
 No hace falta programarlo: la API lo lanza sola los lunes desde las 7:00 (hora

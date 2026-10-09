@@ -114,7 +114,7 @@ def raise_at_risk_alerts(
 ) -> dict[str, int]:
     """Compute the period's at-risk students (in the caller's scope) and notify
     the teachers of the affected courses. Returns how many alerts were sent."""
-    report = build_report(db, current_user, period, anchor or academy_today())
+    report = build_report(db, current_user, period, anchor or academy_today(db, current_user.tenant_id))
     by_course: dict[int, list[str]] = {}
     for r in report.at_risk:
         by_course.setdefault(r.course_id, []).append(
@@ -137,7 +137,7 @@ def raise_at_risk_alerts(
                 "teachers_notified": created_teacher,
                 "directors_notified": created_director,
                 "period": period,
-                "anchor": str(anchor or academy_today()),
+                "anchor": str(anchor or academy_today(db, current_user.tenant_id)),
             },
         )
     db.commit()
@@ -308,6 +308,8 @@ def test_whatsapp_connection(
                     "Curso de Prueba",
                     "hoy",
                 ],
+                token=cfg.get("whatsapp_token"),
+                phone_number_id=cfg.get("whatsapp_phone_number_id"),
             )
             return {
                 "success": True,

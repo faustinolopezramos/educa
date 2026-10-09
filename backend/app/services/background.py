@@ -3,7 +3,9 @@
 Fly keeps one machine always running (`min_machines_running = 1`), so this is
 enough without a separate worker: every few seconds the outbox is drained
 (`app.services.delivery`), and every few minutes the weekly at-risk sweep is
-checked (`app.services.risk_sweep`). A thread rather than a task because SMTP
+checked (`app.services.risk_sweep`), and every hour the enrollments' payment
+status is re-derived so an overdue cuota shows as such (`app.services.finance`).
+A thread rather than a task because SMTP
 and the HTTP client are blocking. With more than one process each runs its own
 loop: `SKIP LOCKED` keeps the senders apart, and the sweep's unique index
 keeps it to once a week.
@@ -19,7 +21,9 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.audit import record
 from app.services.delivery import dispatch_pending
+from app.services.finance import refresh_live_payment_statuses
 from app.services.risk_sweep import run_due_sweeps
 
 logger = logging.getLogger(__name__)
@@ -28,12 +32,28 @@ logger = logging.getLogger(__name__)
 # lanzarlo a su hora y ahorra una consulta cada veinte segundos.
 SWEEP_CHECK_EVERY = 600.0
 
+# La morosidad llega por el calendario: una vez por hora basta para que una
+# cuota vencida pase a "en mora" el mismo día.
+PAYMENTS_REFRESH_EVERY = 3600.0
+
+
+def refresh_payments(db: Session) -> int:
+    """Recalcular el estado de pago de toda la instalación y guardarlo."""
+    changed = refresh_live_payment_statuses(db)
+    if changed:
+        # Una sola fila resumen, como el barrido manual: la tabla de auditoría
+        # no es sitio para una línea por matrícula cada hora.
+        record(db, None, "update", "payment_status_sweep_auto", 0, after={"updated": changed})
+    db.commit()
+    return changed
+
 
 class BackgroundJobs:
     def __init__(self, session_factory: Callable[[], Session], interval: float) -> None:
         self._session_factory = session_factory
         self._interval = interval
         self._last_sweep_check = 0.0
+        self._last_payments_refresh = 0.0
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="educa-background", daemon=True)
 
@@ -62,6 +82,9 @@ class BackgroundJobs:
             if time.monotonic() - self._last_sweep_check >= SWEEP_CHECK_EVERY:
                 self._last_sweep_check = time.monotonic()
                 self._job("Barridos de riesgo", run_due_sweeps)
+            if time.monotonic() - self._last_payments_refresh >= PAYMENTS_REFRESH_EVERY:
+                self._last_payments_refresh = time.monotonic()
+                self._job("Estados de pago", refresh_payments)
             self._stop.wait(self._interval)
 
 

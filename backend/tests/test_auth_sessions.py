@@ -203,9 +203,67 @@ def test_burning_the_refresh_budget_does_not_lock_you_out_of_login(client, world
     assert res.status_code == 200
 
 
-def test_revoke_other_sessions(client, world):
-    student = auth(client, "student@test.com")
-    res = client.post("/auth/revoke-other-sessions", headers=student)
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_revoke_other_sessions_keeps_this_one(client, world):
+    here = _login(client, "student@test.com")
+    elsewhere = _login(client, "student@test.com")
+
+    res = client.post(
+        "/auth/revoke-other-sessions", headers=_bearer(here["access_token"])
+    )
     assert res.status_code == 200, res.text
-    assert "message" in res.json()
+    fresh = res.json()
+
+    # Esta sesión sigue, con el par nuevo.
+    assert client.get("/auth/me", headers=_bearer(fresh["access_token"])).status_code == 200
+    assert (
+        client.post("/auth/refresh", json={"refresh_token": fresh["refresh_token"]}).status_code
+        == 200
+    )
+    # La otra ya no: ni su access token ni su refresh token.
+    assert client.get("/auth/me", headers=_bearer(elsewhere["access_token"])).status_code == 401
+    assert (
+        client.post(
+            "/auth/refresh", json={"refresh_token": elsewhere["refresh_token"]}
+        ).status_code
+        == 401
+    )
+
+
+def test_changing_password_keeps_the_session_that_changed_it(client, world):
+    here = _login(client, "student@test.com")
+    elsewhere = _login(client, "student@test.com")
+
+    res = client.patch(
+        "/auth/me",
+        headers=_bearer(here["access_token"]),
+        json={"current_password": "secret123", "password": "new-secret-1"},
+    )
+    assert res.status_code == 200, res.text
+    tokens = res.json()["tokens"]
+    assert tokens is not None
+
+    assert client.get("/auth/me", headers=_bearer(tokens["access_token"])).status_code == 200
+    assert client.get("/auth/me", headers=_bearer(here["access_token"])).status_code == 401
+    assert client.get("/auth/me", headers=_bearer(elsewhere["access_token"])).status_code == 401
+    assert (
+        client.post(
+            "/auth/refresh", json={"refresh_token": elsewhere["refresh_token"]}
+        ).status_code
+        == 401
+    )
+
+
+def test_profile_edit_without_password_returns_no_tokens(client, world):
+    here = _login(client, "student@test.com")
+    res = client.patch(
+        "/auth/me", headers=_bearer(here["access_token"]), json={"full_name": "Otro"}
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["tokens"] is None
+    # La sesión sigue siendo la misma.
+    assert client.get("/auth/me", headers=_bearer(here["access_token"])).status_code == 200
 

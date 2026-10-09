@@ -58,11 +58,12 @@ describe("enrollment lifecycle", () => {
 
 describe("formatBalance", () => {
   it("reads a debt as money owed", () => {
-    expect(formatBalance(300)).toBe("Debe 300.00");
+    expect(formatBalance(300)).toBe("Debe Q300.00");
+    expect(formatBalance(300, "USD")).toBe("Debe $300.00");
   });
 
   it("reads an overpayment as credit rather than a negative debt", () => {
-    expect(formatBalance(-50)).toBe("A favor 50.00");
+    expect(formatBalance(-50)).toBe("A favor Q50.00");
   });
 
   it("treats a rounding-sized remainder as settled", () => {

@@ -13,7 +13,7 @@ import {
   useCreateUser, useDeleteUser, useLanguages, useNationalities, useSetTeacherLanguages, useTeacherLanguages, useUpdateUser, useUsers,
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
-import type { Nationality, Role, User } from "../../lib/types";
+import type { Nationality, Role, User, UserCreated } from "../../lib/types";
 import { PASSWORD_MIN_LENGTH, onMutationError } from "./shared";
 import { useAuth } from "../../auth/AuthContext";
 import {
@@ -37,13 +37,12 @@ const ALL_PERMISSIONS: { id: Permission; label: string; description: string }[] 
   { id: "view_reports", label: "Ver Reportes", description: "Acceso a reportes académicos y financieros" },
 ];
 
-const DEFAULT_SUGGESTED_PASSWORD = "Educa2026!";
-
 const EMPTY_USER = {
   email: "",
   full_name: "",
   role: "student",
-  password: DEFAULT_SUGGESTED_PASSWORD,
+  // Vacía: el servidor genera una distinta para cada cuenta.
+  password: "",
   timezone: "UTC",
   phone: "",
   address: "",
@@ -53,6 +52,7 @@ const EMPTY_USER = {
 };
 
 import { StudentAccountStatementModal } from "./StudentAccountStatementModal";
+import { GeneratedCredentials } from "./GeneratedCredentials";
 
 type RoleTab = "student" | "teacher" | "assistant" | "admin" | "all";
 
@@ -407,6 +407,10 @@ export function CreateUserModal({
   const create = useCreateUser();
   const [form, setForm] = useState({ ...EMPTY_USER, role: defaultRole });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Tras un alta sin contraseña, la que generó el servidor: se muestra una vez.
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(
+    null,
+  );
 
   function validate(): boolean {
     const e: Record<string, string> = {};
@@ -419,9 +423,9 @@ export function CreateUserModal({
     const cuiVal = validateCuiPassport(form.cui_passport);
     if (!cuiVal.isValid && cuiVal.error) e.cui_passport = cuiVal.error;
 
-    if (form.password.length < PASSWORD_MIN_LENGTH)
+    if (form.password && form.password.length < PASSWORD_MIN_LENGTH)
       e.password = `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`;
-    
+
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -435,9 +439,10 @@ export function CreateUserModal({
         phone: form.phone.trim() || null,
         address: form.address.trim() || null,
         nationality_id: form.nationality_id || null,
+        password: form.password || undefined,
       } as never,
       {
-        onSuccess: (createdUser: User) => {
+        onSuccess: (createdUser: UserCreated) => {
           setForm(EMPTY_USER);
           setErrors({});
           notify(
@@ -447,7 +452,14 @@ export function CreateUserModal({
             "success",
           );
           onCreated?.(createdUser);
-          onClose();
+          if (createdUser.generated_password) {
+            setCredentials({
+              email: createdUser.email,
+              password: createdUser.generated_password,
+            });
+          } else {
+            onClose();
+          }
         },
         onError: onMutationError("No se pudo crear"),
       },
@@ -467,6 +479,22 @@ export function CreateUserModal({
       ? "Ingresa los datos personales de identificación y contacto del alumno"
       : "Ingresa los datos del profesor"
     : "Ingresa los datos personales del alumno, profesor o administrador";
+
+  if (credentials) {
+    return (
+      <Modal
+        title="Cuenta creada"
+        onClose={onClose}
+        footer={
+          <ModalActions>
+            <Button onClick={onClose}>Listo</Button>
+          </ModalActions>
+        }
+      >
+        <GeneratedCredentials email={credentials.email} password={credentials.password} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -592,13 +620,12 @@ export function CreateUserModal({
 
         <Field
           label="Contraseña Inicial"
-          required={true}
           error={errors.password}
-          hint="Sugerida automáticamente (Educa2026!). El usuario podrá cambiarla desde su perfil."
+          hint="Déjala vacía y se generará una segura que verás al crear la cuenta. El usuario podrá cambiarla desde su perfil."
         >
           <Input
             type="text"
-            placeholder="Educa2026!"
+            placeholder="Se genera automáticamente"
             value={form.password}
             onChange={(e) => {
               setForm({ ...form, password: e.target.value });

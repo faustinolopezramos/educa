@@ -240,3 +240,35 @@ def notify_directors_of_at_risk(
         if len(details) > len(shown):
             body += f"\n…y {len(details) - len(shown)} más en Reportes."
     return notify(db, directors, "at_risk_management", title, body)
+
+
+# ---------------- Planes de la academia ----------------
+
+
+def _tenant_admin_ids(db: Session, tenant_id: int) -> list[int]:
+    """Los administradores activos de una academia: quienes deciden su plan."""
+    return list(
+        db.scalars(
+            select(User.id).where(
+                User.role == UserRole.admin,
+                User.tenant_id == tenant_id,
+                User.is_active.is_(True),
+            )
+        ).all()
+    )
+
+
+def notify_tenant_admins(db: Session, tenant_id: int, kind: str, title: str, body: str) -> int:
+    return notify(db, _tenant_admin_ids(db, tenant_id), kind, title, body)
+
+
+def notify_superadmins(db: Session, kind: str, title: str, body: str, data: dict | None = None) -> int:
+    """Quien administra la plataforma: los que activan los planes."""
+    ids = list(
+        db.scalars(
+            select(User.id).where(
+                User.role == UserRole.superadmin, User.is_active.is_(True)
+            )
+        ).all()
+    )
+    return notify(db, ids, kind, title, body, data)

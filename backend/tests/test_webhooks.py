@@ -66,6 +66,19 @@ def test_a_signed_recording_event_stores_the_url(client, secret, zoom_meeting):
     assert zoom_meeting.recording_url == "https://zoom.us/rec/abc"
 
 
+def test_zoom_events_in_their_real_shape_are_understood(client, secret, zoom_meeting):
+    """Zoom anida el objeto bajo `payload.object`; con sólo la forma plana, todo
+    evento real de Zoom acababa en "meeting not found"."""
+    body = (
+        b'{"event":"recording.completed","payload":{"account_id":"x","object":'
+        b'{"id":"zoom-123","share_url":"https://zoom.us/rec/real"}}}'
+    )
+    res = client.post("/webhooks/zoom", content=body, headers=zoom_headers(body))
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "ok"
+    assert zoom_meeting.recording_url == "https://zoom.us/rec/real"
+
+
 def test_a_signed_google_channel_token_is_accepted(client, secret, zoom_meeting):
     res = client.post(
         "/webhooks/google",

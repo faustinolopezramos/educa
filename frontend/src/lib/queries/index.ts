@@ -124,8 +124,11 @@ export {
   useUpdateTenant,
   useTenantAdmins,
   useCreateTenantAdmin,
+  useActivatePlan,
+  useRejectPlanRequest,
 } from "./tenants";
 export type { TenantPayload } from "./tenants";
+export { useAcademyPlan, useRequestPlan, useCancelPlanRequest } from "./academy";
 export {
   useTeacherLanguages,
   useSetTeacherLanguages,

@@ -2,8 +2,10 @@ import { useAuth } from "../../auth/AuthContext";
 import { Badge, Button, Card, EmptyState, SkeletonRows } from "../../components/ui";
 import { IconCap, IconLock } from "../../components/icons";
 import { useStudentKardex } from "../../lib/queries";
+import { useMoney } from "../../lib/useMoney";
 
 export function StudentKardexView() {
+  const { money } = useMoney();
   const { user } = useAuth();
   const { data: kardex, isLoading, isError } = useStudentKardex(user?.id);
 
@@ -174,7 +176,7 @@ export function StudentKardexView() {
           <div>
             <span className="font-bold">Saldo pendiente en registro: </span>
             <span>
-              Tienes un balance pendiente de Q {summary.outstanding_balance.toFixed(2)}. Acércate a
+              Tienes un balance pendiente de {money(summary.outstanding_balance)}. Acércate a
               administración para mantener tu solvencia al día.
             </span>
           </div>

@@ -12,9 +12,10 @@ def _validate_safe_url(v: str | None) -> str | None:
     cleaned = v.strip()
     if not cleaned:
         return None
-    # Allow attachments format or standard web URLs
-    if cleaned.startswith("attachment://"):
-        return cleaned
+    # `attachment://` ya no se acepta: el selector de archivos que lo producía
+    # sólo guardaba el nombre, nunca el archivo, y el profesor veía "archivo
+    # registrado" sin nada que abrir. Las filas antiguas se siguen leyendo,
+    # porque los esquemas de lectura no pasan por aquí.
     if not (cleaned.startswith("http://") or cleaned.startswith("https://")):
         raise ValueError("La URL debe comenzar con http:// o https://")
     return cleaned

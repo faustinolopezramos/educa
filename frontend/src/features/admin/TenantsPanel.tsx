@@ -13,10 +13,16 @@ import {
   SectionHeading,
   Select,
   SkeletonRows,
+  type ControlProps,
 } from "../../components/ui";
+import { CURRENCIES, DEFAULT_CURRENCY } from "../../lib/currency";
+import { formatDateTime } from "../../lib/format";
+import { PLAN_CATALOG, formatQuetzales, type PlanCode } from "../../lib/plans";
 import {
+  useActivatePlan,
   useCreateTenant,
   useCreateTenantAdmin,
+  useRejectPlanRequest,
   useTenantAdmins,
   useTenants,
   useUpdateTenant,
@@ -33,10 +39,11 @@ import { onMutationError } from "./shared";
  * de crearla, de darle su primer administrador —nacía sin nadie que pudiera
  * entrar a gestionarla— ni de ver cuánto de su plan estaba usando. Ahora:
  *
- * - cada academia enseña sus matrículas activas contra el límite contratado
- *   (el límite cuenta plazas, no personas: un alumno en dos cursos ocupa dos),
- *   y avisa si no tiene administrador;
- * - tocarla abre su ficha: datos, administradores y estado;
+ * - cada academia enseña sus alumnos activos contra el límite contratado (un
+ *   alumno en dos cursos ocupa una plaza), y avisa si no tiene administrador;
+ * - las que pidieron un cambio de plan lo muestran, y su ficha tiene una
+ *   pestaña «Plan» para activarlo al confirmar el pago, o rechazarlo;
+ * - tocarla abre su ficha: datos, plan, administradores y estado;
  * - crear una academia sigue con el alta de su primer administrador.
  *
  * Los campos del modelo que nada usa todavía (logo, colores, dominio, moneda)
@@ -89,6 +96,7 @@ export function TenantsPanel() {
 
   const active = tenants.filter((t) => t.is_active).length;
   const orphaned = tenants.filter((t) => t.is_active && t.admins === 0).length;
+  const pendingPlans = tenants.filter((t) => t.requested_plan).length;
   const open = tenants.find((t) => t.id === openId) ?? null;
 
   return (
@@ -119,6 +127,14 @@ export function TenantsPanel() {
           {orphaned === 1
             ? "Una academia activa no tiene administrador: nadie puede entrar a gestionarla."
             : `${orphaned} academias activas no tienen administrador: nadie puede entrar a gestionarlas.`}
+        </div>
+      )}
+
+      {pendingPlans > 0 && (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+          {pendingPlans === 1
+            ? "Una academia pidió un cambio de plan. Actívalo en su ficha al confirmar el pago."
+            : `${pendingPlans} academias pidieron un cambio de plan. Actívalos en su ficha al confirmar el pago.`}
         </div>
       )}
 
@@ -175,7 +191,7 @@ function TenantCard({ tenant: t, onOpen }: { tenant: Tenant; onOpen: () => void 
 
       <div className="mt-4">
         <div className="flex items-baseline justify-between text-xs">
-          <span className="text-slate-500">Matrículas activas</span>
+          <span className="text-slate-500">Alumnos activos · {planLabel(t.plan_tier)}</span>
           <span className={`tabular font-semibold ${tone.text}`}>
             {t.active_students} / {t.max_active_students}
           </span>
@@ -186,11 +202,19 @@ function TenantCard({ tenant: t, onOpen }: { tenant: Tenant; onOpen: () => void 
           aria-valuenow={t.active_students}
           aria-valuemin={0}
           aria-valuemax={t.max_active_students}
-          aria-label="Matrículas activas sobre el límite del plan"
+          aria-label="Alumnos activos sobre el límite del plan"
         >
           <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${pct}%` }} />
         </div>
       </div>
+
+      {t.requested_plan && (
+        <p className="mt-3">
+          <Badge color="indigo" dot>
+            Pide el plan {planLabel(t.requested_plan)}
+          </Badge>
+        </p>
+      )}
 
       <p className="mt-3 text-xs">
         {t.admins === 0 ? (
@@ -223,6 +247,7 @@ function NewTenantModal({
   const [slugEdited, setSlugEdited] = useState(false);
   const [limit, setLimit] = useState(100);
   const [timezone, setTimezone] = useState("America/Guatemala");
+  const [currency, setCurrency] = useState(DEFAULT_CURRENCY);
 
   if (created) {
     return (
@@ -254,7 +279,7 @@ function NewTenantModal({
 
   function submit() {
     create.mutate(
-      { name: name.trim(), slug: finalSlug, max_active_students: limit, timezone },
+      { name: name.trim(), slug: finalSlug, max_active_students: limit, timezone, currency },
       {
         onSuccess: (tenant) => {
           notify("Academia creada", "success");
@@ -320,6 +345,9 @@ function NewTenantModal({
             <TimezoneSelect value={timezone} onChange={setTimezone} />
           </Field>
         </div>
+        <Field label="Moneda" hint="En la que la academia cobra a sus alumnos.">
+          <CurrencySelect value={currency} onChange={setCurrency} />
+        </Field>
       </div>
     </Modal>
   );
@@ -330,8 +358,8 @@ function NewTenantModal({
  * ------------------------------------------------------------------ */
 
 function TenantModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
-  const [tab, setTab] = useState<"datos" | "admins" | "estado">(
-    tenant.admins === 0 ? "admins" : "datos",
+  const [tab, setTab] = useState<"datos" | "plan" | "admins" | "estado">(
+    tenant.requested_plan ? "plan" : tenant.admins === 0 ? "admins" : "datos",
   );
 
   return (
@@ -339,7 +367,7 @@ function TenantModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void 
       title={tenant.name}
       description={
         <span className="tabular">
-          {tenant.active_students} de {tenant.max_active_students} matrículas activas ·{" "}
+          {tenant.active_students} de {tenant.max_active_students} alumnos activos ·{" "}
           {tenant.is_active ? "Activa" : "Suspendida"}
         </span>
       }
@@ -350,6 +378,7 @@ function TenantModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void 
         {(
           [
             ["datos", "Datos"],
+            ["plan", "Plan"],
             ["admins", "Administradores"],
             ["estado", "Estado"],
           ] as const
@@ -370,11 +399,15 @@ function TenantModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void 
             {id === "admins" && tenant.admins === 0 && (
               <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-amber-500" />
             )}
+            {id === "plan" && tenant.requested_plan && (
+              <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-indigo-500" />
+            )}
           </button>
         ))}
       </div>
 
       {tab === "datos" && <TenantDetailsForm tenant={tenant} />}
+      {tab === "plan" && <TenantPlan tenant={tenant} />}
       {tab === "admins" && <TenantAdmins tenant={tenant} />}
       {tab === "estado" && <TenantStatus tenant={tenant} onDone={onClose} />}
     </Modal>
@@ -387,6 +420,7 @@ function TenantDetailsForm({ tenant }: { tenant: Tenant }) {
     name: tenant.name,
     max_active_students: tenant.max_active_students,
     timezone: tenant.timezone,
+    currency: tenant.currency,
     phone: tenant.phone ?? "",
     tax_id: tenant.tax_id ?? "",
     address: tenant.address ?? "",
@@ -398,6 +432,7 @@ function TenantDetailsForm({ tenant }: { tenant: Tenant }) {
     form.name !== tenant.name ||
     form.max_active_students !== tenant.max_active_students ||
     form.timezone !== tenant.timezone ||
+    form.currency !== tenant.currency ||
     form.phone !== (tenant.phone ?? "") ||
     form.tax_id !== (tenant.tax_id ?? "") ||
     form.address !== (tenant.address ?? "");
@@ -409,6 +444,7 @@ function TenantDetailsForm({ tenant }: { tenant: Tenant }) {
         name: form.name.trim(),
         max_active_students: form.max_active_students,
         timezone: form.timezone,
+        currency: form.currency,
         phone: form.phone.trim() || null,
         tax_id: form.tax_id.trim() || null,
         address: form.address.trim() || null,
@@ -438,6 +474,18 @@ function TenantDetailsForm({ tenant }: { tenant: Tenant }) {
           <TimezoneSelect value={form.timezone} onChange={(timezone) => set({ timezone })} />
         </Field>
       </div>
+      <Field
+        label="Moneda"
+        hint="La que la academia usa para cuotas, pagos, comprobantes y nómina."
+      >
+        <CurrencySelect value={form.currency} onChange={(currency) => set({ currency })} />
+      </Field>
+      {form.currency !== tenant.currency && (
+        <p className="text-xs text-amber-700">
+          Cambiarla no convierte ningún importe: lo ya registrado pasará a mostrarse con la moneda
+          nueva.
+        </p>
+      )}
       {belowUsage && (
         <p className="text-xs text-amber-700">
           Ya tiene {tenant.active_students} matrículas activas. Con este límite no podrá
@@ -671,15 +719,173 @@ function TenantStatus({ tenant, onDone }: { tenant: Tenant; onDone: () => void }
   );
 }
 
-function TimezoneSelect({ value, onChange }: { value: string; onChange: (tz: string) => void }) {
+function CurrencySelect({
+  value,
+  onChange,
+  ...aria
+}: { value: string; onChange: (code: string) => void } & ControlProps) {
+  return (
+    <Select {...aria} value={value} onChange={(e) => onChange(e.target.value)}>
+      {CURRENCIES.map((c) => (
+        <option key={c.code} value={c.code}>
+          {c.name} ({c.symbol} · {c.code})
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+function TimezoneSelect({
+  value,
+  onChange,
+  ...aria
+}: { value: string; onChange: (tz: string) => void } & ControlProps) {
   const options = TIMEZONES.includes(value) ? TIMEZONES : [value, ...TIMEZONES];
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)}>
+    <Select {...aria} value={value} onChange={(e) => onChange(e.target.value)}>
       {options.map((tz) => (
         <option key={tz} value={tz}>
           {tz.split("/").pop()?.replace(/_/g, " ")}
         </option>
       ))}
     </Select>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Plan: activar el que pidió la academia, rechazarlo o cambiarlo
+ * ------------------------------------------------------------------ */
+
+function planLabel(code: string | null): string {
+  return code && code in PLAN_CATALOG ? PLAN_CATALOG[code as PlanCode].name : "A medida";
+}
+
+function planSummary(code: PlanCode): string {
+  const p = PLAN_CATALOG[code];
+  const price = p.monthlyPrice === 0 ? "gratis" : `${formatQuetzales(p.monthlyPrice)}/mes`;
+  return `${p.name} · ${p.maxStudents.toLocaleString("en-US")} alumnos · ${price}`;
+}
+
+function TenantPlan({ tenant }: { tenant: Tenant }) {
+  const activate = useActivatePlan();
+  const reject = useRejectPlanRequest();
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [other, setOther] = useState<PlanCode | "">("");
+  const requested =
+    tenant.requested_plan && tenant.requested_plan in PLAN_CATALOG
+      ? (tenant.requested_plan as PlanCode)
+      : null;
+
+  function activatePlan(plan: PlanCode) {
+    activate.mutate(
+      { tenantId: tenant.id, plan },
+      {
+        onSuccess: () => {
+          notify(`Plan ${PLAN_CATALOG[plan].name} activado`, "success");
+          setOther("");
+        },
+        onError: onMutationError("No se pudo activar el plan"),
+      },
+    );
+  }
+
+  function rejectRequest() {
+    reject.mutate(
+      { tenantId: tenant.id, reason: reason.trim() || undefined },
+      {
+        onSuccess: () => {
+          notify("Solicitud rechazada", "success");
+          setRejecting(false);
+          setReason("");
+        },
+        onError: onMutationError("No se pudo rechazar la solicitud"),
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="text-sm text-slate-700">
+        Plan actual: <span className="font-semibold">{planLabel(tenant.plan_tier)}</span>{" "}
+        <span className="tabular text-slate-500">
+          ({tenant.active_students} de {tenant.max_active_students} alumnos)
+        </span>
+      </div>
+
+      {requested && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+          <p className="text-sm font-semibold text-indigo-900">Solicita: {planSummary(requested)}</p>
+          {tenant.plan_requested_at && (
+            <p className="mt-0.5 text-xs text-indigo-800">
+              Desde {formatDateTime(tenant.plan_requested_at)}. Actívalo cuando confirmes el pago.
+            </p>
+          )}
+          {rejecting ? (
+            <div className="mt-3 space-y-2">
+              <Field label="Motivo (opcional, lo verá la academia)">
+                <Input
+                  aria-label="Motivo del rechazo"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </Field>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => setRejecting(false)}>
+                  Volver
+                </Button>
+                <Button variant="danger" disabled={reject.isPending} onClick={rejectRequest}>
+                  {reject.isPending ? "Rechazando…" : "Rechazar solicitud"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex gap-2">
+              <Button disabled={activate.isPending} onClick={() => activatePlan(requested)}>
+                {activate.isPending ? "Activando…" : `Activar ${PLAN_CATALOG[requested].name}`}
+              </Button>
+              <Button variant="secondary" onClick={() => setRejecting(true)}>
+                Rechazar
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <SectionHeading>Cambiar de plan directamente</SectionHeading>
+        <div className="flex gap-2">
+          <Select
+            aria-label="Plan"
+            value={other}
+            onChange={(e) => setOther(e.target.value as PlanCode | "")}
+          >
+            <option value="">Elige un plan…</option>
+            {(Object.keys(PLAN_CATALOG) as PlanCode[])
+              .filter((code) => code !== tenant.plan_tier)
+              .map((code) => (
+                <option
+                  key={code}
+                  value={code}
+                  disabled={PLAN_CATALOG[code].maxStudents < tenant.active_students}
+                >
+                  {planSummary(code)}
+                </option>
+              ))}
+          </Select>
+          <Button
+            variant="secondary"
+            disabled={!other || activate.isPending}
+            onClick={() => other && activatePlan(other)}
+          >
+            Activar
+          </Button>
+        </div>
+        <p className="mt-1.5 text-xs text-slate-500">
+          No se puede bajar a un plan con menos plazas que alumnos activos. Para un cupo a medida,
+          edítalo en «Datos».
+        </p>
+      </div>
+    </div>
   );
 }

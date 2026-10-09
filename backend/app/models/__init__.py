@@ -38,6 +38,7 @@ from app.models.enums import (
 )
 from app.models.nationality import Nationality
 from app.models.user import User
+from app.models.document_counter import DocumentCounter
 from app.models.language import Language
 from app.models.level import Level
 from app.models.course import Course
@@ -73,8 +74,11 @@ from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.refresh_session import RefreshSession
 from app.models.make_up_credit import MakeUpCredit
 from app.models.renewal_request import RenewalRequest
+from app.models.device_session import DeviceSession
+from app.models.webauthn import WebAuthnCredential, WebAuthnChallenge
 
 __all__ = [
+    "DocumentCounter",
     "COURSE_ACCEPTS_ENROLMENT",
     "COURSE_IS_ACTIVE",
     "COURSE_IS_ARCHIVED",
@@ -147,4 +151,7 @@ __all__ = [
     "User",
     "UserRole",
     "VirtualMeeting",
+    "DeviceSession",
+    "WebAuthnCredential",
+    "WebAuthnChallenge",
 ]

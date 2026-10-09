@@ -290,7 +290,7 @@ def session_agenda(
     Sin fechas devuelve el día de hoy, que es lo que pide la pantalla de inicio
     del profesor.
     """
-    today = academy_today()
+    today = academy_today(db, current_user.tenant_id)
     start = date_from or today
     end = date_to or start
 

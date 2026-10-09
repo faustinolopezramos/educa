@@ -16,6 +16,8 @@ import {
   useUsers,
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
+import { GeneratedCredentials } from "./GeneratedCredentials";
+import { PASSWORD_MIN_LENGTH } from "./shared";
 import {
   formatCuiPassport,
   formatPhoneNumber,
@@ -64,7 +66,16 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [cuiPassport, setCuiPassport] = useState("");
-  const [password, setPassword] = useState("Educa2026!");
+  // Vacía: el servidor genera una distinta para cada cuenta.
+  const [password, setPassword] = useState("");
+  // El profesor ya creado en un intento anterior (p. ej. si el horario chocó):
+  // reintentar no debe volver a darlo de alta.
+  const [createdTeacherId, setCreatedTeacherId] = useState<number | null>(null);
+  // La contraseña generada por el servidor; sólo viaja en la respuesta del alta.
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(
+    null,
+  );
+  const [done, setDone] = useState(false);
   const [selectedLangIds, setSelectedLangIds] = useState<number[]>([]);
 
   // Existing Teacher Selector
@@ -121,8 +132,17 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
 
     try {
       let finalTeacherId = teacherId;
+      // Las credenciales de este intento o de uno anterior que ya creó la cuenta.
+      let creds = credentials;
 
-      if (teacherMode === "new") {
+      if (teacherMode === "new" && createdTeacherId) {
+        finalTeacherId = createdTeacherId;
+      } else if (teacherMode === "new") {
+        if (password && password.length < PASSWORD_MIN_LENGTH) {
+          setError(`La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`);
+          setIsSubmitting(false);
+          return;
+        }
         const cuiVal = validateCuiPassport(cuiPassport);
         if (!cuiVal.isValid && cuiVal.error) {
           setError(cuiVal.error);
@@ -149,9 +169,14 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
           email: email.trim().toLowerCase(),
           cui_passport: cuiPassport.trim(),
           phone: phone.trim() || undefined,
-          password: password || "Educa2026!",
+          password: password || undefined,
         });
         finalTeacherId = created.id;
+        setCreatedTeacherId(created.id);
+        if (created.generated_password) {
+          creds = { email: created.email, password: created.generated_password };
+          setCredentials(creds);
+        }
 
         if (selectedLangIds.length > 0) {
           await setLanguages.mutateAsync({
@@ -225,7 +250,12 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
           : "Horario asignado al profesor con éxito",
         "success",
       );
-      onClose();
+      if (creds) {
+        // Antes de cerrar, la contraseña generada: no se vuelve a mostrar.
+        setDone(true);
+      } else {
+        onClose();
+      }
     } catch (e) {
       setIsSubmitting(false);
       setError(apiErrorMessage(e, "Error al procesar asignación de horario"));
@@ -292,6 +322,22 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
       )}
     </ModalActions>
   );
+
+  if (done && credentials) {
+    return (
+      <Modal
+        title="Profesor registrado"
+        onClose={onClose}
+        footer={
+          <ModalActions>
+            <Button onClick={onClose}>Listo</Button>
+          </ModalActions>
+        }
+      >
+        <GeneratedCredentials email={credentials.email} password={credentials.password} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -404,9 +450,13 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
                     />
                   </Field>
 
-                  <Field label="Contraseña Inicial de Acceso" required={true}>
+                  <Field
+                    label="Contraseña Inicial de Acceso"
+                    hint="Déjala vacía y se generará una segura."
+                  >
                     <Input
                       type="text"
+                      placeholder="Se genera automáticamente"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />

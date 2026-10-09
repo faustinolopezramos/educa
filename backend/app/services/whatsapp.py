@@ -51,14 +51,28 @@ def normalize_phone(raw: str | None) -> str | None:
     return digits
 
 
-def send_template(to: str, template: str, params: list[str]) -> str:
-    """Send an approved template. Returns Meta's message id; raises `DeliveryError`."""
-    if not whatsapp_configured():
+def send_template(
+    to: str,
+    template: str,
+    params: list[str],
+    *,
+    token: str | None = None,
+    phone_number_id: str | None = None,
+) -> str:
+    """Send an approved template. Returns Meta's message id; raises `DeliveryError`.
+
+    Allows passing explicit tenant-specific credentials (`token`, `phone_number_id`)
+    when using custom WhatsApp business accounts, falling back to global settings.
+    """
+    actual_token = (token or settings.whatsapp_token).strip()
+    actual_phone_id = (phone_number_id or settings.whatsapp_phone_number_id).strip()
+
+    if not (actual_token and actual_phone_id):
         raise DeliveryError("WhatsApp no está configurado", permanent=True)
 
     url = (
         f"{_GRAPH_URL}/{settings.whatsapp_api_version}/"
-        f"{settings.whatsapp_phone_number_id}/messages"
+        f"{actual_phone_id}/messages"
     )
     payload = {
         "messaging_product": "whatsapp",
@@ -79,7 +93,7 @@ def send_template(to: str, template: str, params: list[str]) -> str:
         resp = httpx.post(
             url,
             json=payload,
-            headers={"Authorization": f"Bearer {settings.whatsapp_token}"},
+            headers={"Authorization": f"Bearer {actual_token}"},
             timeout=15,
         )
     except httpx.HTTPError as exc:

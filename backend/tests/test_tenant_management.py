@@ -98,3 +98,72 @@ def test_an_academy_admin_cannot_list_another_academys_admins(client, db):
     _user(db, "admin@alfa.com", UserRole.admin, tenant)
     headers = auth(client, "admin@alfa.com")
     assert client.get(f"/tenants/{tenant.id}/admins", headers=headers).status_code == 403
+
+
+def test_a_superadmin_must_place_new_users_in_an_academy(client, db):
+    """Un admin sin academia vería todas: `apply_tenant` no filtra a quien no
+    tiene `tenant_id`. El superadmin tiene que decir de cuál es."""
+    tenant = Tenant(name="Gamma", slug="gamma", max_active_students=5)
+    db.add(tenant)
+    db.flush()
+    root = _root(client, db)
+    payload = {
+        "email": "nuevo-admin@gamma.com",
+        "full_name": "Nuevo Admin",
+        "role": "admin",
+        "cui_passport": "12345678",
+    }
+
+    assert client.post("/users", json=payload, headers=root).status_code == 422
+
+    res = client.post("/users", json={**payload, "tenant_id": tenant.id}, headers=root)
+    assert res.status_code == 201, res.text
+    assert res.json()["tenant_id"] == tenant.id
+
+
+def test_a_student_in_two_courses_holds_one_place_of_the_plan(client, db):
+    tenant = Tenant(name="Delta", slug="delta", max_active_students=1)
+    db.add(tenant)
+    db.flush()
+    admin = _user(db, "admin@delta.com", UserRole.admin, tenant)
+    student = _user(db, "s@delta.com", UserRole.student, tenant)
+    other = _user(db, "o@delta.com", UserRole.student, tenant)
+    language = Language(name="Inglés", tenant_id=tenant.id)
+    db.add(language)
+    db.flush()
+    level = Level(language_id=language.id, code="A1", name="A1")
+    db.add(level)
+    db.flush()
+    from app.models import CourseStatus
+
+    courses = []
+    for name in ("Uno", "Dos"):
+        c = Course(
+            level_id=level.id, name=name, tenant_id=tenant.id, max_students=10,
+            start_date=TODAY, end_date=TODAY + timedelta(days=30),
+            status=CourseStatus.open,
+        )
+        db.add(c)
+        courses.append(c)
+    db.flush()
+    headers = auth(client, admin.email)
+
+    for course in courses:
+        res = client.post(
+            "/enrollments",
+            json={"student_id": student.id, "course_id": course.id},
+            headers=headers,
+        )
+        assert res.status_code == 201, res.text
+
+    # El plan es de un alumno, y ya lo ocupa: otro distinto no cabe.
+    res = client.post(
+        "/enrollments",
+        json={"student_id": other.id, "course_id": courses[0].id},
+        headers=headers,
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["reason"] == "tenant_quota_exceeded"
+
+    rows = {t["slug"]: t for t in client.get("/tenants", headers=_root(client, db)).json()}
+    assert rows["delta"]["active_students"] == 1

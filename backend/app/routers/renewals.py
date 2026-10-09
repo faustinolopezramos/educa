@@ -356,7 +356,7 @@ def approve_request(
 ) -> RenewalRequestRead:
     req = _pending_in_scope(db, current_user, request_id)
     course = db.get(Course, req.course_id)
-    today = academy_today()
+    today = academy_today(db, current_user.tenant_id)
     # La cuota vence cuando empieza el grupo; si ya empezó, hoy. Sin fecha la
     # deuda no vencería nunca y la renovación quedaría fuera del cobro.
     due = max(course.start_date, today) if course.start_date else today

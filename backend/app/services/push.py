@@ -18,6 +18,7 @@ from pywebpush import WebPushException, webpush
 
 from app.core.config import settings
 from app.models import PushSubscription
+from app.schemas.push import is_safe_push_endpoint
 from app.services.email import DeliveryError
 
 # Lo que el servicio de push guarda el aviso si el dispositivo está apagado.
@@ -56,6 +57,8 @@ def send_push(sub: PushSubscription, *, title: str, body: str, url: str, tag: st
     """Send one alert to one device. Returns the push service's status; raises DeliveryError."""
     if not push_configured():
         raise DeliveryError("Web Push no está configurado", permanent=True)
+    if not is_safe_push_endpoint(sub.endpoint):
+        raise DeliveryError("Endpoint de suscripción push inválido o no seguro", permanent=True)
     if len(body) > MAX_BODY_CHARS:
         body = body[: MAX_BODY_CHARS - 1] + "…"
     payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag})

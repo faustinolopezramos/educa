@@ -46,6 +46,9 @@ from app.models import (
 # conexión y escribirían fuera de la transacción que cada prueba deshace. Las
 # pruebas las ejercitan llamando a las funciones directamente.
 settings.background_jobs_interval_seconds = 0
+if not settings.fernet_key:
+    from cryptography.fernet import Fernet
+    settings.fernet_key = Fernet.generate_key().decode()
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",

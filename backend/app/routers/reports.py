@@ -49,7 +49,7 @@ def _report(
         )
     try:
         return build_report(
-            db, user, period, anchor or academy_today(), course_id, teacher_id
+            db, user, period, anchor or academy_today(db, user.tenant_id), course_id, teacher_id
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))

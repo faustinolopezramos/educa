@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Badge, Button, Field, Input, Modal, ModalActions, Select, Table, Td, Th } from "../../components/ui";
+import { Badge, Button, Field, Modal, ModalActions, Select, Table, Td, Th } from "../../components/ui";
 import { api, apiErrorMessage } from "../../lib/api";
 import { notify } from "../../lib/toast";
 import { useCourses } from "../../lib/queries";
@@ -16,13 +16,39 @@ export function StudentBulkImportModal({ onClose, onSuccess }: StudentBulkImport
 
   const [step, setStep] = useState<"upload" | "results">("upload");
   const [selectedCourseId, setSelectedCourseId] = useState<number | "none">("none");
-  const [defaultPassword, setDefaultPassword] = useState("Educa2026!");
   const [fileName, setFileName] = useState<string>("");
   const [parsedStudents, setParsedStudents] = useState<StudentImportRow[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResponse, setImportResponse] = useState<BulkImportResponse | null>(null);
+
+  // Las contraseñas generadas sólo vienen en esta respuesta: o se descargan
+  // ahora, o hay que asignar otras a mano desde "Editar".
+  function downloadCredentials() {
+    if (!importResponse) return;
+    // Comillas para comas y saltos; y un apóstrofo delante de lo que una hoja
+    // de cálculo leería como fórmula (un nombre que empiece por "=").
+    const quote = (v: string) => {
+      const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
+    const rows = importResponse.results
+      .filter((r) => r.generated_password)
+      .map((r) => [r.full_name, r.email, r.generated_password ?? ""].map(quote).join(","));
+    const csv = ["Nombre,Correo,Contraseña", ...rows].join("\n") + "\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "credenciales_alumnos_educa.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  const hasCredentials = !!importResponse?.results.some((r) => r.generated_password);
 
   function downloadCsvTemplate() {
     const csvContent =
@@ -140,7 +166,6 @@ export function StudentBulkImportModal({ onClose, onSuccess }: StudentBulkImport
       const res = await api.post<BulkImportResponse>("/users/bulk-import", {
         students: parsedStudents,
         default_course_id: selectedCourseId !== "none" ? selectedCourseId : null,
-        default_password: defaultPassword.trim() || "Educa2026!",
       });
 
       setImportResponse(res.data);
@@ -267,13 +292,10 @@ export function StudentBulkImportModal({ onClose, onSuccess }: StudentBulkImport
               </Select>
             </Field>
 
-            <Field label="Contraseña provisional para nuevos accesos">
-              <Input
-                value={defaultPassword}
-                onChange={(e) => setDefaultPassword(e.target.value)}
-                placeholder="Educa2026!"
-              />
-            </Field>
+            <p className="self-end text-2xs text-slate-500">
+              Cada alumno nuevo recibe una contraseña propia generada al importar. Al
+              terminar podrás descargarlas para entregárselas.
+            </p>
           </div>
 
           {/* Parse warnings/errors */}
@@ -350,6 +372,18 @@ export function StudentBulkImportModal({ onClose, onSuccess }: StudentBulkImport
                 </div>
               </div>
 
+              {hasCredentials && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-xs text-amber-900">
+                    <span className="font-semibold">Descarga las contraseñas ahora.</span> No se
+                    volverán a mostrar al cerrar esta ventana.
+                  </div>
+                  <Button size="sm" onClick={downloadCredentials}>
+                    Descargar credenciales (CSV)
+                  </Button>
+                </div>
+              )}
+
               {/* Detailed Results List */}
               <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200">
                 <Table>
@@ -359,6 +393,7 @@ export function StudentBulkImportModal({ onClose, onSuccess }: StudentBulkImport
                       <Th>Estudiante</Th>
                       <Th>Estado</Th>
                       <Th>Detalle</Th>
+                      {hasCredentials && <Th>Contraseña</Th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
@@ -379,6 +414,13 @@ export function StudentBulkImportModal({ onClose, onSuccess }: StudentBulkImport
                           )}
                         </Td>
                         <Td><span className="text-slate-600 text-2xs">{r.message}</span></Td>
+                        {hasCredentials && (
+                          <Td>
+                            <span className="font-mono text-2xs text-slate-900 select-all">
+                              {r.generated_password ?? "—"}
+                            </span>
+                          </Td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

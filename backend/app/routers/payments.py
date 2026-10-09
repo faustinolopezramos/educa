@@ -12,10 +12,22 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import (
     apply_tenant,
+    get_current_user,
+    has_user_permission,
     in_tenant,
     require_permission,
 )
-from app.models import Course, Enrollment, Invoice, Payment, PaymentKind, Permission, User, UserRole
+from app.models import (
+    Course,
+    Enrollment,
+    Invoice,
+    Payment,
+    PaymentKind,
+    Permission,
+    Tenant,
+    User,
+    UserRole,
+)
 from app.schemas.base import PaginatedResponse
 from app.schemas.invoice import InvoiceRead
 from app.schemas.payment import (
@@ -25,6 +37,7 @@ from app.schemas.payment import (
     PaymentStatusRefresh,
 )
 from app.services.audit import record, snapshot
+from app.services.currencies import DEFAULT_CURRENCY
 from app.services.finance import (
     MONEY_EPSILON,
     ZERO,
@@ -37,6 +50,18 @@ from app.services.sequences import next_invoice_code
 router = APIRouter(tags=["payments"])
 
 admin_only = require_permission(Permission.manage_finance)
+
+
+def _can_view_enrollment_finance(user: User, enrollment: Enrollment) -> bool:
+    if user.role in (UserRole.admin, UserRole.superadmin):
+        return True
+    if user.role == UserRole.assistant and has_user_permission(
+        user, Permission.manage_finance
+    ):
+        return True
+    if user.role == UserRole.student and enrollment.student_id == user.id:
+        return True
+    return False
 
 
 def _get_enrollment(db: Session, actor: User, enrollment_id: int) -> Enrollment:
@@ -141,9 +166,14 @@ def refresh_payment_statuses(
 def enrollment_ledger(
     enrollment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(get_current_user),
 ) -> EnrollmentLedger:
-    _get_enrollment(db, current_user, enrollment_id)
+    enr = _get_enrollment(db, current_user, enrollment_id)
+    if not _can_view_enrollment_finance(current_user, enr):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "No tienes permiso para ver el estado financiero de esta matrícula",
+        )
     rows = list(
         db.scalars(
             select(Payment)
@@ -179,7 +209,14 @@ def issue_invoice(
     por el mismo dinero: sumados, la academia aparecía cobrando el doble de lo
     que entró en caja.
     """
-    enrollment = _get_enrollment(db, current_user, enrollment_id)
+    _get_enrollment(db, current_user, enrollment_id)
+    # Bloquear la matrícula serializa dos emisiones simultáneas: la segunda
+    # espera, y al leer ya ve el comprobante de la primera. Sin el bloqueo,
+    # dos clics seguidos facturaban dos veces el mismo dinero.
+    enrollment = db.scalar(
+        select(Enrollment).where(Enrollment.id == enrollment_id).with_for_update()
+    )
+    course = db.get(Course, enrollment.course_id)
     total_paid = sum(
         (
             p.amount
@@ -214,7 +251,11 @@ def issue_invoice(
         )
     invoice = Invoice(
         enrollment_id=enrollment.id,
-        code=next_invoice_code(db, year=datetime.now(timezone.utc).year),
+        code=next_invoice_code(
+            db,
+            year=datetime.now(timezone.utc).year,
+            tenant_id=course.tenant_id if course else None,
+        ),
         total_amount=pending,
         issued_by=current_user.id,
     )
@@ -230,9 +271,14 @@ def issue_invoice(
 def list_enrollment_invoices(
     enrollment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(get_current_user),
 ) -> list[Invoice]:
-    _get_enrollment(db, current_user, enrollment_id)
+    enr = _get_enrollment(db, current_user, enrollment_id)
+    if not _can_view_enrollment_finance(current_user, enr):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "No tienes permiso para ver los comprobantes de esta matrícula",
+        )
     return list(
         db.scalars(
             select(Invoice)
@@ -242,11 +288,16 @@ def list_enrollment_invoices(
     )
 
 
+def _tenant_currency(db: Session, tenant_id: int | None) -> str:
+    tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    return tenant.currency if tenant is not None else DEFAULT_CURRENCY
+
+
 @router.get("/invoices/{invoice_id}/pdf")
 def invoice_pdf(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     invoice = db.get(Invoice, invoice_id)
     if invoice is None:
@@ -256,6 +307,11 @@ def invoice_pdf(
         current_user, db.get(Course, enrollment.course_id)
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invoice not found")
+    if enrollment is not None and not _can_view_enrollment_finance(current_user, enrollment):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "No tienes permiso para descargar este comprobante",
+        )
     student = db.get(User, enrollment.student_id) if enrollment else None
     course = db.get(Course, enrollment.course_id) if enrollment else None
     # An invoice whose enrolment, student or course has since been removed can
@@ -273,6 +329,7 @@ def invoice_pdf(
         total_amount=invoice.total_amount,
         code=invoice.code,
         issued_at=invoice.issued_at,
+        currency=_tenant_currency(db, course.tenant_id),
     )
     return StreamingResponse(
         iter([pdf]),

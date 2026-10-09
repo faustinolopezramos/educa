@@ -6,7 +6,9 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.models import ENROLLMENT_OCCUPIES_SEAT, Enrollment, Tenant, User, UserRole
 from app.schemas.tenant import TenantCreate, TenantRead, TenantSummary, TenantUpdate
+from app.schemas.plan import PlanActivate, PlanRequestReject
 from app.schemas.user import UserRead
+from app.services import tenant_plans
 from app.services.audit import record, snapshot
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
@@ -32,10 +34,11 @@ def list_tenants(
     cifras salen en tres consultas agrupadas, no tres por academia.
     """
     tenants = list(db.scalars(select(Tenant).order_by(Tenant.name)).all())
-    # Same count `check_tenant_student_quota` enforces.
+    # Same count `check_tenant_student_quota` enforces: students, not
+    # enrollments — one student in two courses holds one place of the plan.
     seats = dict(
         db.execute(
-            select(User.tenant_id, func.count())
+            select(User.tenant_id, func.count(func.distinct(Enrollment.student_id)))
             .select_from(Enrollment)
             .join(User, Enrollment.student_id == User.id)
             .where(Enrollment.status.in_(ENROLLMENT_OCCUPIES_SEAT))
@@ -103,6 +106,7 @@ def create_tenant(
             detail="Ya existe una institución con este slug",
         )
     tenant = Tenant(**payload.model_dump())
+    tenant_plans.sync_plan_with_quota(tenant)
     db.add(tenant)
     db.flush()
     record(db, current_user, "create", "tenant", tenant.id, after=snapshot(tenant))
@@ -149,9 +153,51 @@ def update_tenant(
             )
     for field, value in data.items():
         setattr(tenant, field, value)
+    if "max_active_students" in data:
+        tenant_plans.sync_plan_with_quota(tenant)
     record(
         db, current_user, "update", "tenant", tenant.id, before, snapshot(tenant)
     )
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+def _tenant_or_404(db: Session, tenant_id: int) -> Tenant:
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Institución no encontrada"
+        )
+    return tenant
+
+
+@router.post("/{tenant_id}/plan", response_model=TenantRead)
+def activate_plan(
+    tenant_id: int,
+    payload: PlanActivate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(_superadmin),
+) -> Tenant:
+    """Poner a la academia en un plan: normalmente el que pidió, al confirmar el pago."""
+    tenant = _tenant_or_404(db, tenant_id)
+    tenant_plans.activate_plan(db, current_user, tenant, payload.plan)
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+@router.post("/{tenant_id}/plan-request/reject", response_model=TenantRead)
+def reject_plan_request(
+    tenant_id: int,
+    payload: PlanRequestReject,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(_superadmin),
+) -> Tenant:
+    tenant = _tenant_or_404(db, tenant_id)
+    tenant_plans.reject_request(db, current_user, tenant, payload.reason)
     db.commit()
     db.refresh(tenant)
     return tenant

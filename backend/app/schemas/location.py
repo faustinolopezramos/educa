@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.models.enums import (
     MODALITY_LABELS,
@@ -8,6 +8,7 @@ from app.models.enums import (
     ProposalStatus,
     ProviderName,
 )
+from app.schemas.base import validate_http_url
 
 
 class LocationProposalCreate(BaseModel):
@@ -17,6 +18,11 @@ class LocationProposalCreate(BaseModel):
     room_id: int | None = None
     provider: ProviderName | None = None
     join_url: str | None = None
+
+    @field_validator("join_url")
+    @classmethod
+    def _validate_join_url(cls, v: str | None) -> str | None:
+        return validate_http_url(v)
 
     @model_validator(mode="after")
     def _coherent(self) -> "LocationProposalCreate":

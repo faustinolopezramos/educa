@@ -5,8 +5,10 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 
 import { useAuth } from "../auth/AuthContext";
-import { Button, Card, Input } from "../components/ui";
+import { Button, Card, Field, Input, Select } from "../components/ui";
 import { IconCheck } from "../components/icons";
+import { CURRENCIES, DEFAULT_CURRENCY } from "../lib/currency";
+import { PLAN_CATALOG, formatQuetzales } from "../lib/plans";
 
 const schema = z.object({
   academy_name: z
@@ -31,6 +33,7 @@ const schema = z.object({
     .min(8, "La contraseña debe tener al menos 8 caracteres")
     .max(72, "Máximo 72 caracteres"),
   phone: z.string().max(50, "Máximo 50 caracteres").optional(),
+  currency: z.string().length(3),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -71,6 +74,7 @@ export default function RegisterAcademy() {
       admin_email: "",
       password: "",
       phone: "",
+      currency: DEFAULT_CURRENCY,
     },
   });
 
@@ -99,6 +103,7 @@ export default function RegisterAcademy() {
         password: values.password,
         phone: values.phone ? values.phone.trim() : undefined,
         plan_tier: selectedPlan,
+        currency: values.currency,
       });
       // Redirect straight into the dashboard where FirstSteps is active
       navigate("/");
@@ -156,7 +161,7 @@ export default function RegisterAcademy() {
               <p className="mt-1 text-xs text-slate-500">
                 {selectedPlan === "free"
                   ? "Plan gratuito para siempre para hasta 15 alumnos. Sin tarjeta de crédito."
-                  : "14 días de prueba gratis con acceso completo. Sin tarjeta de crédito requerida."}
+                  : `Empiezas gratis (15 alumnos) y tu solicitud del plan ${PLAN_CATALOG[selectedPlan].name} queda registrada. Lo activamos al confirmar el pago.`}
               </p>
             </div>
 
@@ -176,7 +181,7 @@ export default function RegisterAcademy() {
                   }`}
                 >
                   <div className="font-bold text-emerald-800">Gratis</div>
-                  <div className="font-extrabold text-slate-900">$0/mes</div>
+                  <div className="font-extrabold text-slate-900">Q0/mes</div>
                   <div className="text-[10px] text-slate-500">Hasta 15 alm.</div>
                 </button>
                 <button
@@ -189,7 +194,7 @@ export default function RegisterAcademy() {
                   }`}
                 >
                   <div>Starter</div>
-                  <div className="font-bold text-slate-900">$49/mes</div>
+                  <div className="font-bold text-slate-900">{formatQuetzales(PLAN_CATALOG.starter.monthlyPrice)}/mes</div>
                   <div className="text-[10px] text-slate-500">Hasta 100 alm.</div>
                 </button>
                 <button
@@ -205,7 +210,7 @@ export default function RegisterAcademy() {
                     POPULAR
                   </span>
                   <div>Profesional</div>
-                  <div className="font-bold text-slate-900">$129/mes</div>
+                  <div className="font-bold text-slate-900">{formatQuetzales(PLAN_CATALOG.pro.monthlyPrice)}/mes</div>
                   <div className="text-[10px] text-slate-500">Hasta 300 alm.</div>
                 </button>
                 <button
@@ -218,7 +223,7 @@ export default function RegisterAcademy() {
                   }`}
                 >
                   <div>Escala</div>
-                  <div className="font-bold text-slate-900">$279/mes</div>
+                  <div className="font-bold text-slate-900">{formatQuetzales(PLAN_CATALOG.scale.monthlyPrice)}/mes</div>
                   <div className="text-[10px] text-slate-500">Hasta 1000 alm.</div>
                 </button>
               </div>
@@ -316,6 +321,20 @@ export default function RegisterAcademy() {
                 )}
               </div>
 
+              {/* La moneda en que la academia cobra a sus alumnos */}
+              <Field
+                label="Moneda de tu academia"
+                hint="En ella se registran cuotas, pagos, saldos, comprobantes y la nómina de profesores. Los planes de EDUCA se cobran en quetzales."
+              >
+                <Select {...register("currency")}>
+                  {CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name} ({c.symbol} · {c.code})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
               {/* Phone (Optional) */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -345,7 +364,7 @@ export default function RegisterAcademy() {
                   ? "Creando academia y configurando portal…"
                   : selectedPlan === "free"
                     ? "Crear Academia Gratis (Hasta 15 Alumnos) →"
-                    : "Comenzar Prueba Gratis (14 Días) →"}
+                    : "Crear Academia y Solicitar Plan →"}
               </Button>
 
               <div className="text-center text-[11px] text-slate-400">
@@ -361,7 +380,7 @@ export default function RegisterAcademy() {
             <h3 className="font-serif text-lg font-bold text-brand-900">
               {selectedPlan === "free"
                 ? "Todo incluido en tu Plan Gratuito (15 alumnos):"
-                : "Todo incluido en tus 14 días de prueba:"}
+                : `Todo incluido en el Plan ${PLAN_CATALOG[selectedPlan].name}:`}
             </h3>
             <ul className="mt-4 space-y-3 text-xs text-brand-950">
               <li className="flex items-start gap-2.5">
@@ -406,7 +425,7 @@ export default function RegisterAcademy() {
               </div>
             </div>
             <p className="mt-3 text-xs leading-relaxed text-slate-600">
-              Al terminar tus 14 días, tú decides si deseas continuar con el servicio activando tu suscripción. Si decides no continuar, tus datos se conservan seguros sin ningún cobro sorpresa.
+              Mientras confirmamos tu pago trabajas en el Plan Gratis (hasta 15 alumnos), con todos tus datos guardados. Si decides no continuar con el plan de pago, sigues en el gratuito sin ningún cobro sorpresa.
             </p>
           </div>
         </div>

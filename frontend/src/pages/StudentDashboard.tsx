@@ -48,6 +48,7 @@ import { LOBBY_WINDOW_MIN, GRACE_MS, SCORE_MAX } from "../lib/constants";
 import { Modal, ModalActions } from "../components/ui";
 import { MakeUpBookingModal } from "../features/classes/MakeUpBookingModal";
 import type { Enrollment, MakeUpCredit, Modality } from "../lib/types";
+import { useMoney } from "../lib/useMoney";
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -688,6 +689,7 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
  * distintas.
  */
 function DebtBanner() {
+  const { money } = useMoney();
   const { data } = useDashboard();
   const item = data?.items.find((i) => i.kind === "payment_overdue");
   if (!item) return null;
@@ -699,7 +701,7 @@ function DebtBanner() {
         <p className="text-sm font-bold text-amber-900">
           {item.count === 1 ? "Tienes una cuota vencida" : `Tienes ${item.count} cuotas vencidas`}
           {item.amount != null && item.amount > 0 && (
-            <span className="tabular"> · Q{item.amount.toFixed(2)}</span>
+            <span className="tabular"> · {money(item.amount)}</span>
           )}
         </p>
         {item.detail && <p className="mt-1 text-xs text-amber-800">{item.detail}</p>}
@@ -838,6 +840,7 @@ function CourseCard({
   modality: Modality | "mixta" | null;
   onSelect?: () => void;
 }) {
+  const { money } = useMoney();
   const payColor =
     enrollment.payment_status === "paid"
       ? "green"
@@ -910,7 +913,7 @@ function CourseCard({
             {gradesHidden && (
               <p className="tabular mt-1 text-2xs font-medium text-amber-800">
                 {enrollment.payment_status === "overdue" && enrollment.balance > 0
-                  ? `Debe Q${enrollment.balance.toFixed(2)} · notas ocultas`
+                  ? `Debe ${money(enrollment.balance)} · notas ocultas`
                   : "Notas ocultas por una cuota vencida en otro curso"}
               </p>
             )}

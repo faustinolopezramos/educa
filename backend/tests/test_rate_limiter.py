@@ -81,3 +81,20 @@ def test_an_unlimited_path_is_not_counted_at_all():
     _login_attempts.clear()
     asyncio.run(rate_limit_middleware(_FakeRequest("6.6.6.6", "/users"), _call_next))
     assert not _login_attempts
+
+
+def test_the_memory_limiter_forgets_expired_keys_once_it_grows():
+    """Cada dirección que fallaba una vez dejaba su clave para siempre."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.rate_limiter import MemoryRateLimiter
+
+    limiter = MemoryRateLimiter()
+    limiter.PRUNE_ABOVE = 3
+    old = datetime.now(timezone.utc) - timedelta(minutes=10)
+    for i in range(5):
+        limiter.attempts[f"viejo-{i}"] = [old]
+
+    limiter.record_failed_attempt("nuevo", window_seconds=60)
+
+    assert set(limiter.attempts) == {"nuevo"}

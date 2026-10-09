@@ -18,6 +18,8 @@ export interface Tenant {
   is_active: boolean;
   max_active_students: number;
   timezone: string;
+  /** Moneda en que la academia cobra a sus alumnos (ISO 4217). */
+  currency: string;
   phone: string | null;
   tax_id: string | null;
   address: string | null;
@@ -29,11 +31,38 @@ export interface Tenant {
   admins: number;
   /** Active accounts: who loses access if the academy is suspended. */
   active_users: number;
+  /** Plan contratado, o null si el cupo es a medida. */
+  plan_tier: string | null;
+  /** Plan que la academia pidió y aún no se ha resuelto. */
+  requested_plan: string | null;
+  plan_requested_at: string | null;
+}
+
+export interface PlanOption {
+  code: string;
+  name: string;
+  max_students: number;
+  /** En quetzales; llega como texto decimal desde la API. */
+  monthly_price: string | number;
+}
+
+/** `GET /academy/plan`: el plan de la academia como lo ve su admin. */
+export interface AcademyPlan {
+  plan: string | null;
+  plan_name: string;
+  max_active_students: number;
+  active_students: number;
+  requested_plan: string | null;
+  plan_requested_at: string | null;
+  currency: string;
+  plans: PlanOption[];
 }
 
 export interface User {
   id: number;
   tenant_id?: number | null;
+  /** Moneda en que cobra su academia (ISO 4217), para mostrar los importes. */
+  tenant_currency?: string;
   email: string;
   full_name: string;
   role: Role;
@@ -52,6 +81,12 @@ export interface User {
   /** "Baja" is this flag, not a DELETE: a teacher's classes, grades and
    *  attendance have to survive them. An inactive account cannot log in. */
   is_active: boolean;
+}
+
+/** Lo que devuelve un alta: la cuenta y, si no se indicó contraseña, la que
+ * generó el servidor. Es la única vez que se puede ver. */
+export interface UserCreated extends User {
+  generated_password: string | null;
 }
 
 export interface Nationality {
@@ -80,6 +115,8 @@ export interface AcademyRegisterRequest {
   password: string;
   phone?: string;
   plan_tier?: "free" | "starter" | "pro" | "scale";
+  /** Moneda en que la academia cobra a sus alumnos (ISO 4217). */
+  currency?: string;
 }
 
 export interface NotificationSettings {
@@ -868,7 +905,6 @@ export interface StudentImportRow {
 export interface BulkImportRequest {
   students: StudentImportRow[];
   default_course_id?: number | null;
-  default_password?: string | null;
 }
 
 export interface BulkImportRowResult {
@@ -879,6 +915,8 @@ export interface BulkImportRowResult {
   user_id?: number | null;
   enrolled_course_id?: number | null;
   message?: string | null;
+  /** Sólo en las cuentas creadas sin contraseña propia; no se vuelve a mostrar. */
+  generated_password?: string | null;
 }
 
 export interface BulkImportResponse {

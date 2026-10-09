@@ -5,6 +5,7 @@ import {
   IconChevronDown,
   IconClose,
 } from "../components/icons";
+import { PLAN_CATALOG, formatQuetzales } from "../lib/plans";
 
 interface PlanTier {
   id: "free" | "starter" | "pro" | "scale";
@@ -36,7 +37,7 @@ const PLANS: PlanTier[] = [
   {
     id: "starter",
     name: "Starter",
-    price: 49,
+    price: PLAN_CATALOG.starter.monthlyPrice,
     students: "Hasta 100 alumnos activos",
     description: "Ideal para academias en crecimiento que quieren erradicar el caos de WhatsApp.",
     features: [
@@ -53,7 +54,7 @@ const PLANS: PlanTier[] = [
   {
     id: "pro",
     name: "Profesional",
-    price: 129,
+    price: PLAN_CATALOG.pro.monthlyPrice,
     students: "Hasta 300 alumnos activos",
     popular: true,
     description: "El más elegido por academias e institutos consolidados con múltiples profesores.",
@@ -70,7 +71,7 @@ const PLANS: PlanTier[] = [
   {
     id: "scale",
     name: "Escala",
-    price: 279,
+    price: PLAN_CATALOG.scale.monthlyPrice,
     students: "Hasta 1,000 alumnos activos",
     description: "Para redes de academias, franquicias o centros educativos de alta escala.",
     features: [
@@ -92,7 +93,7 @@ const FAQS = [
   },
   {
     q: "¿Qué ocurre cuando mi academia supera los 15 alumnos?",
-    a: "Tu cuenta continúa activa y tus datos están seguros. Cuando decidas matricular al alumno número 16, el sistema te invitará amigablemente a pasar al plan Starter ($49/mes) para continuar admitiendo alumnos sin interrupciones.",
+    a: "Tu cuenta continúa activa y tus datos están seguros. Cuando decidas matricular al alumno número 16, el sistema te invitará amigablemente a pasar al plan Starter (Q375/mes) para continuar admitiendo alumnos sin interrupciones.",
   },
   {
     q: "¿Tengo que cargar a mis alumnos y profesores uno por uno?",
@@ -103,8 +104,8 @@ const FAQS = [
     a: "Cero comisiones. A diferencia de otras plataformas que retienen el 5% al 10% de tus ventas, con Educa pagas una tarifa plana fija mensual. El 100% del dinero de tus matrículas es tuyo.",
   },
   {
-    q: "¿Qué sucede durante los 14 días de prueba gratis?",
-    a: "Tienes acceso completo a todas las funciones sin restricciones y sin necesidad de ingresar tarjeta de crédito. Puedes invitar a tus profesores, cargar cursos y probar la experiencia con alumnos reales.",
+    q: "¿Cómo empiezo y cómo paso a un plan de pago?",
+    a: "Tu academia empieza en el Plan Gratis, con acceso a todas las funciones y sin tarjeta de crédito: puedes invitar a tus profesores, cargar cursos y trabajar con hasta 15 alumnos reales. Cuando necesites más, solicitas el plan desde tu panel y lo activamos al confirmar el pago.",
   },
   {
     q: "¿Mis alumnos necesitan instalar una aplicación pesada?",
@@ -213,7 +214,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-4xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50/80 px-3.5 py-1 text-xs font-semibold text-brand-800">
             <span className="flex h-2 w-2 rounded-full bg-brand-600" />
-            14 días de prueba gratis • Sin tarjeta requerida
+            Plan gratis para siempre • Sin tarjeta requerida
           </div>
 
           <h1 className="mt-6 font-serif text-4xl font-semibold tracking-tight text-slate-900 sm:text-6xl sm:leading-[1.12]">
@@ -234,7 +235,7 @@ export default function LandingPage() {
               onClick={() => navigate("/crear-academia")}
               className="w-full rounded-xl bg-brand-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 sm:w-auto"
             >
-              Comenzar 14 Días Gratis →
+              Comenzar Gratis →
             </button>
             <button
               onClick={() => setShowDemoModal(true)}
@@ -684,7 +685,7 @@ export default function LandingPage() {
                         Plan {recommendedPlan}
                       </span>
                       <span className="text-sm font-semibold text-brand-600">
-                        ({recommendedPlan === "free" ? "100% Gratis para siempre" : `$${PLANS.find((p) => p.id === recommendedPlan)?.price}/mes`})
+                        ({recommendedPlan === "free" ? "100% Gratis para siempre" : `${formatQuetzales(PLANS.find((p) => p.id === recommendedPlan)?.price ?? 0)}/mes`})
                       </span>
                     </div>
                   </div>
@@ -696,7 +697,7 @@ export default function LandingPage() {
                 >
                   {recommendedPlan === "free"
                     ? "Comenzar en el Plan Gratis (15 alumnos) →"
-                    : `Probar Plan ${recommendedPlan.toUpperCase()} Gratis por 14 Días →`}
+                    : `Elegir el Plan ${PLANS.find((p) => p.id === recommendedPlan)?.name} →`}
                 </button>
               </div>
             </div>
@@ -712,7 +713,7 @@ export default function LandingPage() {
               Precios simples, transparentes y sin sorpresas
             </h2>
             <p className="mx-auto mt-3 max-w-2xl text-slate-600">
-              14 días de prueba gratis en todos los planes. Cancela o cambia de plan cuando quieras sin contratos forzosos.
+              Empieza gratis con hasta 15 alumnos y cambia de plan cuando lo necesites, sin contratos forzosos.
             </p>
           </div>
 
@@ -750,10 +751,10 @@ export default function LandingPage() {
 
                   <div className="mt-6 flex items-baseline">
                     <span className="font-serif text-4xl font-extrabold text-slate-900">
-                      {plan.price === 0 ? "$0" : `$${plan.price}`}
+                      {formatQuetzales(plan.price)}
                     </span>
                     <span className="ml-1 text-sm font-medium text-slate-500">
-                      {plan.price === 0 ? "para siempre" : "USD / mes"}
+                      {plan.price === 0 ? "para siempre" : "/ mes"}
                     </span>
                   </div>
 
@@ -778,10 +779,10 @@ export default function LandingPage() {
                           : "border border-stone-300 bg-stone-50 text-slate-700 hover:bg-stone-100"
                     }`}
                   >
-                    {plan.id === "free" ? "Comenzar Gratis (15 alumnos)" : `Elegir ${plan.name} (14 días gratis)`}
+                    {plan.id === "free" ? "Comenzar Gratis (15 alumnos)" : `Elegir ${plan.name}`}
                   </button>
                   <div className="mt-2 text-center text-[11px] text-slate-400">
-                    {plan.id === "free" ? "Sin tarjeta • Acceso inmediato" : "Sin tarjeta • Activación en 1 minuto"}
+                    {plan.id === "free" ? "Sin tarjeta • Acceso inmediato" : "Se activa al confirmar el pago"}
                   </div>
                 </div>
               </div>
@@ -844,7 +845,7 @@ export default function LandingPage() {
               onClick={() => navigate("/crear-academia")}
               className="rounded-xl bg-white px-8 py-3.5 text-base font-bold text-brand-900 shadow-lg transition hover:bg-stone-100"
             >
-              Crear mi Academia (14 Días Gratis) →
+              Crear mi Academia Gratis →
             </button>
           </div>
           <p className="mt-4 text-xs text-brand-200">
@@ -917,7 +918,7 @@ export default function LandingPage() {
                 }}
                 className="mt-5 rounded-lg bg-brand-600 px-5 py-2 text-xs font-bold text-white hover:bg-brand-700"
               >
-                Pruébalo Tú Mismo en Vivo (14 Días Gratis)
+                Pruébalo Tú Mismo en Vivo (Gratis)
               </button>
             </div>
           </div>

@@ -1,8 +1,19 @@
-import { forwardRef, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  Children,
+  cloneElement,
+  forwardRef,
+  isValidElement,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
+  ReactElement,
   ReactNode,
   SelectHTMLAttributes,
 } from "react";
@@ -111,6 +122,40 @@ export function SearchInput({
 }
 
 // Labeled field with an optional inline error message and required indicator.
+/** Native elements a `<label for>` can point at. */
+const LABELABLE_TAGS = new Set(["input", "select", "textarea", "button", "meter", "output", "progress"]);
+
+/** What `Field` hands its control: give it to the focusable element. */
+export type ControlProps = {
+  id?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean | "true" | "false";
+};
+
+/**
+ * The one control a Field labels, if it wraps exactly one.
+ *
+ * Components (Input, Select, TimePicker…) are trusted to pass `id` down to
+ * their native element; a plain `<div>` is not a control, so it is treated as
+ * a group instead.
+ */
+function singleControl(children: ReactNode): ReactElement<ControlProps> | null {
+  if (Children.count(children) !== 1 || !isValidElement<ControlProps>(children)) return null;
+  if (typeof children.type === "string" && !LABELABLE_TAGS.has(children.type)) return null;
+  return children;
+}
+
+/**
+ * A labelled form control, with its hint or error underneath.
+ *
+ * The label used to be a bare `<label>` next to the control with nothing tying
+ * them together: a screen reader announced every field as unlabelled, clicking
+ * the label did not focus the field, and hints and errors were never read out.
+ * Now a single control gets the label's `for`, and its hint or error through
+ * `aria-describedby` (plus `aria-invalid` when there is an error). Several
+ * controls under one label — a row of radios, a day picker — become a group
+ * named by the label.
+ */
 export function Field({
   label,
   hint,
@@ -124,15 +169,71 @@ export function Field({
   required?: boolean;
   children: ReactNode;
 }) {
+  const baseId = useId();
+  const labelId = `${baseId}-label`;
+  const hintId = `${baseId}-hint`;
+  const errorId = `${baseId}-error`;
+  const describedBy = error ? errorId : hint ? hintId : undefined;
+  const control = singleControl(children);
+
+  const labelText = (
+    <>
+      {label}
+      {required && <span className="ml-1 text-slate-400 font-normal">*</span>}
+    </>
+  );
+  const labelClass = "block text-xs font-semibold text-slate-700";
+
+  let body: ReactNode;
+  let heading: ReactNode;
+  if (control) {
+    const controlId = control.props.id ?? `${baseId}-control`;
+    const ownDescription = control.props["aria-describedby"];
+    body = cloneElement(control, {
+      id: controlId,
+      "aria-describedby":
+        [ownDescription, describedBy].filter(Boolean).join(" ") || undefined,
+      ...(error ? { "aria-invalid": true } : {}),
+    });
+    heading = (
+      <label id={labelId} htmlFor={controlId} className={labelClass}>
+        {labelText}
+      </label>
+    );
+  } else {
+    // `contents` keeps the wrapper out of the layout, so the controls stay
+    // direct rows of the spaced stack exactly as before.
+    body = (
+      <div
+        role="group"
+        aria-labelledby={labelId}
+        aria-describedby={describedBy}
+        className="contents"
+      >
+        {children}
+      </div>
+    );
+    heading = (
+      <span id={labelId} className={labelClass}>
+        {labelText}
+      </span>
+    );
+  }
+
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-semibold text-slate-700">
-        {label}
-        {required && <span className="ml-1 text-slate-400 font-normal">*</span>}
-      </label>
-      {children}
-      {hint && !error && <p className="text-xs leading-snug text-slate-500">{hint}</p>}
-      {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+      {heading}
+      {body}
+      {hint && !error && (
+        <p id={hintId} className="text-xs leading-snug text-slate-500">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p id={errorId} className="text-xs font-medium text-red-600">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -560,11 +661,12 @@ export function TimePicker({
   value,
   onChange,
   className = "",
+  ...aria
 }: {
   value: string;
   onChange: (val: string) => void;
   className?: string;
-}) {
+} & ControlProps) {
   const timeSlots: string[] = [];
   for (let h = 6; h <= 22; h++) {
     const hh = String(h).padStart(2, "0");
@@ -580,6 +682,7 @@ export function TimePicker({
 
   return (
     <Select
+      {...aria}
       value={cleanVal}
       onChange={(e) => onChange(e.target.value)}
       className={`tabular ${className}`}
@@ -801,6 +904,7 @@ export function SearchSelect({
   disabled = false,
   autoFocus = false,
   className = "",
+  ...aria
 }: {
   options: SearchOption[];
   value: number | string | null;
@@ -810,7 +914,7 @@ export function SearchSelect({
   disabled?: boolean;
   autoFocus?: boolean;
   className?: string;
-}) {
+} & ControlProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -877,6 +981,7 @@ export function SearchSelect({
   return (
     <div ref={boxRef} className={`relative ${className}`}>
       <button
+        {...aria}
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"

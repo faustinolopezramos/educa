@@ -59,3 +59,17 @@ class PatchModel(BaseModel):
                         f"'{field}' no puede ser null; omítelo para dejarlo sin cambios"
                     )
         return data
+
+
+def validate_http_url(v: str | None) -> str | None:
+    """Validate that a URL uses http or https scheme, blocking dangerous protocols."""
+    if v is None:
+        return None
+    trimmed = v.strip()
+    if not trimmed:
+        return None
+    lower = trimmed.lower()
+    if not (lower.startswith("http://") or lower.startswith("https://")):
+        raise ValueError("URL must start with http:// or https://")
+    return trimmed
+

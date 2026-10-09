@@ -14,7 +14,7 @@ from app.core.deps import (
     in_tenant,
 )
 from app.core.http import commit_or_conflict
-from app.core.security import hash_password
+from app.core.security import generate_password, hash_password
 from app.models import EnrollmentStatus, Permission, User, UserRole
 from app.models.refresh_session import RefreshSession
 from app.services.staff import live_assignments
@@ -25,7 +25,9 @@ from app.schemas.user import (
     BulkImportRequest,
     BulkImportResponse,
     BulkImportRowResult,
+    IDENTITY_MIN_LENGTH,
     UserCreate,
+    UserCreated,
     UserRead,
     UserUpdate,
     normalize_cui_passport,
@@ -167,16 +169,25 @@ def _in_scope_or_404(db: Session, actor: User, user_id: int) -> User:
     return user
 
 
-def _resolve_tenant_id(actor: User, requested: int | None) -> int | None:
+def _resolve_tenant_id(
+    actor: User, requested: int | None, role: UserRole
+) -> int | None:
     """Which tenant a newly created user belongs to.
 
     An admin can only ever create users inside their own academy, so a
     `tenant_id` they send is ignored rather than trusted. A superadmin operates
-    across academies and may place the user anywhere.
+    across academies and may place the user anywhere — but must place them
+    somewhere: an account with no academy is out of every tenant filter, and an
+    *admin* with no academy would see all of them, the way a superadmin does.
     """
-    if actor.role is UserRole.superadmin:
-        return requested
-    return actor.tenant_id
+    if actor.role is not UserRole.superadmin:
+        return actor.tenant_id
+    if requested is None and role is not UserRole.superadmin:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Indica la academia (tenant_id) a la que pertenece este usuario",
+        )
+    return requested
 
 
 @router.get("", response_model=PaginatedResponse[UserRead])
@@ -208,19 +219,20 @@ def list_users(
     )
 
 
-@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserCreated, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(_get_staff_actor),
-) -> User:
+) -> UserCreated:
     _guard_role_assignment(current_user, payload.role)
     _assert_may_manage(current_user, payload.role)
-    tenant_id = _resolve_tenant_id(current_user, payload.tenant_id)
+    tenant_id = _resolve_tenant_id(current_user, payload.tenant_id, payload.role)
     # `CuiPassport` ya rechazó lo que no tenga forma de documento y devolvió la
     # forma canónica, así que aquí no queda formato que comprobar — sólo si esa
     # identidad ya está registrada.
     cui = payload.cui_passport
+    generated = None if payload.password else generate_password()
 
     # Check for duplicate email per tenant
     if db.scalar(
@@ -250,7 +262,7 @@ def create_user(
         address=payload.address,
         nationality_id=payload.nationality_id,
         permissions=[p.value for p in payload.permissions or []],
-        password_hash=hash_password(payload.password),
+        password_hash=hash_password(payload.password or generated),
     )
     db.add(user)
     db.flush()
@@ -264,7 +276,38 @@ def create_user(
     # que es un conflicto y no un error del servidor.
     commit_or_conflict(db, _DUPLICATE_IDENTITY)
     db.refresh(user)
-    return user
+    return UserCreated.model_validate(user).model_copy(
+        update={"generated_password": generated}
+    )
+
+
+def _try_enroll(
+    db: Session, actor: User, student_id: int, course_id: int
+) -> tuple[bool, str | None]:
+    """Matricular a un alumno importado, sin arrastrar al resto de la fila.
+
+    Va en su propio savepoint: una matrícula rechazada (cupo, choque de
+    horario…) deshace sólo la matrícula, no la cuenta que se acaba de crear.
+    """
+    try:
+        with db.begin_nested():
+            open_enrollment(
+                db,
+                actor,
+                EnrollmentCreate(
+                    student_id=student_id,
+                    course_id=course_id,
+                    status=EnrollmentStatus.enrolled,
+                ),
+            )
+        return True, None
+    except HTTPException as exc:
+        detail = exc.detail
+        if isinstance(detail, dict):
+            detail = detail.get("message", str(detail))
+        return False, str(detail)
+    except IntegrityError:
+        return False, "conflicto al guardar la matrícula"
 
 
 @router.post("/bulk-import", response_model=BulkImportResponse)
@@ -277,9 +320,20 @@ def bulk_import_students(
 
     Crea las cuentas de alumnos, normaliza identificaciones, detecta duplicados
     y opcionalmente matricula en un curso objetivo.
+
+    Cada fila va en su propio savepoint. Antes compartían una sola transacción,
+    así que un choque contra un índice en la fila 40 dejaba la sesión inservible
+    y el commit final perdía también las 39 filas que habían salido bien.
     """
     _assert_may_manage(current_user, UserRole.student)
-    tenant_id = _resolve_tenant_id(current_user, None)
+    if current_user.role is UserRole.superadmin:
+        # Un superadmin no pertenece a ninguna academia, y unos alumnos sin
+        # academia no aparecerían en ninguna.
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "La importación se hace desde la cuenta de administrador de la academia",
+        )
+    tenant_id = current_user.tenant_id
 
     created_count = 0
     enrolled_count = 0
@@ -287,13 +341,13 @@ def bulk_import_students(
     error_count = 0
     results: list[BulkImportRowResult] = []
 
-    default_pwd = payload.default_password or "Educa2026!"
-
     for idx, row in enumerate(payload.students, start=1):
         clean_email = row.email.strip().lower()
         clean_name = row.full_name.strip()
+        target_course_id = row.course_id or payload.default_course_id
 
-        if not clean_name:
+        def error(message: str) -> None:
+            nonlocal error_count
             error_count += 1
             results.append(
                 BulkImportRowResult(
@@ -301,38 +355,29 @@ def bulk_import_students(
                     full_name=clean_name or "Sin nombre",
                     email=clean_email,
                     status="error",
-                    message="El nombre completo es requerido",
+                    message=message,
                 )
             )
+
+        if not clean_name:
+            error("El nombre completo es requerido")
             continue
 
-        # Check if email exists in tenant
         existing = db.scalar(
             select(User).where(User.email == clean_email, User.tenant_id == tenant_id)
         )
         if existing:
-            target_course_id = row.course_id or payload.default_course_id
             was_enrolled = False
             enroll_msg = ""
             if target_course_id and existing.role == UserRole.student:
-                try:
-                    open_enrollment(
-                        db,
-                        current_user,
-                        EnrollmentCreate(
-                            student_id=existing.id,
-                            course_id=target_course_id,
-                            status=EnrollmentStatus.enrolled,
-                        ),
-                    )
-                    was_enrolled = True
+                was_enrolled, enroll_error = _try_enroll(
+                    db, current_user, existing.id, target_course_id
+                )
+                if was_enrolled:
                     enrolled_count += 1
                     enroll_msg = f" (Matriculado en curso #{target_course_id})"
-                except Exception as e:
-                    detail = getattr(e, "detail", str(e))
-                    if isinstance(detail, dict):
-                        detail = detail.get("message", str(detail))
-                    enroll_msg = f" (No se pudo matricular: {detail})"
+                else:
+                    enroll_msg = f" (No se pudo matricular: {enroll_error})"
 
             skipped_count += 1
             results.append(
@@ -348,115 +393,79 @@ def bulk_import_students(
             )
             continue
 
-        # Document/CUI validation & normalization
         normalized_cui = None
         if row.cui_passport and row.cui_passport.strip():
-            try:
-                normalized_cui = normalize_cui_passport(row.cui_passport.strip())
-                if len(normalized_cui) < 4:
-                    raise ValueError("Documento debe tener al menos 4 caracteres")
-            except Exception as e:
-                error_count += 1
-                results.append(
-                    BulkImportRowResult(
-                        row_number=idx,
-                        full_name=clean_name,
-                        email=clean_email,
-                        status="error",
-                        message=f"Identificación personal inválida: {str(e)}",
-                    )
+            normalized_cui = normalize_cui_passport(row.cui_passport.strip())
+            if len(normalized_cui) < IDENTITY_MIN_LENGTH:
+                error(
+                    "Identificación personal inválida: debe tener al menos "
+                    f"{IDENTITY_MIN_LENGTH} caracteres"
                 )
                 continue
-
-            # Check unique CUI in tenant
             if db.scalar(
                 select(User).where(
                     User.cui_passport == normalized_cui, User.tenant_id == tenant_id
                 )
             ):
-                error_count += 1
-                results.append(
-                    BulkImportRowResult(
-                        row_number=idx,
-                        full_name=clean_name,
-                        email=clean_email,
-                        status="error",
-                        message=f"La identificación '{normalized_cui}' ya pertenece a otro usuario",
-                    )
-                )
+                error(f"La identificación '{normalized_cui}' ya pertenece a otro usuario")
                 continue
 
-        password_to_hash = row.password or default_pwd
+        generated = None if row.password else generate_password()
         try:
-            new_student = User(
-                tenant_id=tenant_id,
-                email=clean_email,
-                full_name=clean_name,
-                cui_passport=normalized_cui,
-                role=UserRole.student,
-                timezone=current_user.timezone or "UTC",
-                phone=row.phone.strip() if row.phone else None,
-                address=row.address.strip() if row.address else None,
-                notify_email=True,
-                is_active=True,
-                password_hash=hash_password(password_to_hash),
+            with db.begin_nested():
+                new_student = User(
+                    tenant_id=tenant_id,
+                    email=clean_email,
+                    full_name=clean_name,
+                    cui_passport=normalized_cui,
+                    role=UserRole.student,
+                    timezone=current_user.timezone or "UTC",
+                    phone=row.phone.strip() if row.phone else None,
+                    address=row.address.strip() if row.address else None,
+                    notify_email=True,
+                    is_active=True,
+                    password_hash=hash_password(row.password or generated),
+                )
+                db.add(new_student)
+                db.flush()
+                record(
+                    db, current_user, "create", "user", new_student.id,
+                    after=snapshot(new_student),
+                )
+        except IntegrityError:
+            # Otra fila del mismo archivo, o un alta simultánea, ya usó este
+            # correo o documento. El savepoint deshizo sólo esta fila.
+            error(_DUPLICATE_IDENTITY)
+            continue
+
+        was_enrolled = False
+        enroll_error = None
+        if target_course_id:
+            was_enrolled, enroll_error = _try_enroll(
+                db, current_user, new_student.id, target_course_id
             )
-            db.add(new_student)
-            db.flush()
-            record(db, current_user, "create", "user", new_student.id, after=snapshot(new_student))
-
-            # Auto-enroll if course specified
-            target_course_id = row.course_id or payload.default_course_id
-            was_enrolled = False
-            enroll_error = None
-            if target_course_id:
-                try:
-                    open_enrollment(
-                        db,
-                        current_user,
-                        EnrollmentCreate(
-                            student_id=new_student.id,
-                            course_id=target_course_id,
-                            status=EnrollmentStatus.enrolled,
-                        ),
-                    )
-                    was_enrolled = True
-                    enrolled_count += 1
-                except Exception as enroll_e:
-                    detail = getattr(enroll_e, "detail", str(enroll_e))
-                    if isinstance(detail, dict):
-                        detail = detail.get("message", str(detail))
-                    enroll_error = str(detail)
-
-            created_count += 1
-            msg = "Estudiante creado exitosamente"
             if was_enrolled:
-                msg += f" y matriculado en curso #{target_course_id}"
-            elif enroll_error:
-                msg += f" (pero no se pudo matricular: {enroll_error})"
+                enrolled_count += 1
 
-            results.append(
-                BulkImportRowResult(
-                    row_number=idx,
-                    full_name=clean_name,
-                    email=clean_email,
-                    status="created",
-                    user_id=new_student.id,
-                    enrolled_course_id=target_course_id if was_enrolled else None,
-                    message=msg,
-                )
+        created_count += 1
+        msg = "Estudiante creado exitosamente"
+        if was_enrolled:
+            msg += f" y matriculado en curso #{target_course_id}"
+        elif enroll_error:
+            msg += f" (pero no se pudo matricular: {enroll_error})"
+
+        results.append(
+            BulkImportRowResult(
+                row_number=idx,
+                full_name=clean_name,
+                email=clean_email,
+                status="created",
+                user_id=new_student.id,
+                enrolled_course_id=target_course_id if was_enrolled else None,
+                message=msg,
+                generated_password=generated,
             )
-        except Exception as e:
-            error_count += 1
-            results.append(
-                BulkImportRowResult(
-                    row_number=idx,
-                    full_name=clean_name,
-                    email=clean_email,
-                    status="error",
-                    message=f"Error al registrar: {str(e)}",
-                )
-            )
+        )
 
     db.commit()
 
@@ -468,6 +477,7 @@ def bulk_import_students(
         error_count=error_count,
         results=results,
     )
+
 
 
 @router.get("/{user_id}", response_model=UserRead)

@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.core.clock import academy_today
 from app.core.database import get_db
@@ -106,7 +106,7 @@ def _expire_if_due(credit: MakeUpCredit) -> MakeUpCredit:
     """
     if (
         credit.status in (MakeUpStatus.available, MakeUpStatus.booked)
-        and credit.expires_at < academy_today()
+        and credit.expires_at < academy_today(object_session(credit), credit.tenant_id)
     ):
         credit.status = MakeUpStatus.expired
         credit.target_session_id = None
@@ -238,7 +238,7 @@ def create_makeup_credit(
                 "La sesión de origen no pertenece al curso de esta matrícula",
             )
 
-    today = academy_today()
+    today = academy_today(db, current_user.tenant_id)
     expires = payload.expires_at or (today + _DEFAULT_VALIDITY)
     if expires < today:
         raise HTTPException(
@@ -318,7 +318,7 @@ def get_candidate_sessions(
     if source_course is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Source course not found")
 
-    today = academy_today()
+    today = academy_today(db, current_user.tenant_id)
 
     # Los cursos donde el alumno ya tiene plaza no son una recuperación: iría a
     # una clase suya.
@@ -427,7 +427,7 @@ def book_candidate_session(
     if target_session.status == SessionStatus.cancelled:
         raise HTTPException(status.HTTP_409_CONFLICT, "La sesión seleccionada fue cancelada")
 
-    today = academy_today()
+    today = academy_today(db, current_user.tenant_id)
     if target_session.date < today:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "No se puede reservar una sesión en el pasado"

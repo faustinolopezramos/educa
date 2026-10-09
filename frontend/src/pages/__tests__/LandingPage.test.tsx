@@ -18,7 +18,7 @@ describe("LandingPage", () => {
     expect(
       screen.getByText(/El sistema operativo para academias que elimina el caos/i)
     ).toBeInTheDocument();
-    expect(screen.getByText("Comenzar 14 Días Gratis →")).toBeInTheDocument();
+    expect(screen.getByText("Comenzar Gratis →")).toBeInTheDocument();
     expect(screen.getByText("Listo en 15 min")).toBeInTheDocument();
     expect(screen.getByText("0% Comisiones")).toBeInTheDocument();
   });
@@ -61,7 +61,7 @@ describe("LandingPage", () => {
     expect(screen.getByText("Escala")).toBeInTheDocument();
 
     const freeBtn = screen.getByRole("button", {
-      name: /Comenzar Gratis/i,
+      name: "Comenzar Gratis (15 alumnos)",
     });
     fireEvent.click(freeBtn);
     expect(mockNavigate).toHaveBeenCalledWith("/crear-academia?plan=free");

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, Numeric, String, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, text
 from sqlalchemy import true as sa_true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,13 +12,20 @@ from app.core.database import Base
 from app.models.enums import UserRole
 
 
-from sqlalchemy import UniqueConstraint
 
 
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+        # Un correo por academia sin distinguir mayúsculas: "Ana@x.com" y
+        # "ana@x.com" son la misma persona. Los correos se guardan ya en
+        # minúsculas; el índice sobre lower() lo garantiza aunque algo se cuele.
+        Index(
+            "uq_users_tenant_email",
+            "tenant_id",
+            text("lower(email)"),
+            unique=True,
+        ),
         # La identificación personal es única dentro de la academia. Parcial
         # sobre NOT NULL, porque el campo sigue siendo opcional para las cuentas
         # anteriores a él y varias filas sin documento no se estorban.
@@ -78,15 +86,48 @@ class User(Base):
         ForeignKey("nationalities.id", ondelete="SET NULL"), nullable=True, index=True
     )
     permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
+    # Qué versión de los Términos y la Política de Privacidad aceptó y cuándo
+    # (app.services.legal). Sólo la registra quien acepta en nombre de una
+    # academia al crearla; al resto lo da de alta la academia, que responde de
+    # informarle.
+    terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Supabase Auth user ID for linking with Supabase Auth
     supabase_uid: Mapped[str | None] = mapped_column(
         String(64), nullable=True, unique=True, index=True
     )
+    # MFA / 2FA (TOTP)
+    mfa_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=sa_true(), nullable=False
+    )
+    mfa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mfa_backup_codes: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
+    mfa_last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     nationality: Mapped["Nationality | None"] = relationship()
+    tenant: Mapped["Tenant | None"] = relationship()
     # A teacher owns many schedules
     schedules: Mapped[list["Schedule"]] = relationship(
         back_populates="teacher", foreign_keys="Schedule.teacher_id"
     )
     # A student has many enrollments
     enrollments: Mapped[list["Enrollment"]] = relationship(back_populates="student")
+    # Device sessions for session management
+    device_sessions: Mapped[list["DeviceSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    # WebAuthn credentials (passkeys)
+    webauthn_credentials: Mapped[list["WebAuthnCredential"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+    @property
+    def tenant_currency(self) -> str:
+        """La moneda en que cobra la academia de esta cuenta.
+
+        Viaja con el usuario (`UserRead`) para que el frontend formatee cada
+        importe sin una consulta aparte. Sin academia, la moneda por defecto.
+        """
+        return self.tenant.currency if self.tenant is not None else "GTQ"

@@ -1,7 +1,7 @@
 from datetime import date, time
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.models.enums import (
     MODALITY_LABELS,
@@ -10,7 +10,7 @@ from app.models.enums import (
     Modality,
     ProviderName,
 )
-from app.schemas.base import PatchModel
+from app.schemas.base import PatchModel, validate_http_url
 
 
 class ScheduleCreate(BaseModel):
@@ -30,6 +30,11 @@ class ScheduleCreate(BaseModel):
     modality: Modality = Modality.presencial
     join_url: str | None = None
     provider: ProviderName | None = None
+
+    @field_validator("join_url")
+    @classmethod
+    def _validate_join_url(cls, v: str | None) -> str | None:
+        return validate_http_url(v)
 
     @model_validator(mode="after")
     def _check_times(self) -> "ScheduleCreate":

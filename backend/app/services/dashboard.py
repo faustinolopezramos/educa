@@ -183,6 +183,11 @@ def build_executive_kpis(db: DbSession, user: User) -> AcademyKpis:
     return _academy_kpis(db, user, course_ids)
 
 
+def _tenant_of_user(db: DbSession, user_id: int) -> int | None:
+    user = db.get(User, user_id)
+    return user.tenant_id if user else None
+
+
 def _past_unregistered(db: DbSession, teacher_id: int) -> int:
     """Classes whose date has passed and whose register was never closed.
 
@@ -202,7 +207,7 @@ def _past_unregistered(db: DbSession, teacher_id: int) -> int:
                 # co-profesor «25 clases sin pasar lista» cuando 21 eran de la
                 # franja de un compañero y no podía cerrar ninguna.
                 ClassSession.teacher_id == teacher_id,
-                ClassSession.date < academy_today(),
+                ClassSession.date < academy_today(db, _tenant_of_user(db, teacher_id)),
                 ClassSession.register_closed_at.is_(None),
                 ClassSession.status != SessionStatus.cancelled,
             )

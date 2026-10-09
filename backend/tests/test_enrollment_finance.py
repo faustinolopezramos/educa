@@ -243,3 +243,21 @@ def test_teachers_never_see_what_a_student_owes(client, world, db):
         if r["id"] == world["enrollment"].id
     ]
     assert row["payment_status"] == "overdue" and "balance" in row
+
+
+def test_a_teacher_does_not_see_whether_a_student_is_blocked(client, world):
+    """El bloqueo de acceso se usa sobre todo por falta de pago: mostrárselo al
+    profesor era decirle, de forma indirecta, quién debe dinero."""
+    teacher = auth(client, "teacher_a@test.com")
+    rows = client.get("/enrollments", headers=teacher).json()
+    rows = rows["items"] if isinstance(rows, dict) else rows
+    assert rows, "el profesor debería ver la matrícula de su curso"
+    for row in rows:
+        assert "attendance_blocked" not in row
+        assert "payment_status" not in row
+        assert "balance" not in row
+
+    admin = auth(client, "admin@test.com")
+    rows = client.get("/enrollments", headers=admin).json()
+    rows = rows["items"] if isinstance(rows, dict) else rows
+    assert all("attendance_blocked" in row for row in rows)

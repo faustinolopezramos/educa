@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.clock import academy_now, academy_tz
+from app.core.clock import academy_tz
 from app.core.config import settings
 from app.models import (
     COURSE_IS_ACTIVE,
@@ -43,10 +43,12 @@ def week_start(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
-def sweep_due_at(today: date) -> datetime:
+def sweep_due_at(today: date, tz=None) -> datetime:
     """The moment this week's sweep becomes due, in the academy's zone."""
     day = week_start(today) + timedelta(days=settings.at_risk_sweep_weekday)
-    return datetime.combine(day, time(settings.at_risk_sweep_hour), tzinfo=academy_tz())
+    return datetime.combine(
+        day, time(settings.at_risk_sweep_hour), tzinfo=tz or academy_tz()
+    )
 
 
 def _running_courses_by_academy(db: Session) -> dict[int | None, list[int]]:
@@ -128,13 +130,15 @@ def run_due_sweeps(db: Session, now: datetime | None = None, force: bool = False
     """
     if not settings.at_risk_sweep_enabled and not force:
         return 0
-    now = now or academy_now()
-    today = now.date()
-    if not force and now < sweep_due_at(today):
-        return 0
-
     done = 0
     for tenant_id, course_ids in _running_courses_by_academy(db).items():
+        # Cada academia en su propia hora: "los lunes a las 7" es el lunes de
+        # su calendario, no el del servidor.
+        tz = academy_tz(db, tenant_id)
+        local_now = now.astimezone(tz) if now is not None else datetime.now(tz)
+        today = local_now.date()
+        if not force and local_now < sweep_due_at(today, tz):
+            continue
         try:
             sweep = sweep_academy(db, tenant_id, course_ids, today)
             db.commit()

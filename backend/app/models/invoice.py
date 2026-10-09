@@ -21,7 +21,9 @@ class Invoice(Base):
     enrollment_id: Mapped[int] = mapped_column(
         ForeignKey("enrollments.id", ondelete="CASCADE"), index=True
     )
-    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # Correlativo por academia y año (ver services.sequences): dos academias
+    # pueden tener cada una su FAC-2026-00001.
+    code: Mapped[str] = mapped_column(String(32), index=True)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     issued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

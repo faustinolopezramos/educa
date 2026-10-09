@@ -88,12 +88,12 @@ def ensure_superadmin(
     """
     check_superadmin_password(password)
     user = db.scalar(
-        select(User).where(User.email == email, User.tenant_id.is_(None))
+        select(User).where(User.email == email.strip().lower(), User.tenant_id.is_(None))
     )
     if user is None:
         db.add(
             User(
-                email=email,
+                email=email.strip().lower(),
                 full_name=full_name,
                 role=UserRole.superadmin,
                 password_hash=hash_password(password),

@@ -180,10 +180,11 @@ def test_register_academy_free_tier_limits_to_15_students(client, db):
         "admin_name": "Profe Juan",
         "admin_email": "juan@pequenas.com",
         "password": "Password123!",
+        "accept_terms": True,
         "plan_tier": "free",
     }
     res = client.post("/auth/register-academy", json=payload)
-    assert res.status_code == 200
+    assert res.status_code == 201
     data = res.json()
     assert "access_token" in data
     assert data["user"]["email"] == "juan@pequenas.com"
@@ -201,12 +202,97 @@ def test_register_academy_default_plan_is_free(client, db):
         "admin_name": "Profe Ana",
         "admin_email": "ana@default.com",
         "password": "Password123!",
+        "accept_terms": True,
     }
     res = client.post("/auth/register-academy", json=payload)
-    assert res.status_code == 200
+    assert res.status_code == 201
 
     tenant = db.query(Tenant).filter(Tenant.slug == "tutorias-default").first()
     assert tenant is not None
     assert tenant.max_active_students == 15
 
 
+
+
+def test_register_academy_ignores_paid_plan_choice(client, db):
+    """Elegir un plan de pago al registrarse no da su cupo: nadie ha cobrado."""
+    payload = {
+        "academy_name": "Academia Gratis",
+        "slug": "academia-gratis",
+        "admin_name": "Profe Luis",
+        "admin_email": "luis@gratis.com",
+        "password": "Password123!",
+        "accept_terms": True,
+        "plan_tier": "scale",
+    }
+    res = client.post("/auth/register-academy", json=payload)
+    assert res.status_code == 201, res.text
+
+    tenant = db.query(Tenant).filter(Tenant.slug == "academia-gratis").first()
+    assert tenant.max_active_students == 15
+
+
+def test_register_academy_is_rate_limited(client):
+    """Cada alta gasta presupuesto, salga bien o no: frena la creación en masa."""
+    from app.main import _RATE_LIMITED_PATHS
+
+    limit = _RATE_LIMITED_PATHS["/auth/register-academy"]
+    for i in range(limit):
+        res = client.post(
+            "/auth/register-academy",
+            json={
+                "academy_name": f"Academia {i}",
+                "slug": f"academia-spam-{i}",
+                "admin_name": "Spam",
+                "admin_email": f"spam{i}@spam.com",
+                "password": "Password123!",
+        "accept_terms": True,
+            },
+        )
+        assert res.status_code == 201, res.text
+
+    res = client.post(
+        "/auth/register-academy",
+        json={
+            "academy_name": "Una más",
+            "slug": "academia-spam-extra",
+            "admin_name": "Spam",
+            "admin_email": "extra@spam.com",
+            "password": "Password123!",
+        "accept_terms": True,
+        },
+    )
+    assert res.status_code == 429
+
+
+def test_an_academy_is_not_created_without_accepting_the_terms(client, db):
+    payload = {
+        "academy_name": "Sin Aceptar",
+        "slug": "sin-aceptar",
+        "admin_name": "Alguien",
+        "admin_email": "alguien@sinaceptar.com",
+        "password": "Password123!",
+    }
+    res = client.post("/auth/register-academy", json=payload)
+    assert res.status_code == 422
+    assert db.query(Tenant).filter(Tenant.slug == "sin-aceptar").first() is None
+
+
+def test_the_director_acceptance_is_recorded_with_its_version(client, db):
+    from app.services.legal import LEGAL_VERSION
+
+    res = client.post(
+        "/auth/register-academy",
+        json={
+            "academy_name": "Aceptada",
+            "slug": "aceptada",
+            "admin_name": "Directora",
+            "admin_email": "directora@aceptada.com",
+            "password": "Password123!",
+            "accept_terms": True,
+        },
+    )
+    assert res.status_code == 201, res.text
+    admin = db.query(User).filter(User.email == "directora@aceptada.com").one()
+    assert admin.terms_version == LEGAL_VERSION
+    assert admin.terms_accepted_at is not None

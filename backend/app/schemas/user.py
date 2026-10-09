@@ -1,6 +1,6 @@
 from typing import Annotated, ClassVar
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models.enums import Permission, UserRole
 from app.schemas.base import PatchModel
@@ -23,6 +23,19 @@ def _validate_password(value: str) -> str:
 
 
 Password = Annotated[str, AfterValidator(_validate_password)]
+
+
+def normalize_email(value: str) -> str:
+    """La forma canónica de un correo: sin espacios y en minúsculas.
+
+    `EmailStr` sólo baja a minúsculas el dominio. Guardar "Ana.Perez@…" tal cual
+    dejaba fuera a quien escribía "ana.perez@…" al entrar, y permitía dar de
+    alta dos veces a la misma persona.
+    """
+    return value.strip().lower()
+
+
+Email = Annotated[EmailStr, AfterValidator(normalize_email)]
 
 
 # --- Identificación personal (DPI/CUI, pasaporte, DNI o documento extranjero) ---
@@ -77,8 +90,11 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
+    email: Email
     cui_passport: CuiPassport
-    password: Password
+    # Opcional: sin ella el servidor genera una y la devuelve una sola vez en
+    # `UserCreated.generated_password`, para que el admin se la entregue.
+    password: Password | None = None
     permissions: list[Permission] | None = None
 
 
@@ -93,7 +109,7 @@ class UserUpdate(PatchModel):
         "notify_email",
         "notify_whatsapp",
     )
-    email: EmailStr | None = None
+    email: Email | None = None
     full_name: str | None = None
     role: UserRole | None = None
     timezone: str | None = None
@@ -148,6 +164,15 @@ class UserSelfUpdate(PatchModel):
 class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    #: La moneda de su academia, para mostrar los importes.
+    tenant_currency: str = "GTQ"
+
+
+class UserCreated(UserRead):
+    """La respuesta de un alta: la cuenta, más la contraseña que generó el
+    servidor cuando no se indicó ninguna. Es la única vez que sale en claro."""
+
+    generated_password: str | None = None
 
 
 class UserBrief(BaseModel):
@@ -167,18 +192,23 @@ class UserBrief(BaseModel):
 
 class StudentImportRow(BaseModel):
     full_name: str
-    email: EmailStr
+    email: Email
     cui_passport: str | None = None
     phone: str | None = None
     address: str | None = None
-    password: str | None = None
+    # Sin contraseña en la fila, se genera una distinta para esa cuenta.
+    password: Password | None = None
     course_id: int | None = None
 
 
+# Cada fila cuesta un hash de bcrypt; sin tope, una sola petición podía tener
+# ocupado el servidor durante minutos.
+BULK_IMPORT_MAX_ROWS = 500
+
+
 class BulkImportRequest(BaseModel):
-    students: list[StudentImportRow]
+    students: list[StudentImportRow] = Field(max_length=BULK_IMPORT_MAX_ROWS)
     default_course_id: int | None = None
-    default_password: str | None = "Educa2026!"
 
 
 class BulkImportRowResult(BaseModel):
@@ -189,6 +219,8 @@ class BulkImportRowResult(BaseModel):
     user_id: int | None = None
     enrolled_course_id: int | None = None
     message: str | None = None
+    # Sólo en las cuentas creadas sin contraseña propia.
+    generated_password: str | None = None
 
 
 class BulkImportResponse(BaseModel):

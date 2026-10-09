@@ -84,8 +84,8 @@ def test_the_default_asks_the_academy_clock_not_the_host(
 
     # A clock stuck before the due date must keep the charge out of arrears,
     # whatever day the machine running the tests thinks it is.
-    monkeypatch.setattr(finance, "academy_today", lambda: date(2019, 12, 31))
+    monkeypatch.setattr(finance, "academy_today", lambda *_: date(2019, 12, 31))
     assert derive_payment_status(db, enrollment) is PaymentStatus.pending
 
-    monkeypatch.setattr(finance, "academy_today", lambda: date(2020, 1, 1))
+    monkeypatch.setattr(finance, "academy_today", lambda *_: date(2020, 1, 1))
     assert derive_payment_status(db, enrollment) is PaymentStatus.overdue

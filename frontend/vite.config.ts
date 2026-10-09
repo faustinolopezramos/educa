@@ -19,13 +19,27 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          // Las librerías grandes en paquetes propios: cambian mucho menos que
+          // el código de la aplicación, así que el navegador las conserva en
+          // caché entre despliegues, y no engordan el paquete inicial.
+          manualChunks: {
+            react: ["react", "react-dom", "react-router-dom"],
+            charts: ["recharts"],
+            calendar: ["react-big-calendar"],
+          },
+        },
+      },
+    },
     server: {
       port: 5173,
       proxy: {
         // Los prefijos son los de `include_router` en backend/app/main.py. Los que
         // faltaban (makeups, payments, dashboard, grading) no llegaban a la API en
         // desarrollo: Vite los servía como index.html y la pantalla salía vacía.
-        "^/(auth|users|catalog|holidays|location-proposals|enrollments|renewals|schedules|sessions|grades|grading|rooms|attendance|makeups|meetings|payments|dashboard|reports|notifications|push|audit|teachers|tenants|assignments)(/|$|\\?)":
+        "^/(auth|academy|users|catalog|holidays|location-proposals|enrollments|renewals|schedules|sessions|grades|grading|rooms|attendance|makeups|meetings|payments|dashboard|reports|notifications|push|audit|teachers|tenants|assignments)(/|$|\\?)":
           {
             target: "http://localhost:8000",
             changeOrigin: true,
