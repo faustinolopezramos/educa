@@ -9,6 +9,55 @@ import { Button, Card, Field, Input, Select } from "../components/ui";
 import { IconCheck } from "../components/icons";
 import { CURRENCIES, DEFAULT_CURRENCY } from "../lib/currency";
 import { PLAN_CATALOG, formatQuetzales } from "../lib/plans";
+import { detectEmailProvider } from "../lib/supabase";
+
+function GoogleSmallIcon() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-4 w-4 shrink-0" aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+    </svg>
+  );
+}
+
+function MicrosoftSmallIcon() {
+  return (
+    <svg viewBox="0 0 21 21" className="h-4 w-4 shrink-0" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  );
+}
+
+function IconEye({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  );
+}
+
+function IconEyeOff({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+    </svg>
+  );
+}
+
+function generateSecurePassword(): string {
+  const chars = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let pass = "Educa26$";
+  for (let i = 0; i < 4; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return pass;
+}
 
 const schema = z.object({
   academy_name: z
@@ -34,6 +83,11 @@ const schema = z.object({
     .max(72, "Máximo 72 caracteres"),
   phone: z.string().max(50, "Máximo 50 caracteres").optional(),
   currency: z.string().length(3),
+  accept_terms: z
+    .boolean()
+    .refine((accepted) => accepted, {
+      message: "Para crear la academia debes aceptar los Términos y la Política de Privacidad",
+    }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -52,12 +106,23 @@ export default function RegisterAcademy() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
 
   const initialPlan =
     (searchParams.get("plan") as "free" | "starter" | "pro" | "scale") || "free";
   const [selectedPlan, setSelectedPlan] = useState<"free" | "starter" | "pro" | "scale">(
     initialPlan
   );
+
+  const initialEmail =
+    searchParams.get("email") ||
+    searchParams.get("admin_email") ||
+    (typeof window !== "undefined" ? localStorage.getItem("educa_saved_email") ?? "" : "");
+  const initialName =
+    searchParams.get("name") ||
+    searchParams.get("admin_name") ||
+    "";
 
   const {
     register,
@@ -70,16 +135,19 @@ export default function RegisterAcademy() {
     defaultValues: {
       academy_name: "",
       slug: "",
-      admin_name: "",
-      admin_email: "",
+      admin_name: initialName,
+      admin_email: initialEmail,
       password: "",
       phone: "",
       currency: DEFAULT_CURRENCY,
+      accept_terms: false,
     },
   });
 
   const watchAcademyName = watch("academy_name");
   const watchSlug = watch("slug");
+  const watchAdminEmail = watch("admin_email") || "";
+  const detectedEmailProvider = detectEmailProvider(watchAdminEmail);
 
   // Auto-generate suggested slug when academy name is typed (if slug wasn't manually touched)
   useEffect(() => {
@@ -95,15 +163,20 @@ export default function RegisterAcademy() {
       return;
     }
     try {
+      const emailTrimmed = values.admin_email.toLowerCase().trim();
+      if (typeof window !== "undefined") {
+        localStorage.setItem("educa_saved_email", emailTrimmed);
+      }
       await registerAcademy({
         academy_name: values.academy_name,
         slug: values.slug.toLowerCase().trim(),
         admin_name: values.admin_name.trim(),
-        admin_email: values.admin_email.toLowerCase().trim(),
+        admin_email: emailTrimmed,
         password: values.password,
         phone: values.phone ? values.phone.trim() : undefined,
         plan_tier: selectedPlan,
         currency: values.currency,
+        accept_terms: values.accept_terms,
       });
       // Redirect straight into the dashboard where FirstSteps is active
       navigate("/");
@@ -126,7 +199,7 @@ export default function RegisterAcademy() {
     <div className="min-h-screen bg-[#FDFBF7] py-10 px-4 sm:px-6 lg:px-8">
       {/* Top Brand Bar */}
       <div className="mx-auto max-w-4xl mb-8 flex items-center justify-between">
-        <Link to="/landing" className="flex items-center gap-2.5">
+        <Link to="/" className="flex items-center gap-2.5">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 font-serif text-xl font-bold text-white shadow-sm shadow-brand-600/30">
             E
           </div>
@@ -269,9 +342,15 @@ export default function RegisterAcademy() {
               </div>
 
               <div className="border-t border-stone-100 pt-3">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                  Cuenta del Director / Administrador
-                </h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Cuenta del Director / Administrador
+                  </h2>
+                  <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Compatible con Google y Microsoft (Outlook)
+                  </span>
+                </div>
               </div>
 
               {/* Admin Name */}
@@ -302,18 +381,69 @@ export default function RegisterAcademy() {
                     {errors.admin_email.message}
                   </p>
                 )}
+
+                {/* Reconocimiento automático de Google / Outlook */}
+                {detectedEmailProvider === "google" && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/70 p-2.5 text-xs text-blue-900">
+                    <GoogleSmallIcon />
+                    <div>
+                      <span className="font-semibold block text-blue-950">Cuenta de Google detectada</span>
+                      <span className="text-[11px] text-blue-700">
+                        Tu academia quedará lista para que entres con 1 clic usando Google desde cualquier equipo.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {detectedEmailProvider === "azure" && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50/70 p-2.5 text-xs text-sky-900">
+                    <MicrosoftSmallIcon />
+                    <div>
+                      <span className="font-semibold block text-sky-950">Cuenta de Microsoft / Outlook detectada</span>
+                      <span className="text-[11px] text-sky-700">
+                        Tu academia quedará lista para que entres con 1 clic usando Microsoft desde cualquier equipo.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Password */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Contraseña de Acceso *
-                </label>
-                <Input
-                  type="password"
-                  placeholder="Mínimo 8 caracteres"
-                  {...register("password")}
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Contraseña de Acceso *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const generated = generateSecurePassword();
+                      setValue("password", generated, { shouldValidate: true });
+                      setShowPassword(true);
+                      setCopiedPassword(true);
+                      setTimeout(() => setCopiedPassword(false), 2500);
+                    }}
+                    className="text-[11px] font-medium text-brand-700 hover:text-brand-800 underline flex items-center gap-1"
+                  >
+                    {copiedPassword ? "✓ Contraseña generada" : "⚡ Sugerir contraseña segura"}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Mínimo 8 caracteres"
+                    {...register("password")}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                  >
+                    {showPassword ? <IconEyeOff /> : <IconEye />}
+                  </button>
+                </div>
                 {errors.password && (
                   <p className="mt-1 text-xs text-red-600">
                     {errors.password.message}
@@ -367,8 +497,42 @@ export default function RegisterAcademy() {
                     : "Crear Academia y Solicitar Plan →"}
               </Button>
 
-              <div className="text-center text-[11px] text-slate-400">
-                Al registrarte aceptas las Condiciones del Servicio y la Política de Privacidad de Educa.
+              <div>
+                <label className="flex items-start gap-2.5 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    aria-invalid={errors.accept_terms ? true : undefined}
+                    aria-describedby={errors.accept_terms ? "accept-terms-error" : undefined}
+                    {...register("accept_terms")}
+                  />
+                  <span>
+                    He leído y acepto, en nombre de la academia, los{" "}
+                    <Link
+                      to="/terminos"
+                      target="_blank"
+                      rel="noopener"
+                      className="font-medium text-brand-700 underline"
+                    >
+                      Términos y Condiciones
+                    </Link>{" "}
+                    y la{" "}
+                    <Link
+                      to="/privacidad"
+                      target="_blank"
+                      rel="noopener"
+                      className="font-medium text-brand-700 underline"
+                    >
+                      Política de Privacidad
+                    </Link>
+                    .
+                  </span>
+                </label>
+                {errors.accept_terms && (
+                  <p id="accept-terms-error" className="mt-1 text-xs text-red-600">
+                    {errors.accept_terms.message}
+                  </p>
+                )}
               </div>
             </form>
           </Card>

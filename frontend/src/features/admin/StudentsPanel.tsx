@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -16,6 +17,8 @@ import { Student360Drawer } from "./Student360Drawer";
 import { CreateUserModal } from "./UsersPanel";
 import { StudentBulkImportModal } from "./StudentBulkImportModal";
 import { useMoney } from "../../lib/useMoney";
+import { WhatsAppContactModal } from "../../components/WhatsAppContactModal";
+import { openQuickPay } from "../enrollments/QuickPayModal";
 
 type Tab = "activos" | "sin_curso" | "morosos" | "baja" | "todos";
 
@@ -64,6 +67,7 @@ export function StudentsPanel() {
   const { data: students = [] } = useUsers("student");
   const { data: enrolments = [] } = useEnrollments();
   const { data: nationalities = [] } = useNationalities();
+  const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>("activos");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
@@ -72,6 +76,21 @@ export function StudentsPanel() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [drawerStudent, setDrawerStudent] = useState<User | null>(null);
   const [deactivating, setDeactivating] = useState<User | null>(null);
+  const [whatsAppTarget, setWhatsAppTarget] = useState<{
+    student: User;
+    balance?: number;
+    courseName?: string;
+  } | null>(null);
+
+  const urlSearch = params.get("search");
+  useEffect(() => {
+    if (urlSearch) {
+      setSearch(urlSearch);
+      setTab("todos");
+      params.delete("search");
+      setParams(params, { replace: true });
+    }
+  }, [urlSearch, params, setParams]);
 
   const update = useUpdateUser();
 
@@ -79,6 +98,48 @@ export function StudentsPanel() {
     () => students.map((s) => ({ student: s, status: deriveStatus(s, enrolments) })),
     [students, enrolments],
   );
+
+  function exportCollectionCsv() {
+    const delinquentStudents = withStatus.filter((w) => w.status === "moroso");
+    if (delinquentStudents.length === 0) {
+      notify("No hay alumnos en mora para exportar", "info");
+      return;
+    }
+    const headers = [
+      "ID Alumno",
+      "Nombre Completo",
+      "Correo Electrónico",
+      "Teléfono",
+      "DPI / CUI",
+      "Cursos Activos",
+      "Saldo Adeudado",
+    ];
+    const rows = delinquentStudents.map(({ student }) => {
+      const mine = enrolments.filter(
+        (e) => e.student_id === student.id && isCurrentEnrollment(e.status),
+      );
+      const owed = mine.reduce((sum, e) => sum + Math.max(0, e.balance), 0);
+      return [
+        student.id,
+        `"${student.full_name.replace(/"/g, '""')}"`,
+        `"${student.email}"`,
+        `"${student.phone || ""}"`,
+        `"${student.cui_passport || ""}"`,
+        mine.length,
+        owed.toFixed(2),
+      ];
+    });
+    const csvContent =
+      "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reporte_cobranza_morosos_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify("Lista de cobranza exportada con éxito", "success");
+  }
 
   const counts = useMemo(() => {
     const c = { activos: 0, sin_curso: 0, morosos: 0, baja: 0 };
@@ -176,6 +237,17 @@ export function StudentsPanel() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        {tab === "morosos" && counts.morosos > 0 && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={exportCollectionCsv}
+            title="Descargar listado de morosos con saldo y teléfonos para llamadas de cobranza"
+            className="flex-none"
+          >
+            📥 Exportar Cobranza (CSV)
+          </Button>
+        )}
       </Toolbar>
 
       {selected.length > 0 && (
@@ -289,6 +361,32 @@ export function StudentsPanel() {
                     </Td>
                     <Td align="right">
                       <div className="flex flex-wrap justify-end gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title={student.phone ? `Contactar por WhatsApp: ${student.phone}` : "Sin teléfono registrado"}
+                          onClick={() =>
+                            setWhatsAppTarget({
+                              student,
+                              balance: owed,
+                              courseName: current.length > 0 ? "tu curso" : undefined,
+                            })
+                          }
+                          className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                        >
+                          💬 WA
+                        </Button>
+                        {owed > 0.005 && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openQuickPay({ studentId: student.id })}
+                            className="border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+                            title="Cobrar en caja directamente"
+                          >
+                            Cobrar
+                          </Button>
+                        )}
                         <Button
                           variant="secondary"
                           size="sm"
@@ -404,6 +502,15 @@ export function StudentsPanel() {
             )
           }
           onClose={() => setDeactivating(null)}
+        />
+      )}
+      {whatsAppTarget && (
+        <WhatsAppContactModal
+          student={whatsAppTarget.student}
+          balance={whatsAppTarget.balance}
+          courseName={whatsAppTarget.courseName}
+          currency={currency}
+          onClose={() => setWhatsAppTarget(null)}
         />
       )}
     </div>

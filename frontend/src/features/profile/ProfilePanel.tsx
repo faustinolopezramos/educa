@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "../../auth/AuthContext";
-import { IconClock, IconClose, IconPlus } from "../../components/icons";
+import { IconClock, IconClose, IconPlus, IconGlobe, IconComputer, IconMobile, IconUserX, IconTrash } from "../../components/icons";
 import {
   Badge,
   Button,
@@ -15,7 +15,7 @@ import {
   SkeletonRows,
   TimePicker,
 } from "../../components/ui";
-import { apiErrorMessage } from "../../lib/api";
+import { api, apiErrorMessage } from "../../lib/api";
 import { PASSWORD_MIN_LENGTH } from "../../lib/constants";
 import { DAYS, dayName, formatTime } from "../../lib/format";
 import {
@@ -80,6 +80,14 @@ export function ProfilePanel() {
       </div>
 
       {isTeacher && <AcademicProfileSection user={user} />}
+
+      <div className="max-w-2xl">
+        <DeviceSessionsPanel />
+      </div>
+
+      <div className="max-w-2xl">
+        <PasskeysPanel />
+      </div>
     </div>
   );
 }
@@ -777,6 +785,441 @@ function TeacherAvailabilityForm({ user }: { user: User }) {
               </Button>
             </div>
           </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Device Sessions Panel
+ * ------------------------------------------------------------------ */
+
+interface DeviceSession {
+  id: number;
+  device_name: string | null;
+  ip_address: string | null;
+  location: string | null;
+  created_at: string;
+  last_used_at: string;
+  is_current: boolean;
+}
+
+interface DeviceSessionListResponse {
+  sessions: DeviceSession[];
+}
+
+function DeviceSessionsPanel() {
+  const { user } = useAuth();
+  if (!user) return null;
+
+  const [sessions, setSessions] = useState<DeviceSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<number | null>(null);
+
+  // Cargar sesiones al montar
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  async function loadSessions() {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data } = await api.get<DeviceSessionListResponse>("/auth/device-sessions");
+      setSessions(data.sessions);
+    } catch (e) {
+      setError("No se pudieron cargar las sesiones activas");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function revokeSession(sessionId: number, isCurrent: boolean) {
+    if (isCurrent) {
+      setError("No puedes revocar tu sesión actual desde aquí. Usa 'Cerrar sesión' en el menú.");
+      return;
+    }
+    setRevoking(sessionId);
+    try {
+      await api.post("/auth/device-sessions/revoke", { session_id: sessionId });
+      await loadSessions();
+    } catch (e) {
+      setError("No se pudo revocar la sesión");
+      console.error(e);
+    } finally {
+      setRevoking(null);
+    }
+  }
+
+  async function revokeAllOther() {
+    if (!confirm("Esto cerrará la sesión en todos los demás dispositivos. ¿Continuar?")) return;
+    try {
+      await api.post("/auth/device-sessions/revoke-all-other");
+      await loadSessions();
+    } catch (e) {
+      setError("No se pudieron revocar las sesiones");
+      console.error(e);
+    }
+  }
+
+  function getDeviceIcon(deviceName: string | null) {
+    if (!deviceName) return <IconComputer className="h-4 w-4" />;
+    const name = deviceName.toLowerCase();
+    if (name.includes("mobile") || name.includes("iphone") || name.includes("android")) {
+      return <IconMobile className="h-4 w-4" />;
+    }
+    if (name.includes("safari") || name.includes("chrome") || name.includes("firefox") || name.includes("edge")) {
+      return <IconComputer className="h-4 w-4" />;
+    }
+    return <IconGlobe className="h-4 w-4" />;
+  }
+
+  function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  return (
+    <Card>
+      <SectionHeading>Sesiones activas</SectionHeading>
+      <p className="text-sm text-slate-500 mb-4">
+        Dispositivos donde has iniciado sesión. Puedes cerrar sesiones que no reconozcas.
+      </p>
+
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="animate-pulse flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="h-10 w-10 rounded-lg bg-slate-200" />
+              <div className="flex-1 space-y-1">
+                <div className="h-4 w-3/4 bg-slate-200 rounded" />
+                <div className="h-3 w-1/2 bg-slate-200 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : sessions.length === 0 ? (
+        <p className="text-sm text-slate-500 text-center py-4">No hay sesiones activas</p>
+      ) : (
+        <div className="space-y-2">
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${
+                session.is_current
+                  ? "border-brand-300 bg-brand-50"
+                  : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                  {getDeviceIcon(session.device_name)}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-800 truncate">
+                    {session.device_name || "Dispositivo desconocido"}
+                    {session.is_current && (
+                      <span className="flex-shrink-0 rounded-full bg-brand-100 px-2 py-0.5 text-2xs font-semibold text-brand-700">
+                        Actual
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-2xs text-slate-500 truncate">
+                    {session.ip_address && <span>{session.ip_address}</span>}
+                    {session.location && <span>• {session.location}</span>}
+                    <span>• Iniciada: {formatDate(session.created_at)}</span>
+                    <span>• Última actividad: {formatDate(session.last_used_at)}</span>
+                  </div>
+                </div>
+              </div>
+              {!session.is_current && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={revoking === session.id}
+                  onClick={() => revokeSession(session.id, session.is_current)}
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                  title="Cerrar esta sesión"
+                >
+{revoking === session.id ? (
+                    <span className="animate-spin">⏳</span>
+                  ) : (
+                    <IconTrash className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+            </div>
+          ))}
+
+          {sessions.some((s) => !s.is_current) && (
+            <div className="pt-2 border-t border-slate-100">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={revokeAllOther}
+                className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              >
+                <IconUserX className="h-4 w-4" />
+                Cerrar todas las demás sesiones
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Passkeys Panel (WebAuthn)
+ * ------------------------------------------------------------------ */
+
+interface WebAuthnCredential {
+  id: number;
+  name: string | null;
+  authenticator_type: string | null;
+  transports: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+interface WebAuthnCredentialListResponse {
+  credentials: WebAuthnCredential[];
+}
+
+function PasskeysPanel() {
+  const { user } = useAuth();
+  if (!user) return null;
+
+  const [credentials, setCredentials] = useState<WebAuthnCredential[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+
+  // Cargar credenciales al montar
+  useEffect(() => {
+    loadCredentials();
+  }, []);
+
+  async function loadCredentials() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<WebAuthnCredentialListResponse>("/auth/webauthn/credentials");
+      setCredentials(res.data.credentials);
+    } catch (e) {
+      setError("No se pudieron cargar las passkeys");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startRegistration() {
+    setRegistering(true);
+    setRegisterError(null);
+    try {
+      // 1. Obtener opciones de registro
+      const { data: startRes } = await api.post<{ options: string }>("/auth/webauthn/register/start");
+      const options = JSON.parse(startRes.options);
+
+      // 2. Pedir al navegador que cree la credencial
+      const credential = await navigator.credentials.create({ publicKey: options });
+
+      if (!credential) {
+        throw new Error("No se pudo crear la credencial (cancelado por el usuario)");
+      }
+
+      // TypeScript: credential es PublicKeyCredential después del check
+      const pkCredential = credential as PublicKeyCredential;
+      const attestationResponse = pkCredential.response as AuthenticatorAttestationResponse;
+
+      // 3. Enviar credencial al servidor
+      const credentialData = {
+        id: pkCredential.id,
+        rawId: arrayBufferToBase64URL(pkCredential.rawId),
+        response: {
+          attestationObject: arrayBufferToBase64URL(attestationResponse.attestationObject),
+          clientDataJSON: arrayBufferToBase64URL(attestationResponse.clientDataJSON),
+          transports: attestationResponse.getTransports ? attestationResponse.getTransports() : [],
+        },
+        type: pkCredential.type,
+      };
+
+      await api.post("/auth/webauthn/register/finish", {
+        credential: credentialData,
+        challenge: options.challenge,
+      });
+
+      await loadCredentials();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Error al registrar passkey";
+      setRegisterError(msg);
+      console.error(e);
+    } finally {
+      setRegistering(false);
+    }
+  }
+
+  async function deleteCredential(credentialId: number) {
+    if (!confirm("¿Eliminar esta passkey? No podrás usarla para iniciar sesión.")) return;
+    try {
+      await api.delete(`/auth/webauthn/credentials/${credentialId}`);
+      await loadCredentials();
+    } catch (e) {
+      setError("No se pudo eliminar la passkey");
+      console.error(e);
+    }
+  }
+
+  function arrayBufferToBase64URL(buffer: ArrayBuffer) {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
+  }
+
+  function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  const isSupported =
+    typeof window !== "undefined" &&
+    "credentials" in navigator &&
+    "create" in navigator.credentials &&
+    "get" in navigator.credentials;
+
+  return (
+    <Card>
+      <SectionHeading>Passkeys (Passkeys / WebAuthn)</SectionHeading>
+      <p className="text-sm text-slate-500 mb-4">
+        Las passkeys te permiten iniciar sesión sin contraseña usando Face ID, Touch ID,
+        Windows Hello, llaves de seguridad USB/NFC o el gestor de contraseñas de tu navegador.
+      </p>
+
+      {!isSupported && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
+          Tu navegador no soporta WebAuthn. Actualiza a una versión reciente de Chrome, Firefox,
+          Safari o Edge para usar passkeys.
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
+      {registerError && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          {registerError}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <Button
+          onClick={startRegistration}
+          disabled={registering || !isSupported || loading}
+          className={isSupported ? "" : "opacity-50 cursor-not-allowed"}
+        >
+          {registering ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Registrando…
+            </>
+          ) : (
+            <>
+              <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Registrar nueva passkey
+            </>
+          )}
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <div key={i} className="animate-pulse flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="h-10 w-10 rounded-lg bg-slate-200" />
+              <div className="flex-1 space-y-1">
+                <div className="h-4 w-3/4 bg-slate-200 rounded" />
+                <div className="h-3 w-1/2 bg-slate-200 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : credentials.length === 0 ? (
+        <p className="text-sm text-slate-500 text-center py-4">
+          No tienes passkeys registradas. Haz clic en "Registrar nueva passkey" para empezar.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {credentials.map((cred) => (
+            <div
+              key={cred.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-800 truncate">
+                    {cred.name || "Passkey"}
+                    {cred.authenticator_type && (
+                      <span className="flex-shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-2xs font-semibold text-slate-600">
+                        {cred.authenticator_type}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-2xs text-slate-500 truncate">
+                    {cred.transports && <span>{cred.transports}</span>}
+                    <span>• Registrada: {formatDate(cred.created_at)}</span>
+                    {cred.last_used_at && <span>• Último uso: {formatDate(cred.last_used_at)}</span>}
+                  </div>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => deleteCredential(cred.id)}
+                className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                title="Eliminar passkey"
+              >
+                <IconTrash className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
         </div>
       )}
     </Card>

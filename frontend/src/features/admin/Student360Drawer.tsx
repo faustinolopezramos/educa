@@ -11,6 +11,9 @@ import {
 import { notify } from "../../lib/toast";
 import type { PaymentKind, User } from "../../lib/types";
 import { useMoney } from "../../lib/useMoney";
+import { WhatsAppContactModal } from "../../components/WhatsAppContactModal";
+import { PaymentReceiptModal, type ReceiptData } from "../enrollments/PaymentReceiptModal";
+import { openQuickPay } from "../enrollments/QuickPayModal";
 
 interface KardexSummary {
   global_gpa: number;
@@ -78,6 +81,8 @@ export function Student360Drawer({
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("transfer");
   const [notes, setNotes] = useState("");
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null);
 
   useEffect(() => {
     api
@@ -132,12 +137,31 @@ export function Student360Drawer({
       footer={
         <ModalActions>
           <Button
+            variant="ghost"
+            onClick={() => setShowWhatsApp(true)}
+            className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            💬 WhatsApp
+          </Button>
+          <Button
             variant="secondary"
             onClick={() => {
               window.print();
             }}
           >
             Imprimir Ficha 360°
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              openQuickPay({
+                studentId: student.id,
+                enrollmentId: activeEnrollment?.id,
+              })
+            }
+            className="border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+          >
+            💵 Cobro Rápido
           </Button>
           <Button variant="secondary" onClick={onClose}>
             Cerrar
@@ -440,6 +464,7 @@ export function Student360Drawer({
                           <Th>Tipo</Th>
                           <Th>Método</Th>
                           <Th align="right">Monto</Th>
+                          <Th align="right">Recibo</Th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -469,6 +494,37 @@ export function Student360Drawer({
                                 {tx.kind === "payment" ? "-" : "+"}{money(tx.amount)}
                               </span>
                             </Td>
+                            <Td align="right">
+                              {tx.kind === "payment" ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setSelectedReceipt({
+                                      receiptNumber: tx.receipt_number || tx.id,
+                                      studentName: student.full_name,
+                                      studentEmail: student.email,
+                                      studentPhone: student.phone,
+                                      studentCui: student.cui_passport,
+                                      courseName: courses.find(
+                                        (c) => c.id === activeEnrollment?.course_id,
+                                      )?.name,
+                                      enrollmentCode: activeEnrollment?.enrollment_code,
+                                      amount: tx.amount,
+                                      method: tx.method,
+                                      notes: tx.notes,
+                                      date: tx.paid_at,
+                                      remainingBalance: ledger.balance,
+                                    })
+                                  }
+                                  className="text-2xs"
+                                >
+                                  🖨️ Ver Recibo
+                                </Button>
+                              ) : (
+                                <span className="text-2xs text-slate-400">—</span>
+                              )}
+                            </Td>
                           </tr>
                         ))}
                       </tbody>
@@ -480,6 +536,22 @@ export function Student360Drawer({
           </div>
         )}
       </div>
+
+      {showWhatsApp && (
+        <WhatsAppContactModal
+          student={student}
+          courseName={courses.find((c) => c.id === activeEnrollment?.course_id)?.name}
+          balance={ledger?.balance}
+          onClose={() => setShowWhatsApp(false)}
+        />
+      )}
+
+      {selectedReceipt && (
+        <PaymentReceiptModal
+          receipt={selectedReceipt}
+          onClose={() => setSelectedReceipt(null)}
+        />
+      )}
     </Modal>
   );
 }

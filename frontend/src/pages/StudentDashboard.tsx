@@ -10,9 +10,12 @@ import { ActionTray } from "../components/ActionTray";
 import {
   IconBook, IconChevronRight, IconClock, IconLock, IconPin,
 } from "../components/icons";
+import { api } from "../lib/api";
 import { StudentGrades } from "../features/grades/StudentGrades";
 import { StudentKardexView } from "../features/grades/StudentKardexView";
+import { StudentPaymentsView } from "../features/enrollments/StudentPaymentsView";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
+import { StudentAssignmentModal } from "../features/assignments/StudentAssignmentModal";
 import { NextLevelCard } from "../features/enrollments/NextLevelCard";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
@@ -30,6 +33,7 @@ import { attendancePct } from "../lib/attendance";
 import { isCurrentEnrollment, isDelinquent } from "../lib/enrollment";
 import { nextClassStatusLine, whenLabel } from "../lib/studentHome";
 import {
+  useAssignments,
   useCourses,
   useDashboard,
   useEnrollments,
@@ -47,8 +51,9 @@ import {
 import { LOBBY_WINDOW_MIN, GRACE_MS, SCORE_MAX } from "../lib/constants";
 import { Modal, ModalActions } from "../components/ui";
 import { MakeUpBookingModal } from "../features/classes/MakeUpBookingModal";
-import type { Enrollment, MakeUpCredit, Modality } from "../lib/types";
+import type { Assignment, Enrollment, MakeUpCredit, Modality } from "../lib/types";
 import { useMoney } from "../lib/useMoney";
+import { safeUrl } from "../lib/urls";
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -75,7 +80,8 @@ export default function StudentDashboard() {
     section === "progreso" ||
     section === "calificaciones" ||
     section === "reportes" ||
-    section === "kardex"
+    section === "kardex" ||
+    section === "pagos"
   ) {
     return <ProgressView isOverdue={isOverdue} initial={section} />;
   }
@@ -91,19 +97,21 @@ function ProgressView({
   /** Honours the old section ids, so a bookmark still lands where it used to. */
   initial: string;
 }) {
-  const [view, setView] = useState<"notas" | "avance" | "expediente">(
+  const [view, setView] = useState<"notas" | "avance" | "expediente" | "pagos">(
     initial === "reportes"
       ? "avance"
       : initial === "kardex" || initial === "expediente"
         ? "expediente"
-        : "notas",
+        : initial === "pagos"
+          ? "pagos"
+          : "notas",
   );
 
   return (
     <div>
       <PageHeader
         title="Mi progreso"
-        description="Tus notas, cómo vas en este periodo y tu historial de cursos."
+        description="Tus notas, cómo vas en este periodo, tu historial académico y estado de cuenta."
       />
       <div className="mb-4">
         <SegmentedControl
@@ -113,15 +121,18 @@ function ProgressView({
             { value: "notas", label: "Notas" },
             { value: "avance", label: "Este periodo" },
             { value: "expediente", label: "Historial" },
+            { value: "pagos", label: "Mis Pagos" },
           ]}
         />
       </div>
-      {isOverdue && view !== "expediente" ? (
+      {isOverdue && view !== "expediente" && view !== "pagos" ? (
         <PaymentGate what={view === "notas" ? "tus notas" : "tu avance"} />
       ) : view === "notas" ? (
         <StudentGrades />
       ) : view === "avance" ? (
         <StudentReport />
+      ) : view === "pagos" ? (
+        <StudentPaymentsView />
       ) : (
         <StudentKardexView />
       )}
@@ -172,6 +183,7 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
   const todayDow = localDow();
   const [selectedDow, setSelectedDow] = useState<number>(todayDow);
   const [selectedCourseForModal, setSelectedCourseForModal] = useState<Enrollment | null>(null);
+  const [selectedAssignmentForModal, setSelectedAssignmentForModal] = useState<Assignment | null>(null);
   const [selectedMakeUp, setSelectedMakeUp] = useState<MakeUpCredit | null>(null);
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
@@ -238,6 +250,8 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
       />
 
       <DebtBanner />
+
+      <UrgentAssignmentsBanner onSelectAssignment={setSelectedAssignmentForModal} />
 
       <ActionTray
         title="Pendientes"
@@ -666,6 +680,56 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
                   )}
                 </div>
               )}
+
+              {/* Class Recordings Library */}
+              {(() => {
+                const myScheduleIds = new Set(courseSchedules.map((s) => s.id));
+                const courseRecordings = sessions.filter(
+                  (s) => myScheduleIds.has(s.schedule_id) && !!safeUrl(s.recording_url),
+                );
+
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-slate-900 text-xs">
+                        📹 Grabaciones de Clase ({courseRecordings.length})
+                      </span>
+                      <span className="text-2xs text-slate-400">Material de video para repaso</span>
+                    </div>
+                    {courseRecordings.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">
+                        Aún no hay grabaciones publicadas para este curso.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {courseRecordings.map((sess) => (
+                          <div
+                            key={sess.id}
+                            className="flex items-center justify-between rounded-lg bg-indigo-50/50 px-3 py-2 text-xs border border-indigo-100/80"
+                          >
+                            <div className="min-w-0 pr-2">
+                              <span className="font-medium text-slate-900 block truncate">
+                                {sess.topic || `Clase del ${sess.date}`}
+                              </span>
+                              <span className="text-2xs text-slate-500">
+                                Fecha: {sess.date}
+                              </span>
+                            </div>
+                            <a
+                              href={safeUrl(sess.recording_url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-md bg-indigo-600 px-2.5 py-1 text-2xs font-semibold text-white hover:bg-indigo-700 transition shrink-0"
+                            >
+                              ▶ Ver video
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </Modal>
         );
@@ -675,6 +739,15 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
         <MakeUpBookingModal
           credit={selectedMakeUp}
           onClose={() => setSelectedMakeUp(null)}
+        />
+      )}
+
+      {selectedAssignmentForModal && (
+        <StudentAssignmentModal
+          assignment={selectedAssignmentForModal}
+          courseName={courses.find((c) => c.id === selectedAssignmentForModal.course_id)?.name}
+          onClose={() => setSelectedAssignmentForModal(null)}
+          onSubmitted={() => setSelectedAssignmentForModal(null)}
         />
       )}
     </div>
@@ -695,16 +768,136 @@ function DebtBanner() {
   if (!item) return null;
 
   return (
-    <div className="mb-5 flex items-start gap-3.5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-      <IconLock className="mt-0.5 h-5 w-5 flex-none text-amber-700" />
-      <div className="min-w-0">
-        <p className="text-sm font-bold text-amber-900">
-          {item.count === 1 ? "Tienes una cuota vencida" : `Tienes ${item.count} cuotas vencidas`}
-          {item.amount != null && item.amount > 0 && (
-            <span className="tabular"> · {money(item.amount)}</span>
-          )}
-        </p>
-        {item.detail && <p className="mt-1 text-xs text-amber-800">{item.detail}</p>}
+    <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <div className="flex items-start gap-3">
+        <IconLock className="mt-0.5 h-5 w-5 flex-none text-amber-700" />
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-amber-900">
+            {item.count === 1 ? "Tienes una cuota vencida" : `Tienes ${item.count} cuotas vencidas`}
+            {item.amount != null && item.amount > 0 && (
+              <span className="tabular"> · {money(item.amount)}</span>
+            )}
+          </p>
+          {item.detail && <p className="mt-0.5 text-xs text-amber-800">{item.detail}</p>}
+        </div>
+      </div>
+      <Link
+        to="/?m=progreso"
+        className="rounded-lg bg-amber-700 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-800 transition self-start sm:self-auto shrink-0 shadow-2xs"
+      >
+        Ver Estado de Cuenta →
+      </Link>
+    </div>
+  );
+}
+
+function UrgentAssignmentsBanner({
+  onSelectAssignment,
+}: {
+  onSelectAssignment: (assignment: Assignment) => void;
+}) {
+  const { user } = useAuth();
+  const { data: assignments = [] } = useAssignments();
+  const { data: courses = [] } = useCourses();
+  const [submissions, setSubmissions] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    if (!user || assignments.length === 0) return;
+    let active = true;
+
+    async function checkSubmissions() {
+      const now = Date.now();
+      const upcoming = assignments.filter((a) => {
+        if (!a.due_date) return false;
+        const diff = new Date(a.due_date).getTime() - now;
+        return diff > -24 * 3600 * 1000 && diff < 72 * 3600 * 1000;
+      });
+
+      const subStatus: Record<number, boolean> = {};
+      await Promise.all(
+        upcoming.map(async (a) => {
+          try {
+            const res = await api.get(`/assignments/${a.id}/submissions`);
+            const list = Array.isArray(res.data) ? res.data : [];
+            subStatus[a.id] = list.some((s: any) => s.student_id === user?.id);
+          } catch {
+            subStatus[a.id] = false;
+          }
+        }),
+      );
+
+      if (active) setSubmissions(subStatus);
+    }
+
+    void checkSubmissions();
+    return () => {
+      active = false;
+    };
+  }, [assignments, user]);
+
+  const now = Date.now();
+  const urgentTasks = assignments
+    .filter((a) => {
+      if (!a.due_date) return false;
+      const due = new Date(a.due_date).getTime();
+      const diff = due - now;
+      const hasSub = submissions[a.id] === true;
+      return !hasSub && diff > -24 * 3600 * 1000 && diff <= 48 * 3600 * 1000;
+    })
+    .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+
+  if (urgentTasks.length === 0) return null;
+
+  const first = urgentTasks[0];
+  const course = courses.find((c) => c.id === first.course_id);
+  const due = new Date(first.due_date!).getTime();
+  const diffHours = Math.round((due - now) / (3600 * 1000));
+  const diffMinutes = Math.round((due - now) / (60 * 1000));
+
+  const urgencyText =
+    diffMinutes < 0
+      ? "Plazo vencido recientemente"
+      : diffMinutes <= 60
+        ? `Vence en ${diffMinutes} minutos`
+        : diffHours <= 24
+          ? `Vence hoy (en ${diffHours} h)`
+          : `Vence mañana (en ${diffHours} h)`;
+
+  return (
+    <div className="mb-5 rounded-2xl border border-rose-200 bg-gradient-to-r from-rose-50/80 via-amber-50/50 to-white p-4 shadow-2xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="text-xl">⚡</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-xs uppercase tracking-wider text-rose-800">
+                {urgencyText}
+              </span>
+              <span className="text-2xs font-semibold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
+                {urgentTasks.length === 1 ? "1 entrega pendiente" : `${urgentTasks.length} pendientes`}
+              </span>
+            </div>
+            <h4 className="font-semibold text-sm text-slate-900 mt-0.5">
+              {first.title} {course && <span className="font-normal text-slate-600">· {course.name}</span>}
+            </h4>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          <Button
+            size="sm"
+            className="text-xs bg-rose-700 hover:bg-rose-800 text-white font-semibold"
+            onClick={() => onSelectAssignment(first)}
+          >
+            Entregar Tarea →
+          </Button>
+          <Link
+            to="/?m=tareas"
+            className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-2 py-1"
+          >
+            Ver todas
+          </Link>
+        </div>
       </div>
     </div>
   );

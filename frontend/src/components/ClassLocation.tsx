@@ -1,5 +1,6 @@
 import { needsLink, usesRoom } from "../lib/format";
 import type { Modality } from "../lib/types";
+import { safeUrl } from "../lib/urls";
 
 /**
  * Dónde se da una clase, con **todas** las mitades que su modalidad tiene.
@@ -21,6 +22,7 @@ export function ClassLocation({
   /** Trunca el enlace, para celdas de tabla estrechas. */
   compact?: boolean;
 }) {
+  const safe = safeUrl(joinUrl);
   return (
     <div className="flex flex-col gap-0.5">
       {usesRoom(modality) && (
@@ -31,11 +33,11 @@ export function ClassLocation({
         </span>
       )}
       {needsLink(modality) &&
-        (joinUrl ? (
+        (safe ? (
           <a
-            href={joinUrl}
+            href={safe}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className={`text-brand-600 hover:underline ${
               compact ? "inline-block max-w-[180px] truncate font-mono text-xs" : ""
             }`}

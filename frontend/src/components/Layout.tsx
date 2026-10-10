@@ -7,6 +7,7 @@ import { defaultSection, getNavForUser, type NavItem } from "../lib/nav";
 import { syncPushSubscription } from "../lib/push";
 import { useLocationProposals } from "../lib/queries";
 import { CommandPalette, openCommandPalette } from "./CommandPalette";
+import { QuickPayModal, OPEN_QUICK_PAY_EVENT } from "../features/enrollments/QuickPayModal";
 import {
   IconBell,
   IconBook,
@@ -85,6 +86,25 @@ export function Layout() {
     if (userId) void syncPushSubscription();
   }, [userId]);
 
+  const [quickPayState, setQuickPayState] = useState<{
+    open: boolean;
+    studentId?: number;
+    enrollmentId?: number;
+  }>({ open: false });
+
+  useEffect(() => {
+    function onOpenQuickPay(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      setQuickPayState({
+        open: true,
+        studentId: detail?.studentId,
+        enrollmentId: detail?.enrollmentId,
+      });
+    }
+    document.addEventListener(OPEN_QUICK_PAY_EVENT, onOpenQuickPay);
+    return () => document.removeEventListener(OPEN_QUICK_PAY_EVENT, onOpenQuickPay);
+  }, []);
+
   if (!user) return null;
 
   function toggleCollapsed() {
@@ -107,6 +127,11 @@ export function Layout() {
       break;
     }
   }
+
+  const canFastPay =
+    user.role === "admin" ||
+    user.role === "superadmin" ||
+    (user.role === "assistant" && (user.permissions || []).includes("manage_finance"));
 
   return (
     <div className="flex min-h-full">
@@ -193,6 +218,14 @@ export function Layout() {
             <IconLogout className="h-4 w-4 flex-none" />
             {!collapsed && <span>Cerrar sesión</span>}
           </button>
+          {!collapsed && (
+            <Link
+              to="/privacidad"
+              className="mt-1 block px-2 text-2xs text-slate-500 hover:text-slate-300"
+            >
+              Privacidad y términos
+            </Link>
+          )}
         </div>
       </aside>
 
@@ -226,6 +259,16 @@ export function Layout() {
           </div>
 
           <div className="flex flex-none items-center gap-1.5">
+            {canFastPay && (
+              <button
+                onClick={() => setQuickPayState({ open: true })}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100"
+                title="Registrar cobro rápido en mostrador"
+              >
+                <IconCash className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Cobro Rápido</span>
+              </button>
+            )}
             <button
               onClick={openCommandPalette}
               className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
@@ -245,6 +288,13 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+      {quickPayState.open && (
+        <QuickPayModal
+          initialStudentId={quickPayState.studentId}
+          initialEnrollmentId={quickPayState.enrollmentId}
+          onClose={() => setQuickPayState({ open: false })}
+        />
+      )}
       <CommandPalette />
       <Toaster />
     </div>

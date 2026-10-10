@@ -6,6 +6,8 @@ import {
   IconClose,
 } from "../components/icons";
 import { PLAN_CATALOG, formatQuetzales } from "../lib/plans";
+import { LegalLinks } from "../legal/LegalLinks";
+import { LEGAL } from "../legal/legalInfo";
 
 interface PlanTier {
   id: "free" | "starter" | "pro" | "scale";
@@ -93,7 +95,7 @@ const FAQS = [
   },
   {
     q: "¿Qué ocurre cuando mi academia supera los 15 alumnos?",
-    a: "Tu cuenta continúa activa y tus datos están seguros. Cuando decidas matricular al alumno número 16, el sistema te invitará amigablemente a pasar al plan Starter (Q375/mes) para continuar admitiendo alumnos sin interrupciones.",
+    a: "Tu cuenta continúa activa y tus datos están seguros. Cuando decidas matricular al alumno número 16, el sistema te invitará amigablemente a pasar al plan Starter (Q199/mes) para continuar admitiendo alumnos sin interrupciones.",
   },
   {
     q: "¿Tengo que cargar a mis alumnos y profesores uno por uno?",
@@ -121,7 +123,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"director" | "profesores" | "alumnos">("director");
   const [studentCount, setStudentCount] = useState<number>(120);
-  const [tuitionFee, setTuitionFee] = useState<number>(45);
+  const [tuitionFee, setTuitionFee] = useState<number>(350);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [showDemoModal, setShowDemoModal] = useState<boolean>(false);
 
@@ -139,7 +141,7 @@ export default function LandingPage() {
       {/* -------------------- Topbar Navigation -------------------- */}
       <header className="sticky top-0 z-40 border-b border-stone-200/80 bg-[#FDFBF7]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          <Link to="/landing" className="flex items-center gap-2.5">
+          <Link to="/" className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 font-serif text-xl font-bold text-white shadow-sm shadow-brand-600/30">
               E
             </div>
@@ -638,21 +640,21 @@ export default function LandingPage() {
                     <label className="text-sm font-semibold text-slate-800">
                       Mensualidad promedio por alumno
                     </label>
-                    <span className="text-lg font-bold text-brand-600">${tuitionFee} USD/mes</span>
+                    <span className="text-lg font-bold text-brand-600">{formatQuetzales(tuitionFee)}/mes</span>
                   </div>
                   <input
                     type="range"
-                    min="15"
-                    max="150"
-                    step="5"
+                    min="100"
+                    max="1500"
+                    step="25"
                     value={tuitionFee}
                     onChange={(e) => setTuitionFee(Number(e.target.value))}
                     className="mt-3 w-full accent-brand-600"
                   />
                   <div className="flex justify-between text-xs text-slate-400">
-                    <span>$15</span>
-                    <span>$75</span>
-                    <span>$150+</span>
+                    <span>Q100</span>
+                    <span>Q750</span>
+                    <span>Q1,500+</span>
                   </div>
                 </div>
 
@@ -665,7 +667,7 @@ export default function LandingPage() {
               <div className="flex flex-col justify-between rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Impacto Mensual Estimado • Facturación: ${monthlyRevenue.toLocaleString()} USD
+                    Impacto Mensual Estimado • Facturación: {formatQuetzales(monthlyRevenue)}
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-4">
                     <div className="rounded-lg bg-emerald-50/70 p-3.5">
@@ -673,7 +675,7 @@ export default function LandingPage() {
                       <div className="text-xs text-emerald-900 font-medium">Horas de gestión ahorradas al mes</div>
                     </div>
                     <div className="rounded-lg bg-brand-50/70 p-3.5">
-                      <div className="text-2xl font-black text-brand-700">+${revenueRescued} USD</div>
+                      <div className="text-2xl font-black text-brand-700">+{formatQuetzales(revenueRescued)}</div>
                       <div className="text-xs text-brand-900 font-medium">Ingresos retenidos por menor deserción</div>
                     </div>
                   </div>
@@ -864,7 +866,7 @@ export default function LandingPage() {
               </div>
               <span className="font-serif text-lg font-bold text-white">Educa</span>
               <span className="ml-2 text-xs text-stone-500">
-                © {new Date().getFullYear()} Educa Technologies Inc.
+                © {new Date().getFullYear()} {LEGAL.owner}
               </span>
             </div>
             <div className="flex items-center gap-6 text-xs">
@@ -882,6 +884,7 @@ export default function LandingPage() {
               </a>
             </div>
           </div>
+          <LegalLinks className="mt-6 justify-center text-stone-500 sm:justify-end" linkClassName="hover:text-white" />
         </div>
       </footer>
 

@@ -28,6 +28,7 @@ import {
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { Modality, Schedule } from "../../lib/types";
+import { safeUrl } from "../../lib/urls";
 import { CreateScheduleModal } from "./CreateScheduleModal";
 import { EditScheduleModal } from "./EditScheduleModal";
 
@@ -473,13 +474,13 @@ export function SchedulePlanner() {
               </div>
             </div>
 
-            {selectedSchedule.join_url && (
+            {safeUrl(selectedSchedule.join_url) && (
               <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3">
                 <span className="font-semibold text-indigo-900 block mb-1">🔗 Enlace de Clase</span>
                 <a
-                  href={selectedSchedule.join_url}
+                  href={safeUrl(selectedSchedule.join_url)}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="text-brand-600 hover:underline break-all"
                 >
                   {selectedSchedule.join_url}

@@ -7,8 +7,8 @@ export default {
         // Una sola familia tipográfica en toda la plataforma. `serif` es un
         // alias histórico que apunta a la misma fuente: la jerarquía se
         // construye con tamaño y peso, no mezclando familias.
-        sans: ["'Plus Jakarta Sans'", "system-ui", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
-        serif: ["'Plus Jakarta Sans'", "system-ui", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+        sans: ["'Plus Jakarta Sans Variable'", "system-ui", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+        serif: ["'Plus Jakarta Sans Variable'", "system-ui", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
         mono: ["'Space Mono'", "ui-monospace", "monospace"],
       },
       fontSize: {

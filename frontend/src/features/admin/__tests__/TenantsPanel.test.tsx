@@ -61,7 +61,7 @@ describe("TenantsPanel", () => {
 
     fireEvent.click(screen.getByText("Academia Alfa"));
     // Con una solicitud pendiente, la ficha abre directamente en «Plan».
-    expect(screen.getByText(/Solicita: Profesional · 300 alumnos · Q995\/mes/)).toBeInTheDocument();
+    expect(screen.getByText(/Solicita: Profesional · 300 alumnos · Q499\/mes/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Activar Profesional" }));
     expect(activateMutate).toHaveBeenCalledWith({ tenantId: 1, plan: "pro" }, expect.anything());
   });

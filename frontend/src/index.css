@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  font-family: "Plus Jakarta Sans Variable", system-ui, -apple-system, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
@@ -33,7 +33,7 @@ body,
 /* Un solo fondo para la aplicación. Antes body y el contenedor del Layout
    pintaban dos fondos distintos, uno encima del otro. */
 body {
-  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  font-family: "Plus Jakarta Sans Variable", system-ui, -apple-system, sans-serif;
   @apply bg-slate-50 text-slate-900 antialiased;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -108,4 +108,69 @@ a:hover {
 /* Anillo de foco visible y uniforme para navegación por teclado. */
 :focus-visible {
   @apply outline-none ring-2 ring-brand-500/40 ring-offset-1 ring-offset-slate-50;
+}
+
+/* Modo Proyector / Alto Contraste para aulas con luz ambiental */
+.projector-mode {
+  --tw-border-opacity: 1;
+}
+
+.projector-mode .border-slate-200,
+.projector-mode .border-slate-100 {
+  border-color: #334155 !important;
+  border-width: 1.5px !important;
+}
+
+.projector-mode .bg-slate-50,
+.projector-mode .bg-slate-50\/70,
+.projector-mode .bg-slate-50\/60 {
+  background-color: #ffffff !important;
+}
+
+.projector-mode .text-slate-500,
+.projector-mode .text-slate-600 {
+  color: #0f172a !important;
+  font-weight: 500 !important;
+}
+
+.projector-mode .text-slate-400 {
+  color: #334155 !important;
+}
+
+/* Reglas de impresión para listas y reportes oficiales */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+
+  nav,
+  header,
+  aside,
+  button,
+  input,
+  select,
+  .print-hidden {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  table {
+    page-break-inside: auto;
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
 }

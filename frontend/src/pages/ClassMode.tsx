@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Button, EmptyState } from "../components/ui";
-import { IconCheck, IconChevronLeft } from "../components/icons";
+import { IconCheck, IconChevronLeft, IconPrinter, IconSun } from "../components/icons";
 import { apiErrorDetail, apiErrorMessage } from "../lib/api";
 import { useAttendanceQueue } from "../lib/attendanceQueue";
 import { formatTime, modalityLabel } from "../lib/format";
+import { triggerHaptic } from "../lib/haptics";
 import { notify } from "../lib/toast";
+import { useProjectorMode } from "../lib/useProjectorMode";
 import {
   useClassBoard,
   useCloseRegister,
@@ -64,6 +66,7 @@ export default function ClassMode() {
   const markVisitor = useMarkMakeupVisitor(id);
   const close = useCloseRegister();
   const reopen = useReopenRegister();
+  const { isProjector, toggle: toggleProjector } = useProjectorMode();
 
   const [focused, setFocused] = useState(0);
   const [confirming, setConfirming] = useState(false);
@@ -95,6 +98,7 @@ export default function ClassMode() {
   const markStudent = useCallback(
     (student: BoardStudent, status: AttendanceStatus) => {
       if (closed) return;
+      triggerHaptic(25);
       queue.mark(student.enrollment_id, status);
     },
     [closed, queue],
@@ -140,7 +144,10 @@ export default function ClassMode() {
 
   function markEveryoneLeft() {
     const ids = students.filter((s) => !s.mark).map((s) => s.enrollment_id);
-    if (ids.length > 0) queue.markMany(ids, "present");
+    if (ids.length > 0) {
+      triggerHaptic([20, 40, 20]);
+      queue.markMany(ids, "present");
+    }
   }
 
   function closeRegister(force: boolean) {
@@ -186,7 +193,8 @@ export default function ClassMode() {
   }
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="min-h-full">
+      <div className="flex min-h-full flex-col print:hidden">
       <div className="flex flex-wrap items-start justify-between gap-4 pb-4">
         <div className="min-w-0">
           <Link
@@ -201,13 +209,34 @@ export default function ClassMode() {
           </h1>
           <p className="tabular mt-1 text-sm text-slate-600">{header}</p>
         </div>
-        <div className="flex flex-none items-center gap-2.5">
+        <div className="flex flex-none items-center gap-2">
           {closed && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
               <IconCheck className="h-3.5 w-3.5" />
               Lista cerrada
             </span>
           )}
+          <Button
+            variant={isProjector ? "primary" : "secondary"}
+            onClick={toggleProjector}
+            title={
+              isProjector
+                ? "Modo proyector activo (alto contraste)"
+                : "Activar modo proyector (alto contraste para aulas o luz solar)"
+            }
+            className={isProjector ? "border-amber-400 bg-amber-500 text-slate-950 font-bold hover:bg-amber-400" : ""}
+          >
+            <IconSun className="h-4 w-4" />
+            <span className="hidden sm:inline">{isProjector ? "Proyector: ON" : "Proyector"}</span>
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => window.print()}
+            title="Imprimir hoja oficial de asistencia para respaldo o firmas"
+          >
+            <IconPrinter className="h-4 w-4" />
+            <span className="hidden sm:inline">Imprimir lista</span>
+          </Button>
           <Button
             variant="secondary"
             onClick={() => navigate("/?m=clases")}
@@ -275,7 +304,8 @@ export default function ClassMode() {
                 key={visitor.credit_id}
                 visitor={visitor}
                 disabled={closed || markVisitor.isPending}
-                onMark={(present) =>
+                onMark={(present) => {
+                  triggerHaptic(25);
                   markVisitor.mutate(
                     { creditId: visitor.credit_id, present },
                     {
@@ -284,8 +314,8 @@ export default function ClassMode() {
                       onError: (e) =>
                         notify(apiErrorMessage(e, "No se pudo marcar al alumno"), "error"),
                     },
-                  )
-                }
+                  );
+                }}
               />
             ))}
           </div>
@@ -387,6 +417,83 @@ export default function ClassMode() {
             )}
           </>
         )}
+      </div>
+      </div>
+
+      {/* Hoja oficial de asistencia para impresión física / respaldo */}
+      <div className="hidden print:block font-sans text-black p-4">
+        <div className="border-b-2 border-black pb-4 mb-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-xl font-bold uppercase tracking-tight">{session.course_name}</h1>
+              <p className="text-xs font-semibold text-slate-700 mt-0.5">Control Oficial de Asistencia y Aula</p>
+            </div>
+            <div className="text-right text-xs space-y-0.5">
+              <p><strong>Fecha:</strong> {session.date}</p>
+              <p><strong>Horario:</strong> {formatTime(session.start_time)} – {formatTime(session.end_time)}</p>
+              <p><strong>Modalidad:</strong> {modalityLabel(session.modality)} {session.room_name ? `(${session.room_name})` : ""}</p>
+              <p><strong>Docente:</strong> {session.teacher_name}</p>
+            </div>
+          </div>
+        </div>
+
+        <table className="w-full border-collapse border border-black text-xs mb-6">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="border border-black px-2 py-1.5 text-center w-8">#</th>
+              <th className="border border-black px-3 py-1.5 text-left">Estudiante</th>
+              <th className="border border-black px-2 py-1.5 text-center w-28">Código Matrícula</th>
+              <th className="border border-black px-3 py-1.5 text-center w-32">Estado</th>
+              <th className="border border-black px-3 py-1.5 text-left">Firma del Alumno / Observaciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {students.map((s, idx) => (
+              <tr key={s.enrollment_id} className="border-b border-black">
+                <td className="border border-black px-2 py-2 text-center font-bold">{idx + 1}</td>
+                <td className="border border-black px-3 py-2 font-medium">{s.full_name}</td>
+                <td className="border border-black px-2 py-2 text-center font-mono">{s.enrollment_code}</td>
+                <td className="border border-black px-3 py-2 text-center font-bold">
+                  {s.mark === "present"
+                    ? "PRESENTE"
+                    : s.mark === "late"
+                    ? "TARDE"
+                    : s.mark === "absent"
+                    ? "AUSENTE"
+                    : s.mark === "excused"
+                    ? "JUSTIFICADA"
+                    : "[   ]"}
+                </td>
+                <td className="border border-black px-3 py-2"></td>
+              </tr>
+            ))}
+            {visitors.map((v, idx) => (
+              <tr key={v.credit_id} className="border-b border-black bg-slate-50">
+                <td className="border border-black px-2 py-2 text-center font-bold">{students.length + idx + 1}</td>
+                <td className="border border-black px-3 py-2 font-medium">
+                  {v.student_name} <span className="text-2xs italic">(Recuperación)</span>
+                </td>
+                <td className="border border-black px-2 py-2 text-center font-mono">—</td>
+                <td className="border border-black px-3 py-2 text-center font-bold">
+                  {v.status === "attended" ? "PRESENTE" : "[   ]"}
+                </td>
+                <td className="border border-black px-3 py-2"></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="grid grid-cols-2 gap-8 pt-6 mt-6 border-t border-black text-xs">
+          <div>
+            <p><strong>Resumen de Asistencia:</strong></p>
+            <p className="mt-1">Total matriculados: {total} {visitors.length > 0 ? `(+ ${visitors.length} recuperación)` : ""}</p>
+            <p>Registrados: {marked} | Pendientes: {missing}</p>
+          </div>
+          <div className="text-center pt-8 border-t border-black">
+            <p className="font-semibold">{session.teacher_name}</p>
+            <p className="text-2xs text-slate-600">Firma del Docente Titular</p>
+          </div>
+        </div>
       </div>
     </div>
   );

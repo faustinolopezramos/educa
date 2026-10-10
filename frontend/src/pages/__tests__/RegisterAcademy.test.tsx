@@ -99,6 +99,7 @@ describe("RegisterAcademy", () => {
       target: { value: "USD" },
     });
 
+    fireEvent.click(screen.getByRole("checkbox", { name: /acepto/i }));
     const submitBtn = screen.getByRole("button", {
       name: /Crear Academia y Solicitar Plan/i,
     });
@@ -114,6 +115,7 @@ describe("RegisterAcademy", () => {
         phone: undefined,
         plan_tier: "pro",
         currency: "USD",
+        accept_terms: true,
       });
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
@@ -147,6 +149,7 @@ describe("RegisterAcademy", () => {
       target: { value: "secret1234" },
     });
 
+    fireEvent.click(screen.getByRole("checkbox", { name: /acepto/i }));
     const submitBtn = screen.getByRole("button", {
       name: /Crear Academia y Solicitar Plan/i,
     });
@@ -195,6 +198,7 @@ describe("RegisterAcademy", () => {
       target: { value: "clave12345" },
     });
 
+    fireEvent.click(screen.getByRole("checkbox", { name: /acepto/i }));
     const submitBtn = screen.getByRole("button", {
       name: /Crear Academia Gratis \(Hasta 15 Alumnos\)/i,
     });
@@ -210,8 +214,62 @@ describe("RegisterAcademy", () => {
         phone: undefined,
         plan_tier: "free",
         currency: "GTQ",
+        accept_terms: true,
       });
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
+  });
+
+  it("does not create the academy until the terms are accepted", async () => {
+    render(<RegisterAcademy />);
+    fireEvent.change(screen.getByPlaceholderText("Ej. Instituto Moderno de Idiomas"), {
+      target: { value: "Academia Exito" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Ej. Lic. Carlos Valdés"), {
+      target: { value: "Juan Perez" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("direccion@tuacademia.com"), {
+      target: { value: "director@exito.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Mínimo 8 caracteres"), {
+      target: { value: "secret1234" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Crear Academia y Solicitar Plan/i }));
+
+    expect(await screen.findByText(/debes aceptar los Términos/)).toBeInTheDocument();
+    expect(mockRegisterAcademy).not.toHaveBeenCalled();
+    // Los documentos se abren aparte, sin perder lo escrito.
+    expect(screen.getByRole("link", { name: "Términos y Condiciones" })).toHaveAttribute("target", "_blank");
+  });
+
+  it("displays recognition banner when typing a Google or Outlook email", async () => {
+    render(<RegisterAcademy />);
+    const emailInput = screen.getByPlaceholderText("direccion@tuacademia.com");
+
+    fireEvent.change(emailInput, { target: { value: "director@gmail.com" } });
+    await waitFor(() => {
+      expect(screen.getByText("Cuenta de Google detectada")).toBeInTheDocument();
+    });
+
+    fireEvent.change(emailInput, { target: { value: "rector@outlook.com" } });
+    await waitFor(() => {
+      expect(screen.getByText("Cuenta de Microsoft / Outlook detectada")).toBeInTheDocument();
+    });
+  });
+
+  it("generates a secure password and toggles visibility", async () => {
+    render(<RegisterAcademy />);
+    const passwordInput = screen.getByPlaceholderText("Mínimo 8 caracteres");
+    expect(passwordInput).toHaveAttribute("type", "password");
+
+    const suggestBtn = screen.getByRole("button", { name: /Sugerir contraseña segura/i });
+    fireEvent.click(suggestBtn);
+
+    expect((passwordInput as HTMLInputElement).value.length).toBeGreaterThanOrEqual(8);
+    expect(passwordInput).toHaveAttribute("type", "text");
+
+    const toggleBtn = screen.getByRole("button", { name: /Ocultar contraseña/i });
+    fireEvent.click(toggleBtn);
+    expect(passwordInput).toHaveAttribute("type", "password");
   });
 });

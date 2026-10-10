@@ -22,6 +22,7 @@ import {
 } from "../lib/queries";
 import { notify } from "../lib/toast";
 import type { ClassSession, Schedule } from "../lib/types";
+import { safeUrl } from "../lib/urls";
 
 type AvStatus = "idle" | "ok" | "error";
 
@@ -113,7 +114,15 @@ export default function Lobby() {
       user.role === "superadmin" ||
       (!!schedule && schedule.teacher_id === user.id));
   const isSavedAvOk = typeof window !== "undefined" && sessionStorage.getItem("educa_av_ok") === "true";
-  const avReady = av === "ok" || isSavedAvOk;
+  const [bypassedAv, setBypassedAv] = useState(() => {
+    return typeof window !== "undefined" && sessionStorage.getItem("educa_av_skipped") === "true";
+  });
+  const avReady = av === "ok" || isSavedAvOk || bypassedAv;
+
+  const handleBypass = () => {
+    setBypassedAv(true);
+    if (typeof window !== "undefined") sessionStorage.setItem("educa_av_skipped", "true");
+  };
 
   // Una clase presencial no tiene lobby, porque no hay adónde entrar. Poner una
   // prueba de cámara y una cuenta regresiva para "entrar a la clase en vivo"
@@ -135,7 +144,7 @@ export default function Lobby() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <MediaTest onStatus={setAv} />
+        <MediaTest onStatus={setAv} onBypass={handleBypass} isBypassed={bypassedAv} />
 
         {isHost ? (
           <HostPanel
@@ -146,7 +155,15 @@ export default function Lobby() {
             lobbyInfo={lobbyInfo}
           />
         ) : (
-          <StudentPanel session={session} schedule={schedule} remaining={remaining} avReady={avReady} lobbyInfo={lobbyInfo} />
+          <StudentPanel
+            session={session}
+            schedule={schedule}
+            remaining={remaining}
+            avReady={avReady}
+            isBypassed={bypassedAv}
+            onBypass={handleBypass}
+            lobbyInfo={lobbyInfo}
+          />
         )}
       </div>
     </div>
@@ -273,7 +290,8 @@ function HostPanel({
   }
 
   function openRoom() {
-    if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer");
+    const safe = safeUrl(joinUrl);
+    if (safe) window.open(safe, "_blank", "noopener,noreferrer");
   }
 
   function start() {
@@ -421,12 +439,16 @@ function StudentPanel({
   schedule,
   remaining,
   avReady,
+  isBypassed = false,
+  onBypass,
   lobbyInfo,
 }: {
   session: ClassSession;
   schedule: Schedule | undefined;
   remaining: number;
   avReady: boolean;
+  isBypassed?: boolean;
+  onBypass?: () => void;
   lobbyInfo?: LobbyJoinInfo;
 }) {
   const startIso = schedule
@@ -505,8 +527,11 @@ function StudentPanel({
 
       {/* Checklist "listo para entrar" */}
       <ul className="mb-5 space-y-2.5">
-        <CheckItem done={avReady} label="Cámara detectada" />
-        <CheckItem done={avReady} label="Micrófono con señal" />
+        <CheckItem
+          done={avReady}
+          label={isBypassed ? "Dispositivos omitidos (modo oyente activo)" : "Cámara detectada"}
+        />
+        {!isBypassed && <CheckItem done={avReady} label="Micrófono con señal" />}
         <CheckItem
           done={canJoin}
           label={
@@ -520,14 +545,14 @@ function StudentPanel({
         />
       </ul>
 
-      {session.recording_url && (
+      {safeUrl(session.recording_url) && (
         <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
           <p className="font-bold text-indigo-900 text-sm">📹 Grabación de la Clase Disponible</p>
           <p className="mt-1 text-xs text-indigo-700">Esta clase cuenta con video grabado para repaso.</p>
           <a
-            href={session.recording_url}
+            href={safeUrl(session.recording_url)}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="mt-2 inline-block rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 transition"
           >
             ▶ Ver Grabación de la Clase
@@ -536,29 +561,45 @@ function StudentPanel({
       )}
 
       {joinUrl ? (
-        <a
-          href={canJoin && avReady ? joinUrl : undefined}
-          target="_blank"
-          rel="noreferrer"
-          className={`block w-full rounded-xl px-4 py-3.5 text-center text-sm font-bold shadow-md transition ${
-            canJoin && avReady
-              ? isGracePeriod
-                ? "bg-amber-600 text-white hover:bg-amber-700"
-                : "bg-emerald-600 text-white hover:bg-emerald-700"
-              : "cursor-not-allowed bg-slate-200 text-slate-400 shadow-none"
-          }`}
-          onClick={(e) => {
-            if (!(canJoin && avReady)) e.preventDefault();
-          }}
-        >
-          {!avReady
-            ? "Prueba tu cámara y micrófono primero"
-            : isGracePeriod
-              ? "Entrar a Sala de Consulta (Período Gracia) →"
-              : canJoin
-                ? "Entrar a la Clase Virtual →"
-                : "Disponible 15 min antes del inicio"}
-        </a>
+        <>
+          <a
+            href={canJoin && avReady ? safeUrl(joinUrl) : undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`block w-full rounded-xl px-4 py-3.5 text-center text-sm font-bold shadow-md transition ${
+              canJoin && avReady
+                ? isGracePeriod
+                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "cursor-not-allowed bg-slate-200 text-slate-400 shadow-none"
+            }`}
+            onClick={(e) => {
+              if (!(canJoin && avReady)) e.preventDefault();
+            }}
+          >
+            {!avReady
+              ? "Prueba tu cámara y micrófono primero"
+              : isGracePeriod
+                ? "Entrar a Sala de Consulta (Período Gracia) →"
+                : canJoin
+                  ? isBypassed
+                    ? "Entrar a la Clase Virtual (Modo Oyente) →"
+                    : "Entrar a la Clase Virtual →"
+                  : "Disponible 15 min antes del inicio"}
+          </a>
+
+          {!avReady && canJoin && onBypass && (
+            <div className="mt-2.5 text-center">
+              <button
+                type="button"
+                onClick={onBypass}
+                className="text-xs font-semibold text-brand-700 hover:text-brand-900 underline transition"
+              >
+                ¿No tienes cámara o micrófono? Entrar como oyente →
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <p className="rounded-xl bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">
           El profesor aún no ha publicado el enlace de la clase.
@@ -619,7 +660,15 @@ function Countdown({ ms }: { ms: number }) {
 }
 
 // Camera + microphone check using the Web MediaDevices API.
-function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
+function MediaTest({
+  onStatus,
+  onBypass,
+  isBypassed = false,
+}: {
+  onStatus?: (s: AvStatus) => void;
+  onBypass?: () => void;
+  isBypassed?: boolean;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -712,11 +761,15 @@ function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
         <h3 className="text-[15px] font-semibold text-slate-800">
           Prueba de cámara y micrófono
         </h3>
-        {status === "ok" && (
+        {isBypassed ? (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+            🎧 Modo oyente
+          </span>
+        ) : status === "ok" ? (
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
             ✓ Verificado
           </span>
-        )}
+        ) : null}
       </div>
 
       <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-900 flex items-center justify-center">
@@ -769,6 +822,19 @@ function MediaTest({ onStatus }: { onStatus?: (s: AvStatus) => void }) {
       <Button className="mt-4 w-full" variant={status === "ok" ? "secondary" : "primary"} onClick={startTest}>
         {status === "ok" ? "Volver a probar cámara y micrófono" : "Probar cámara y micrófono"}
       </Button>
+
+      {onBypass && !isBypassed && (
+        <div className="mt-3 flex items-center justify-between text-2xs border-t border-slate-100 pt-2.5 text-slate-500">
+          <span>¿Equipo sin cámara o problemas de permiso?</span>
+          <button
+            type="button"
+            onClick={onBypass}
+            className="font-semibold text-brand-700 hover:text-brand-900 underline"
+          >
+            Continuar como oyente →
+          </button>
+        </div>
+      )}
     </Card>
   );
 }

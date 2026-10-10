@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
-import { NAV } from "../lib/nav";
+import { canManageEnrollments, canSeeSection, NAV } from "../lib/nav";
+import { useCourses, useUsers } from "../lib/queries";
+import { openQuickPay } from "../features/enrollments/QuickPayModal";
 
 interface Command {
   id: string;
   label: string;
+  sublabel?: string;
   /** Where it lives, so a bare word like "Aulas" is not ambiguous. */
   group: string;
   keywords?: string;
@@ -30,6 +33,12 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const isStaff =
+    user?.role === "admin" || user?.role === "superadmin" || user?.role === "assistant";
+
+  const { data: students = [] } = useUsers(isStaff ? "student" : undefined);
+  const { data: courses = [] } = useCourses();
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -58,11 +67,14 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  const commands = useMemo<Command[]>(() => {
+  const baseCommands = useMemo<Command[]>(() => {
     if (!user) return [];
     const list: Command[] = [];
+
+    // Filter items based on actual permissions (handles assistant role properly)
     for (const group of NAV[user.role] ?? []) {
       for (const item of group.items) {
+        if (!canSeeSection(user, item.id)) continue;
         list.push({
           id: item.id,
           label: item.label,
@@ -71,35 +83,99 @@ export function CommandPalette() {
         });
       }
     }
-    if (user.role === "admin" || user.role === "superadmin") {
+
+    const perms = new Set(user.permissions || []);
+    const canFinance =
+      user.role === "admin" || user.role === "superadmin" || perms.has("manage_finance");
+
+    if (canFinance) {
+      list.push({
+        id: "action-quick-pay",
+        label: "💵 Cobro Rápido en Caja",
+        group: "Acciones Rápidas",
+        keywords: "cobro pagar caja abono dinero recibo cuota mensualidad boleta",
+        run: () => openQuickPay(),
+      });
+    }
+
+    if (canManageEnrollments(user)) {
       list.push({
         id: "action-enroll",
-        label: "Inscribir alumno al curso",
-        group: "Acciones",
+        label: "📝 Inscribir alumno al curso",
+        group: "Acciones Rápidas",
         keywords: "inscribir inscripcion nueva matricula alumno",
         run: () => navigate("/?m=enrollments&new=1"),
       });
+    }
+
+    if (
+      user.role === "admin" ||
+      user.role === "superadmin" ||
+      perms.has("manage_catalog") ||
+      perms.has("manage_schedules")
+    ) {
       list.push({
         id: "action-course",
-        label: "Crear curso",
-        group: "Acciones",
+        label: "📚 Crear nuevo curso",
+        group: "Acciones Rápidas",
         keywords: "nuevo curso agregar",
         run: () => navigate("/?m=courses&new=1"),
       });
     }
+
     return list;
   }, [user, navigate]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return commands;
-    return commands.filter(
+    if (!q) return baseCommands;
+
+    const matchedNav = baseCommands.filter(
       (c) =>
         c.label.toLowerCase().includes(q) ||
         c.group.toLowerCase().includes(q) ||
         (c.keywords ?? "").includes(q),
     );
-  }, [commands, query]);
+
+    // Entity search for staff (Students and Courses 360)
+    const entityMatches: Command[] = [];
+
+    if (isStaff && q.length >= 2) {
+      // Students
+      const studentHits = students
+        .filter(
+          (s) =>
+            s.full_name.toLowerCase().includes(q) ||
+            s.email.toLowerCase().includes(q) ||
+            (s.phone ?? "").toLowerCase().includes(q) ||
+            (s.cui_passport ?? "").toLowerCase().includes(q),
+        )
+        .slice(0, 5)
+        .map((s) => ({
+          id: `student-${s.id}`,
+          label: `👤 ${s.full_name}`,
+          sublabel: `${s.email}${s.phone ? ` · Tel: ${s.phone}` : ""}`,
+          group: "Expediente Alumnos",
+          run: () => navigate(`/?m=students&search=${encodeURIComponent(s.full_name)}`),
+        }));
+
+      // Courses
+      const courseHits = courses
+        .filter((c) => c.name.toLowerCase().includes(q))
+        .slice(0, 4)
+        .map((c) => ({
+          id: `course-${c.id}`,
+          label: `📚 ${c.name}`,
+          sublabel: `Ver detalles del curso`,
+          group: "Cursos",
+          run: () => navigate(`/?m=courses`),
+        }));
+
+      entityMatches.push(...studentHits, ...courseHits);
+    }
+
+    return [...entityMatches, ...matchedNav];
+  }, [baseCommands, query, isStaff, students, courses, navigate]);
 
   useEffect(() => setCursor(0), [query]);
 
@@ -120,7 +196,7 @@ export function CommandPalette() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Buscador de secciones"
+        aria-label="Buscador global y secciones"
         className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -129,7 +205,11 @@ export function CommandPalette() {
           <input
             ref={inputRef}
             value={query}
-            placeholder="Ir a… (matrículas, horarios, alumnos)"
+            placeholder={
+              isStaff
+                ? "Buscar sección, alumno o curso… (ej. Matrículas, Carlos, Cobro)"
+                : "Ir a… (ej. tareas, clases, horarios)"
+            }
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setOpen(false);
@@ -166,8 +246,13 @@ export function CommandPalette() {
                   i === cursor ? "bg-brand-50 text-brand-900" : "text-slate-700"
                 }`}
               >
-                <span className="text-sm font-medium">{c.label}</span>
-                <span className="text-[11px] text-slate-400">{c.group}</span>
+                <div className="min-w-0 pr-2">
+                  <div className="text-sm font-medium truncate">{c.label}</div>
+                  {c.sublabel && (
+                    <div className="text-2xs text-slate-400 truncate">{c.sublabel}</div>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-400 flex-none">{c.group}</span>
               </button>
             ))
           )}

@@ -25,7 +25,9 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconLock,
+  IconPrinter,
   IconSearch,
+  IconSun,
   IconUsers,
 } from "../components/icons";
 import { GradeTable } from "../features/grades/GradeTable";
@@ -38,6 +40,8 @@ import { apiErrorDetail, apiErrorMessage } from "../lib/api";
 import { SCORE_MAX, SCORE_MIN, DAILY_EVALUATION } from "../lib/constants";
 import { absenceStreak, attendancePct, marksOf } from "../lib/attendance";
 import { holdsSeat } from "../lib/enrollment";
+import { triggerHaptic } from "../lib/haptics";
+import { useProjectorMode } from "../lib/useProjectorMode";
 import {
   MODALITY_LABELS,
   dayName,
@@ -279,6 +283,7 @@ function ClassesView() {
   const [selected, setSelected] = useState<Schedule | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<number | undefined>();
   const detailRef = useRef<HTMLDivElement | null>(null);
+  const { isProjector, toggle: toggleProjector } = useProjectorMode();
 
   const courseName = (id: number) => courses.find((c) => c.id === id)?.name ?? `#${id}`;
 
@@ -305,6 +310,22 @@ function ClassesView() {
       <PageHeader
         title="Mis Clases"
         description="Pasa lista, califica y organiza tus clases."
+        actions={
+          <Button
+            variant={isProjector ? "primary" : "secondary"}
+            size="sm"
+            onClick={toggleProjector}
+            title={
+              isProjector
+                ? "Modo proyector activo (alto contraste)"
+                : "Activar modo proyector (alto contraste para aulas o luz solar)"
+            }
+            className={isProjector ? "border-amber-400 bg-amber-500 text-slate-950 font-bold hover:bg-amber-400" : ""}
+          >
+            <IconSun className="h-4 w-4" />
+            <span>{isProjector ? "Proyector: ON" : "Modo Proyector"}</span>
+          </Button>
+        }
       />
 
       <ActionTray emptyMessage="No tienes clases pendientes de registrar." />
@@ -925,6 +946,7 @@ function SessionSheet({
     if (pending.length === 0) return;
 
     setMarkingAll(true);
+    triggerHaptic([20, 40, 20]);
     try {
       await bulkMark.mutateAsync({
         sessionId,
@@ -948,6 +970,7 @@ function SessionSheet({
     if (pending.length === 0) return;
 
     setMarkingAll(true);
+    triggerHaptic([20, 40, 20]);
     try {
       await bulkMark.mutateAsync({
         sessionId,
@@ -990,6 +1013,7 @@ function SessionSheet({
       event.preventDefault();
       const target = filteredEnrollments[focused];
       if (!target) return;
+      triggerHaptic(25);
       mark.mutate(
         { enrollment_id: target.id, session_id: sessionId, status: shortcut },
         { onError: onMutationError("No se pudo registrar la asistencia") },
@@ -1365,6 +1389,15 @@ function RegisterBar({
             >
               {close.isPending ? "Cerrando…" : "Cerrar lista"}
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => window.print()}
+              title="Imprimir lista física de asistencia"
+            >
+              <IconPrinter className="h-4 w-4" />
+              <span className="hidden sm:inline">Imprimir</span>
+            </Button>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -1604,7 +1637,8 @@ function AttendanceMarks({
             title={`${MARK_LABELS[st]} (${MARK_KEY[st]})`}
             aria-label={MARK_LABELS[st]}
             disabled={disabled || attendance.isPending}
-            onClick={() =>
+            onClick={() => {
+              triggerHaptic(25);
               attendance.mutate(
                 {
                   enrollment_id: enrollmentId,
@@ -1615,8 +1649,8 @@ function AttendanceMarks({
                 // cerrada) revertía la marca optimista sin decir por qué: la
                 // fila simplemente volvía a quedarse en blanco.
                 { onError: onMutationError("No se pudo registrar la asistencia") },
-              )
-            }
+              );
+            }}
             className={`tabular w-8 rounded-md py-1 text-xs font-bold transition-colors disabled:opacity-50 ${
               selected ? MARK_SELECTED[st] : "text-slate-500 hover:bg-white hover:text-slate-900"
             }`}

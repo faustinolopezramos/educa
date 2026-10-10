@@ -10,9 +10,9 @@ vi.mock("../../../lib/toast");
 
 const PLANS = [
   { code: "free", name: "Gratis", max_students: 15, monthly_price: "0" },
-  { code: "starter", name: "Starter", max_students: 100, monthly_price: "375" },
-  { code: "pro", name: "Profesional", max_students: 300, monthly_price: "995" },
-  { code: "scale", name: "Escala", max_students: 1000, monthly_price: "2150" },
+  { code: "starter", name: "Starter", max_students: 100, monthly_price: "199" },
+  { code: "pro", name: "Profesional", max_students: 300, monthly_price: "499" },
+  { code: "scale", name: "Escala", max_students: 1000, monthly_price: "999" },
 ];
 
 const plan = (over: Partial<AcademyPlan> = {}): AcademyPlan => ({

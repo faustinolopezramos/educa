@@ -23,6 +23,8 @@ import {
   IconCheck,
   IconChevronDown,
   IconClose,
+  IconEye,
+  IconEyeOff,
   IconInfo,
   IconSearch,
 } from "./icons";
@@ -81,6 +83,45 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     );
   },
 );
+
+export const PasswordInput = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement> & {
+    ariaLabelShow?: string;
+    ariaLabelHide?: string;
+  }
+>(function PasswordInput(
+  {
+    className = "",
+    id,
+    ariaLabelShow = "Mostrar contraseña",
+    ariaLabelHide = "Ocultar contraseña",
+    ...props
+  },
+  ref,
+) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        ref={ref}
+        id={id}
+        type={show ? "text" : "password"}
+        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
+        {...props}
+      />
+      <button
+        type="button"
+        onClick={() => setShow((prev) => !prev)}
+        aria-label={show ? ariaLabelHide : ariaLabelShow}
+        aria-pressed={show}
+        className="absolute right-1 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition"
+      >
+        {show ? <IconEyeOff className="h-4 w-4" /> : <IconEye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+});
 
 // Native select styled to match Input, with a single chevron affordance.
 export const Select = forwardRef<

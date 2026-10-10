@@ -1,16 +1,21 @@
 import { lazy, Suspense } from "react";
-import { createBrowserRouter, Navigate, useRouteError } from "react-router-dom";
+import { createBrowserRouter, Navigate, useLocation, useRouteError } from "react-router-dom";
 
 import { useAuth } from "./auth/AuthContext";
-import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { Layout } from "./components/Layout";
 
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
+const CookiePolicy = lazy(() => import("./pages/legal/CookiePolicy"));
+const MFAVerify = lazy(() => import("./pages/MFAVerify"));
+const PrivacyPolicy = lazy(() => import("./pages/legal/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("./pages/legal/TermsOfService"));
 const ClassMode = lazy(() => import("./pages/ClassMode"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const Lobby = lazy(() => import("./pages/Lobby"));
 const Login = lazy(() => import("./pages/Login"));
 const RegisterAcademy = lazy(() => import("./pages/RegisterAcademy"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
 const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard"));
 
@@ -39,6 +44,34 @@ function RoleHome() {
     return <AdminDashboard />;
   if (user.role === "teacher") return <TeacherDashboard />;
   return <StudentDashboard />;
+}
+
+/**
+ * La raíz y todo lo que cuelga de ella.
+ *
+ * Quien no ha entrado y llega a la raíz ve la portada de EDUCA: la información
+ * general vive ahí y el login es su propia página. Cualquier otra dirección
+ * privada (una clase, el lobby) lleva al login y, tras entrar, de vuelta a ella.
+ */
+export function PrivateArea() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center text-slate-500">Cargando…</div>
+    );
+  }
+  if (!user) {
+    if (location.pathname === "/") {
+      return (
+        <SuspenseWrapper>
+          <LandingPage />
+        </SuspenseWrapper>
+      );
+    }
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  return <Layout />;
 }
 
 function RootBoundary() {
@@ -83,6 +116,10 @@ export const router = createBrowserRouter([
     element: <Navigate to="/crear-academia" replace />,
   },
   {
+    path: "/registro-academia",
+    element: <Navigate to="/crear-academia" replace />,
+  },
+  {
     path: "/login",
     element: (
       <SuspenseWrapper>
@@ -92,12 +129,56 @@ export const router = createBrowserRouter([
     errorElement: <RootBoundary />,
   },
   {
-    path: "/",
+    path: "/recuperar-clave",
     element: (
-      <ProtectedRoute>
-        <Layout />
-      </ProtectedRoute>
+      <SuspenseWrapper>
+        <ResetPassword />
+      </SuspenseWrapper>
     ),
+    errorElement: <RootBoundary />,
+  },
+  {
+    path: "/auth/reset-password",
+    element: (
+      <SuspenseWrapper>
+        <ResetPassword />
+      </SuspenseWrapper>
+    ),
+    errorElement: <RootBoundary />,
+  },
+  // Documentos legales: públicos, con o sin sesión.
+  ...(
+    [
+      ["/terminos", <TermsOfService />],
+      ["/privacidad", <PrivacyPolicy />],
+      ["/cookies", <CookiePolicy />],
+    ] as const
+  ).map(([path, page]) => ({
+    path,
+    element: <SuspenseWrapper>{page}</SuspenseWrapper>,
+    errorElement: <RootBoundary />,
+  })),
+  {
+    path: "/auth/callback",
+    element: (
+      <SuspenseWrapper>
+        <AuthCallback />
+      </SuspenseWrapper>
+    ),
+    errorElement: <RootBoundary />,
+  },
+  {
+    path: "/mfa-verify",
+    element: (
+      <SuspenseWrapper>
+        <MFAVerify />
+      </SuspenseWrapper>
+    ),
+    errorElement: <RootBoundary />,
+  },
+  {
+    path: "/",
+    element: <PrivateArea />,
     errorElement: <RootBoundary />,
     children: [
       { index: true, element: <SuspenseWrapper><RoleHome /></SuspenseWrapper> },

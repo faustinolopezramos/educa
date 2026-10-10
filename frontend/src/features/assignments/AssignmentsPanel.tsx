@@ -11,6 +11,7 @@ import { api, apiErrorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { canManageGrades } from "../../lib/nav";
 import { notify } from "../../lib/toast";
+import { safeUrl } from "../../lib/urls";
 import type {
   Assignment,
   AssignmentSubmission,
@@ -316,9 +317,9 @@ export function AssignmentsPanel() {
                   )}
 
                   {/* Resource Attachment */}
-                  {a.resource_url && (
+                  {safeUrl(a.resource_url) && (
                     <a
-                      href={a.resource_url}
+                      href={safeUrl(a.resource_url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline"

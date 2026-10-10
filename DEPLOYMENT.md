@@ -37,7 +37,14 @@
   así que un registro sin cuenta local no sirve de nada.
 - Authentication → URL Configuration:
   - Site URL: `https://tu-app.vercel.app`
-  - Redirect URLs: `https://tu-app.vercel.app/**`
+  - Redirect URLs: `https://tu-app.vercel.app/**` (incluye `/auth/callback`,
+    adonde vuelven Google, Microsoft y Apple — ver sección 8)
+
+### Row Level Security (RLS) en Supabase
+- Las políticas de seguridad a nivel de fila aíslan los datos de cada academia (`tenant_id`) directamente en PostgreSQL.
+- Se activan en todas las 35 tablas del esquema público mediante la migración de Alembic `f7a8b9c0d1e2_enable_row_level_security`.
+- Protege los datos contra accesos no autorizados o fugas cruzadas entre academias a través de la anon key de Supabase.
+- Verificación en Supabase: **Database → Tables** → cada tabla debe mostrar el distintivo verde **RLS Enabled**.
 
 ---
 
@@ -155,9 +162,9 @@ registro usan la copia de `frontend/src/lib/plans.ts`, que debe coincidir):
 | Plan | Alumnos | Precio |
 |---|---|---|
 | Gratis | 15 | Q0 |
-| Starter | 100 | Q375 |
-| Profesional | 300 | Q995 |
-| Escala | 1,000 | Q2,150 |
+| Starter | 100 | Q199 |
+| Profesional | 300 | Q499 |
+| Escala | 1,000 | Q999 |
 
 ---
 
@@ -362,6 +369,55 @@ una forma más de demostrar quién eres.
 La sesión de Supabase no se persiste en el navegador: se usa para el canje y se
 descarta. Si `SUPABASE_URL`/`SUPABASE_ANON_KEY` no están configurados, el paso 3
 no existe y `/auth/supabase-login` responde 503.
+
+### Entrar con Google, Microsoft o Apple
+
+Mismo canje del paso 4 en adelante; lo que cambia es cómo se consigue el token
+de Supabase:
+
+```
+1. Login → botón "Continuar con Google/Microsoft/Apple"
+2. Supabase → el proveedor → vuelve a  https://tu-app/auth/callback?code=…
+3. /auth/callback canjea el code (PKCE) por el token de Supabase
+4. POST /auth/supabase-login, como arriba
+   └─ 409: el correo está en varias academias → se elige y se repite el canje
+   └─ 403 no_account: ese correo no tiene cuenta → se le dice tal cual
+   └─ 403 email_unverified: el proveedor no confirmó el correo
+```
+
+Sólo entra quien su academia ya dio de alta **con el mismo correo** que usa en
+Google, Microsoft o Apple. No se crean cuentas.
+
+**Configuración (una vez, en el panel de Supabase → Authentication):**
+
+1. **URL Configuration → Redirect URLs:** añade
+   `https://tu-app.vercel.app/auth/callback` y, para desarrollo,
+   `http://localhost:5173/auth/callback`.
+2. **Providers → Google:** crea un *OAuth client ID* (tipo *Web application*) en
+   Google Cloud Console → APIs & Services → Credentials. Como *Authorized
+   redirect URI* pon `https://<tu-proyecto>.supabase.co/auth/v1/callback`. Copia
+   el Client ID y el Client Secret en Supabase.
+3. **Providers → Azure (Microsoft):** en Microsoft Entra ID → App registrations →
+   *New registration*, con *Supported account types* = **cuentas de cualquier
+   organización y cuentas personales de Microsoft** (así entran Outlook/Hotmail y
+   Office 365). Redirect URI (Web): la misma de Supabase de arriba. Crea un
+   *client secret*. En *Token configuration* añade los claims opcionales
+   `email` y `xms_edov` (sin `xms_edov` Supabase no da el correo por confirmado
+   y EDUCA responde `email_unverified`). En Supabase usa como *Azure Tenant URL*
+   `https://login.microsoftonline.com/common`.
+4. **Providers → Apple:** requiere cuenta de Apple Developer. Crea un *Services
+   ID* con *Sign in with Apple*, dominio de Supabase y la misma Return URL, y una
+   *Key* para firmar. Sigue la guía de Supabase ("Login with Apple").
+
+**Activar los botones** — sólo aparecen los proveedores listados en el frontend
+(Vercel → Environment Variables), para no mostrar uno que Supabase aún no tiene:
+
+```
+VITE_AUTH_PROVIDERS=google,azure,apple
+```
+
+El backend necesita `SUPABASE_URL` y `SUPABASE_ANON_KEY` en Fly (paso 2), igual
+que para el login con contraseña de Supabase.
 
 ---
 

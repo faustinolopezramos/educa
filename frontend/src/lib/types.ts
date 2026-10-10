@@ -107,6 +107,26 @@ export interface LoginResponse {
   user: User;
 }
 
+/** Respuesta cuando se requiere MFA: token temporal y flag. */
+export interface MFAChallengeResponse {
+  mfa_required: boolean;
+  temp_token: string;
+  message: string;
+}
+
+/** Respuesta al iniciar configuración de MFA. */
+export interface MFASetupResponse {
+  secret: string;
+  qr_code_svg: string;
+  backup_codes: string[];
+  otpauth_url: string;
+}
+
+/** Solicitud para verificar MFA durante login. */
+export interface MFAVerifyRequest {
+  token: string;
+}
+
 export interface AcademyRegisterRequest {
   academy_name: string;
   slug: string;
@@ -117,6 +137,8 @@ export interface AcademyRegisterRequest {
   plan_tier?: "free" | "starter" | "pro" | "scale";
   /** Moneda en que la academia cobra a sus alumnos (ISO 4217). */
   currency?: string;
+  /** Quien crea la academia acepta los Términos y la Política de Privacidad. */
+  accept_terms?: boolean;
 }
 
 export interface NotificationSettings {

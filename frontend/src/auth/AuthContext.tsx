@@ -11,13 +11,17 @@ import { api, getRefreshToken, getToken, LOGOUT_EVENT, setToken } from "../lib/a
 import { forgetDeviceOnLogout } from "../lib/push";
 import { isSupabaseConfigured, signInWithSupabase, signOutFromSupabase } from "../lib/supabase";
 import { queryClient } from "../lib/queryClient";
-import type { AcademyRegisterRequest, LoginResponse, Permission, Role, User } from "../lib/types";
+import type { AcademyRegisterRequest, LoginResponse, MFAChallengeResponse, Permission, Role, User } from "../lib/types";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string, tenantSlug?: string) => Promise<User>;
+  login: (email: string, password: string, tenantSlug?: string) => Promise<User | MFAChallengeResponse>;
+  /** Canjea el token de Supabase (Google, Microsoft, Apple…) por una sesión de EDUCA. */
+  loginWithProviderToken?: (supabaseToken: string, tenantSlug?: string) => Promise<User | MFAChallengeResponse>;
   registerAcademy?: (data: AcademyRegisterRequest) => Promise<User>;
+  /** Verifica el código MFA y completa el login. */
+  verifyMFA?: (token: string, tempToken: string) => Promise<User>;
   logout: () => void;
   hasRole: (...roles: Role[]) => boolean;
   hasPermission: (permission: Permission) => boolean;
@@ -61,13 +65,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(LOGOUT_EVENT, handler);
   }, []);
 
-  function applySession(data: LoginResponse): User {
+  function isLoginResponse(data: LoginResponse | MFAChallengeResponse): data is LoginResponse {
+    return !("mfa_required" in data) || !data.mfa_required;
+  }
+
+  function applySession(data: LoginResponse | MFAChallengeResponse): User {
+    if (!isLoginResponse(data)) {
+      throw new Error("MFA required but applySession called");
+    }
     setToken(data.access_token, data.refresh_token);
     setUser(data.user);
     return data.user;
   }
 
-  async function login(email: string, password: string, tenantSlug?: string): Promise<User> {
+  async function login(email: string, password: string, tenantSlug?: string): Promise<User | MFAChallengeResponse> {
     const form = new URLSearchParams();
     form.set("username", email);
     form.set("password", password);
@@ -82,7 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const res = await api.post<LoginResponse>("/auth/login", form, { headers });
+      const res = await api.post<LoginResponse | MFAChallengeResponse>("/auth/login", form, { headers });
+      if ("mfa_required" in res.data && res.data.mfa_required) {
+        return res.data;
+      }
       return applySession(res.data);
     } catch (err) {
       // Sólo una credencial rechazada justifica probar con Supabase. Un 409
@@ -101,17 +115,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Si Supabase tampoco la reconoce, manda el error del backend.
         throw err;
       }
-      const exchanged = await api.post<LoginResponse>(
-        "/auth/supabase-login",
-        { supabase_token: supabaseToken },
-        tenantSlug ? { headers: { "X-Tenant-Slug": tenantSlug } } : undefined,
-      );
-      return applySession(exchanged.data);
+      return loginWithProviderToken(supabaseToken, tenantSlug);
     }
+  }
+
+  async function loginWithProviderToken(
+    supabaseToken: string,
+    tenantSlug?: string,
+  ): Promise<User | MFAChallengeResponse> {
+    const exchanged = await api.post<LoginResponse | MFAChallengeResponse>(
+      "/auth/supabase-login",
+      { supabase_token: supabaseToken },
+      tenantSlug ? { headers: { "X-Tenant-Slug": tenantSlug } } : undefined,
+    );
+    if ("mfa_required" in exchanged.data && exchanged.data.mfa_required) {
+      return exchanged.data;
+    }
+    return applySession(exchanged.data);
   }
 
   async function registerAcademy(data: AcademyRegisterRequest): Promise<User> {
     const res = await api.post<LoginResponse>("/auth/register-academy", data);
+    return applySession(res.data);
+  }
+
+  async function verifyMFA(token: string, tempToken: string): Promise<User> {
+    const res = await api.post<LoginResponse>(
+      "/auth/mfa/verify",
+      { token },
+      { headers: { Authorization: `Bearer ${tempToken}` } },
+    );
     return applySession(res.data);
   }
 
@@ -158,7 +191,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       login,
+      loginWithProviderToken,
       registerAcademy,
+      verifyMFA,
       logout,
       hasRole,
       hasPermission,

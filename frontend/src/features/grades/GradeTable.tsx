@@ -217,7 +217,7 @@ export function GradeTable({ enrollments, students }: Props) {
             </tr>
           </thead>
           <tbody>
-            {filteredEnrollments.map((e) => {
+            {filteredEnrollments.map((e, rowIndex) => {
               const avgData = studentAverages.get(e.id);
               const avg = avgData?.avg;
               const isPassing = avg != null ? avg >= 6.0 : null;
@@ -228,7 +228,7 @@ export function GradeTable({ enrollments, students }: Props) {
                     {students.find((s) => s.id === e.student_id)?.full_name ??
                       `#${e.student_id}`}
                   </td>
-                  {columns.map((col) => (
+                  {columns.map((col, colIndex) => (
                     <td key={col} className="px-2 py-1 border-b border-slate-100">
                       <GradeCell
                         enrollmentId={e.id}
@@ -238,6 +238,8 @@ export function GradeTable({ enrollments, students }: Props) {
                           (g) =>
                             g.enrollment_id === e.id && g.evaluation_name === col,
                         )}
+                        rowIndex={rowIndex}
+                        colIndex={colIndex}
                       />
                     </td>
                   ))}
@@ -264,10 +266,14 @@ export function GradeTable({ enrollments, students }: Props) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-slate-400">
-        Escala {SCORE_MIN}–{SCORE_MAX}. Aprobación mínima: 6.0. Los cambios se guardan automáticamente al salir
-        de la celda.
-      </p>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+        <p>
+          Escala {SCORE_MIN}–{SCORE_MAX}. Aprobación mínima: 6.0. Guardado automático.
+        </p>
+        <p className="text-2xs text-slate-500 font-medium">
+          Navegación: <kbd className="rounded border border-slate-300 bg-white px-1 text-2xs">Enter</kbd> o <kbd className="rounded border border-slate-300 bg-white px-1 text-2xs">↓</kbd> siguiente alumno · <kbd className="rounded border border-slate-300 bg-white px-1 text-2xs">↑</kbd> alumno anterior · <kbd className="rounded border border-slate-300 bg-white px-1 text-2xs">Tab</kbd> siguiente columna
+        </p>
+      </div>
       {adding && (
         <AddEvaluationModal
           onClose={() => setAdding(false)}
@@ -283,11 +289,15 @@ function GradeCell({
   evaluation,
   grade,
   skill,
+  rowIndex,
+  colIndex,
 }: {
   enrollmentId: number;
   evaluation: string;
   grade?: Grade;
   skill?: SkillCategory | null;
+  rowIndex: number;
+  colIndex: number;
 }) {
   const create = useCreateGrade();
   const update = useUpdateGrade();
@@ -334,17 +344,42 @@ function GradeCell({
     setTimeout(() => setSaved(false), 1200);
   }
 
+  function navigate(deltaRow: number, deltaCol: number) {
+    const target = document.querySelector<HTMLInputElement>(
+      `input[data-grade-cell="${rowIndex + deltaRow}-${colIndex + deltaCol}"]`
+    );
+    if (target) {
+      target.focus();
+      target.select();
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === "ArrowDown") {
+      e.preventDefault();
+      commit();
+      navigate(1, 0);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      commit();
+      navigate(-1, 0);
+    }
+  }
+
   return (
     <div className="relative">
       <Input
+        data-grade-cell={`${rowIndex}-${colIndex}`}
         className={`w-20 ${error ? "border-red-400" : saved ? "border-green-400" : ""}`}
         inputMode="decimal"
         placeholder="—"
         aria-invalid={error ? true : undefined}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        onFocus={() => {
+        onKeyDown={handleKeyDown}
+        onFocus={(e) => {
           focused.current = true;
+          e.currentTarget.select();
         }}
         onBlur={() => {
           focused.current = false;

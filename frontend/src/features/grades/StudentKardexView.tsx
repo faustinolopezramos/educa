@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { useAuth } from "../../auth/AuthContext";
 import { Badge, Button, Card, EmptyState, SkeletonRows } from "../../components/ui";
 import { IconCap, IconLock } from "../../components/icons";
 import { useStudentKardex } from "../../lib/queries";
 import { useMoney } from "../../lib/useMoney";
+import { notify } from "../../lib/toast";
 
 export function StudentKardexView() {
   const { money } = useMoney();
   const { user } = useAuth();
   const { data: kardex, isLoading, isError } = useStudentKardex(user?.id);
+  const [copied, setCopied] = useState(false);
 
   if (isLoading) {
     return (
@@ -29,6 +32,30 @@ export function StudentKardexView() {
   }
 
   const { summary, history } = kardex;
+
+  function handleCopySummary() {
+    if (!kardex) return;
+    const skillsText = summary.skills_breakdown
+      ? Object.entries(summary.skills_breakdown)
+          .map(([k, v]) => `  • ${k}: ${v.toFixed(1)}/10`)
+          .join("\n")
+      : "";
+
+    const text = `🎓 EXPEDIENTE ACADÉMICO OFICIAL
+Estudiante: ${kardex.student_name} (${kardex.student_email})
+Estado Académico: ${summary.person_status_label}
+Promedio General (GPA): ${summary.global_gpa > 0 ? `${summary.global_gpa}/10` : "En curso"}
+Tasa de Asistencia: ${summary.overall_attendance_rate}%
+Cursos Aprobados: ${summary.total_courses_passed}
+${skillsText ? `\nDesglose de Competencias (MCER):\n${skillsText}\n` : ""}
+Total materias en historial: ${history.length}
+Emitido el: ${new Date().toLocaleDateString()}`;
+
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+    notify("Resumen académico copiado al portapapeles", "success");
+    setTimeout(() => setCopied(false), 2500);
+  }
 
   return (
     <div className="space-y-6 print:space-y-4">
@@ -61,14 +88,22 @@ export function StudentKardexView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 print:hidden">
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <Button
+            variant="secondary"
+            onClick={handleCopySummary}
+            className="flex items-center gap-1.5 text-xs"
+          >
+            <span>{copied ? "✓" : "📋"}</span>
+            <span>{copied ? "¡Copiado!" : "Copiar Resumen"}</span>
+          </Button>
           <Button
             variant="secondary"
             onClick={() => window.print()}
-            className="flex items-center gap-1.5"
+            className="flex items-center gap-1.5 text-xs"
           >
             <span>🖨️</span>
-            <span>Imprimir Expediente</span>
+            <span>Imprimir</span>
           </Button>
         </div>
       </div>
@@ -197,8 +232,73 @@ export function StudentKardexView() {
             No tienes materias registradas en tu historial por el momento.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <>
+            {/* Mobile Cards (Hidden on desktop & print) */}
+            <div className="divide-y divide-slate-100 sm:hidden print:hidden">
+              {history.map((entry) => (
+                <div key={entry.enrollment_id} className="p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-2xs font-bold text-brand-700">
+                      {entry.enrollment_code}
+                    </span>
+                    <Badge
+                      color={
+                        entry.status === "graduated"
+                          ? "indigo"
+                          : entry.status === "active"
+                            ? "green"
+                            : entry.status === "withdrawn"
+                              ? "red"
+                              : "slate"
+                      }
+                    >
+                      {entry.status_label}
+                    </Badge>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">{entry.course_title}</h4>
+                    <p className="text-2xs text-slate-500">{entry.level_name}</p>
+                  </div>
+                  {entry.skills && Object.keys(entry.skills).length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {Object.entries(entry.skills).map(([sk, sc]) => (
+                        <span
+                          key={sk}
+                          className="rounded bg-slate-100 px-1.5 py-0.5 text-3xs font-medium text-slate-600"
+                        >
+                          {sk}: <strong className="text-slate-800">{sc.toFixed(1)}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+                    <span className="text-slate-500">
+                      Nota Final:{" "}
+                      <strong className={entry.passed ? "text-emerald-700" : entry.passed === false ? "text-red-600" : "text-slate-900"}>
+                        {entry.final_score != null ? `${entry.final_score.toFixed(1)} / 10` : "En curso"}
+                      </strong>
+                    </span>
+                    <span>
+                      {entry.passed === true ? (
+                        <span className="inline-flex items-center gap-1 text-2xs font-semibold text-emerald-700">
+                          ✓ Aprobado
+                        </span>
+                      ) : entry.passed === false ? (
+                        <span className="inline-flex items-center gap-1 text-2xs font-semibold text-red-600">
+                          ✗ Reprobado
+                        </span>
+                      ) : (
+                        <span className="text-2xs text-slate-400">Cursando</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop & Print Table */}
+            <div className="hidden sm:block print:block overflow-x-auto">
+              <table className="w-full text-left text-sm print:text-xs">
               <thead className="border-b border-slate-200 bg-slate-50/50 text-2xs font-semibold uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-5 py-3">Código Matrícula</th>
@@ -276,8 +376,9 @@ export function StudentKardexView() {
               </tbody>
             </table>
           </div>
-        )}
-      </Card>
+        </>
+      )}
+    </Card>
     </div>
   );
 }

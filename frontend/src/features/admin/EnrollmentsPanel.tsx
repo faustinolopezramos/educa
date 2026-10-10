@@ -37,6 +37,8 @@ import { useAuth } from "../../auth/AuthContext";
 import { canManageEnrollments } from "../../lib/nav";
 import { allowedTransitions, formatBalance, isTerminalStatus } from "../../lib/enrollment";
 import { useMoney } from "../../lib/useMoney";
+import { PaymentReceiptModal, type ReceiptData } from "../enrollments/PaymentReceiptModal";
+import { openQuickPay } from "../enrollments/QuickPayModal";
 
 const STATUS_LABELS = ENROLLMENT_LABELS as Record<EnrollmentStatus, string>;
 
@@ -124,7 +126,18 @@ export function EnrollmentsPanel() {
             </span>
           </>
         }
-        actions={<Button onClick={() => setWizardCourseId("new")}>Nueva matrícula</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => openQuickPay()}
+              className="border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+            >
+              💵 Cobro Rápido
+            </Button>
+            <Button onClick={() => setWizardCourseId("new")}>Nueva matrícula</Button>
+          </div>
+        }
       />
 
       {canManageEnrollments(user) && <RenewalRequestsCard />}
@@ -544,6 +557,8 @@ function FinancesModal({
   onClose: () => void;
 }) {
   const { money, symbol } = useMoney();
+  const { data: students = [] } = useUsers("student");
+  const { data: courses = [] } = useCourses();
   const { data: ledger } = useEnrollmentLedger(enrollment.id);
   const { data: invoices = [] } = useEnrollmentInvoices(enrollment.id);
   const createPayment = useCreatePayment();
@@ -554,6 +569,10 @@ function FinancesModal({
   const [method, setMethod] = useState("transfer");
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null);
+
+  const studentObj = students.find((s) => s.id === enrollment.student_id);
+  const courseObj = courses.find((c) => c.id === enrollment.course_id);
 
   const isCharge = kind === "charge";
 
@@ -575,7 +594,7 @@ function FinancesModal({
         notes: notes || undefined,
       },
       {
-        onSuccess: () => {
+        onSuccess: (resp) => {
           setAmount("");
           setNotes("");
           setDueDate("");
@@ -583,6 +602,24 @@ function FinancesModal({
             isCharge ? "Cobro registrado con éxito" : "Pago registrado con éxito",
             "success",
           );
+          if (kind === "payment") {
+            const prevBal = ledger?.balance ?? 0;
+            setSelectedReceipt({
+              receiptNumber: resp?.receipt_number || resp?.id || null,
+              studentName: studentObj?.full_name ?? `#${enrollment.student_id}`,
+              studentEmail: studentObj?.email,
+              studentPhone: studentObj?.phone,
+              studentCui: studentObj?.cui_passport,
+              courseName: courseObj?.name,
+              enrollmentCode: enrollment.enrollment_code,
+              amount: num,
+              method,
+              notes: notes || null,
+              date: new Date().toISOString(),
+              previousBalance: prevBal,
+              remainingBalance: Math.max(0, prevBal - num),
+            });
+          }
         },
         onError: (e) => notify(apiErrorMessage(e, "Error al registrar el movimiento"), "error"),
       },
@@ -735,7 +772,75 @@ function FinancesModal({
             )}
           </div>
         </div>
+
+        {ledger?.movements && ledger.movements.length > 0 && (
+          <div className="space-y-2 border-t border-slate-100 pt-4">
+            <h4 className="text-sm font-semibold text-slate-900">
+              Historial de Pagos y Recibos ({ledger.movements.length})
+            </h4>
+            <div className="max-h-40 space-y-1.5 overflow-y-auto">
+              {ledger.movements.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+                >
+                  <div>
+                    <span className="font-semibold text-slate-900">
+                      {tx.kind === "payment" ? "Pago recibido" : "Cobro / cuota"}
+                    </span>{" "}
+                    <span className="text-2xs font-mono text-slate-500">
+                      ({tx.method || "—"})
+                    </span>
+                    <div className="text-2xs text-slate-400">
+                      {tx.paid_at.slice(0, 16).replace("T", " ")}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`font-mono font-bold tabular ${
+                        tx.kind === "payment" ? "text-emerald-700" : "text-slate-900"
+                      }`}
+                    >
+                      {money(tx.amount)}
+                    </span>
+                    {tx.kind === "payment" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setSelectedReceipt({
+                            receiptNumber: tx.receipt_number || tx.id,
+                            studentName: studentObj?.full_name ?? `#${enrollment.student_id}`,
+                            studentEmail: studentObj?.email,
+                            studentPhone: studentObj?.phone,
+                            studentCui: studentObj?.cui_passport,
+                            courseName: courseObj?.name,
+                            enrollmentCode: enrollment.enrollment_code,
+                            amount: tx.amount,
+                            method: tx.method,
+                            notes: tx.notes,
+                            date: tx.paid_at,
+                            remainingBalance: ledger.balance,
+                          })
+                        }
+                      >
+                        🖨️ Recibo
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {selectedReceipt && (
+        <PaymentReceiptModal
+          receipt={selectedReceipt}
+          onClose={() => setSelectedReceipt(null)}
+        />
+      )}
     </Modal>
   );
 }

@@ -161,3 +161,7 @@ export {
   useAcademyPayrollSummary,
   useUpdateTeacherRate,
 } from "./payroll";
+export {
+  useAssignments,
+  useAssignmentSubmissions,
+} from "./assignments";

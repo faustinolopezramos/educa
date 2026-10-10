@@ -173,3 +173,21 @@ export function apiErrorMessage(error: unknown, fallback = "Ocurrió un error"):
   }
   return fallback;
 }
+
+/** Solicita un correo de restablecimiento de contraseña. */
+export async function requestPasswordReset(email: string, tenantSlug?: string): Promise<string> {
+  const res = await api.post<{ message: string }>("/auth/forgot-password", {
+    email,
+    tenant_slug: tenantSlug || undefined,
+  });
+  return res.data.message;
+}
+
+/** Restablece la contraseña con el token recibido por correo. */
+export async function submitPasswordReset(token: string, newPassword: string): Promise<void> {
+  const res = await api.post<{ access_token: string; refresh_token: string }>("/auth/reset-password", {
+    token,
+    new_password: newPassword,
+  });
+  setToken(res.data.access_token, res.data.refresh_token);
+}

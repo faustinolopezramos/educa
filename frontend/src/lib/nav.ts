@@ -133,7 +133,7 @@ export const NAV: Record<Role, NavGroup[]> = {
 const EXTRA_SECTIONS: Partial<Record<Role, string[]>> = {
   admin: ["pendientes"],
   assistant: ["pendientes"],
-  student: ["calificaciones", "reportes"],
+  student: ["calificaciones", "reportes", "pagos", "kardex", "expediente"],
 };
 
 function sectionsForRole(role: Role): Set<string> {

@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { ActionTray } from "../../components/ActionTray";
 import { AcademyKpis } from "./AcademyKpis";
+import { AcademyFinancialSummary } from "./AcademyFinancialSummary";
 import { FirstSteps } from "./FirstSteps";
 import { PlanCard } from "./PlanCard";
 import { Badge, Button, Card, PageHeader, SectionHeading } from "../../components/ui";
@@ -51,6 +52,11 @@ export function InicioPanel() {
   // El plan es cosa de la dirección de una academia concreta: ni asistentes ni
   // el superadmin, que no pertenece a ninguna.
   const seesPlan = user?.role === "admin" && user.tenant_id != null;
+  const canSeeFinance =
+    user?.role === "admin" ||
+    user?.role === "superadmin" ||
+    canSeeSection(user, "nomina") ||
+    canSeeSection(user, "reports");
 
   return (
     <div>
@@ -82,6 +88,8 @@ export function InicioPanel() {
       {setupPending && <FirstSteps steps={dashboard!.setup!} />}
 
       {!setupPending && <AcademyKpis />}
+
+      {!setupPending && canSeeFinance && <AcademyFinancialSummary />}
 
       {!(setupPending && (dashboard?.items.length ?? 0) === 0) && (
         <ActionTray emptyMessage="No hay nada pendiente en la academia. Todo al día." />

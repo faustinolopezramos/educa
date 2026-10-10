@@ -4,6 +4,7 @@ import { api, apiErrorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { notify } from "../../lib/toast";
 import type { Assignment, AssignmentSubmission } from "../../lib/types";
+import { safeUrl } from "../../lib/urls";
 
 interface StudentAssignmentModalProps {
   assignment: Assignment;
@@ -189,11 +190,11 @@ export function StudentAssignmentModal({
             {assignment.description || "El docente no especificó instrucciones adicionales."}
           </p>
 
-          {assignment.resource_url && (
+          {safeUrl(assignment.resource_url) && (
             <div className="pt-2 border-t border-slate-200/60 flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-600">Material de apoyo:</span>
               <a
-                href={assignment.resource_url}
+                href={safeUrl(assignment.resource_url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs font-medium text-brand-600 hover:underline inline-flex items-center gap-1"
@@ -292,10 +293,10 @@ export function StudentAssignmentModal({
                 El archivo de esta entrega no llegó a enviarse.
               </div>
             )}
-            {existingSubmission.submission_url && !phantom && (
+            {safeUrl(existingSubmission.submission_url) && !phantom && (
               <div className="pt-1">
                 <a
-                  href={existingSubmission.submission_url}
+                  href={safeUrl(existingSubmission.submission_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-brand-600 hover:underline font-medium inline-flex items-center gap-1"
