@@ -23,7 +23,7 @@ function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
     <Suspense
       fallback={
-        <div className="flex h-full items-center justify-center py-20 text-slate-400">
+        <div className="flex h-full items-center justify-center py-20 text-slate-500">
           Cargando…
         </div>
       }

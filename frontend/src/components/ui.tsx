@@ -77,7 +77,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     return (
       <input
         ref={ref}
-        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
+        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
         {...props}
       />
     );
@@ -107,7 +107,7 @@ export const PasswordInput = forwardRef<
         ref={ref}
         id={id}
         type={show ? "text" : "password"}
-        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
+        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
         {...props}
       />
       <button
@@ -115,7 +115,7 @@ export const PasswordInput = forwardRef<
         onClick={() => setShow((prev) => !prev)}
         aria-label={show ? ariaLabelHide : ariaLabelShow}
         aria-pressed={show}
-        className="absolute right-1 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition"
+        className="absolute right-1 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded text-slate-500 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition"
       >
         {show ? <IconEyeOff className="h-4 w-4" /> : <IconEye className="h-4 w-4" />}
       </button>
@@ -135,7 +135,7 @@ export const Select = forwardRef<
         className={`w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
         {...props}
       />
-      <IconChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+      <IconChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
     </div>
   );
 });
@@ -153,9 +153,9 @@ export function SearchInput({
 }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className={`relative ${className}`}>
-      <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
       <input
-        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
         {...props}
       />
     </div>
@@ -220,7 +220,7 @@ export function Field({
   const labelText = (
     <>
       {label}
-      {required && <span className="ml-1 text-slate-400 font-normal">*</span>}
+      {required && <span className="ml-1 text-slate-500 font-normal">*</span>}
     </>
   );
   const labelClass = "block text-xs font-semibold text-slate-700";
@@ -325,7 +325,7 @@ export function SegmentedControl<T extends string>({
           >
             {o.label}
             {o.count != null && (
-              <span className={active ? "ml-1.5 text-slate-400" : "ml-1.5 text-slate-400"}>
+              <span className={active ? "ml-1.5 text-slate-500" : "ml-1.5 text-slate-500"}>
                 {o.count}
               </span>
             )}
@@ -606,7 +606,7 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 px-6 py-10 text-center">
       {icon && (
-        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
           {icon}
         </div>
       )}
@@ -842,7 +842,7 @@ export function Modal({
         <button
           type="button"
           onClick={onClose}
-          className="-mr-1 -mt-0.5 flex-none rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          className="-mr-1 -mt-0.5 flex-none rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
           aria-label="Cerrar"
         >
           <IconClose className="h-4 w-4" />
@@ -1030,11 +1030,11 @@ export function SearchSelect({
         autoFocus={autoFocus}
         onClick={() => setOpen((o) => !o)}
         className={`flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 ${
-          selected ? "text-slate-900" : "text-slate-400"
+          selected ? "text-slate-900" : "text-slate-500"
         }`}
       >
         <span className="truncate">{selected ? selected.label : placeholder}</span>
-        <IconChevronDown className="h-3.5 w-3.5 flex-none text-slate-400" />
+        <IconChevronDown className="h-3.5 w-3.5 flex-none text-slate-500" />
       </button>
 
       {open && rect && createPortal(
@@ -1069,12 +1069,12 @@ export function SearchSelect({
                   if (option) pick(option);
                 }
               }}
-              className="w-full rounded-lg bg-slate-50 px-2.5 py-1.5 text-sm outline-none placeholder:text-slate-400"
+              className="w-full rounded-lg bg-slate-50 px-2.5 py-1.5 text-sm outline-none placeholder:text-slate-500"
             />
           </div>
           <div role="listbox" className="max-h-56 overflow-y-auto p-1">
             {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-center text-xs text-slate-400">{emptyLabel}</div>
+              <div className="px-3 py-4 text-center text-xs text-slate-500">{emptyLabel}</div>
             ) : (
               filtered.map((o, i) => (
                 <button
@@ -1089,7 +1089,7 @@ export function SearchSelect({
                   }`}
                 >
                   <span className="text-sm font-medium">{o.label}</span>
-                  {o.hint && <span className="text-xs text-slate-400">{o.hint}</span>}
+                  {o.hint && <span className="text-xs text-slate-500">{o.hint}</span>}
                 </button>
               ))
             )}

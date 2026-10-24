@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Field, Input, Modal, ModalActions } from "../../components/ui";
 import { api, apiErrorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
@@ -27,6 +28,7 @@ export function StudentAssignmentModal({
   onClose,
   onSubmitted,
 }: StudentAssignmentModalProps) {
+  const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"text" | "link">("link");
   const [content, setContent] = useState(existingSubmission?.content || "");
   const phantom = isPhantomAttachment(existingSubmission?.submission_url);
@@ -41,17 +43,36 @@ export function StudentAssignmentModal({
     assignment.due_date && new Date(assignment.due_date).getTime() < Date.now();
 
   async function handleSubmit() {
-    if (!content.trim() && !submissionUrl.trim()) {
+    const trimmedContent = content.trim();
+    const trimmedUrl = submissionUrl.trim();
+
+    if (!trimmedContent && !trimmedUrl) {
       notify("Agrega un texto o un enlace para tu entrega", "error");
       return;
+    }
+
+    if (activeTab === "link" && trimmedUrl) {
+      try {
+        const parsed = new URL(trimmedUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          notify("El enlace debe comenzar con https:// o http://", "error");
+          return;
+        }
+      } catch {
+        notify("Ingresa una URL válida (ej. https://drive.google.com/...)", "error");
+        return;
+      }
     }
 
     setSaving(true);
     try {
       await api.post(`/assignments/${assignment.id}/submissions`, {
-        content: content.trim() || null,
-        submission_url: submissionUrl.trim() || null,
+        content: trimmedContent || null,
+        submission_url: trimmedUrl || null,
       });
+      qc.invalidateQueries({ queryKey: ["assignments"] });
+      qc.invalidateQueries({ queryKey: ["assignment-submissions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       notify("Tarea entregada correctamente", "success");
       onSubmitted();
       onClose();
@@ -250,12 +271,18 @@ export function StudentAssignmentModal({
               <Field label="Desarrollo del trabajo o texto">
                 <textarea
                   rows={5}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                   placeholder="Escribe tu respuesta, resolución de preguntas o resumen aquí…"
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   disabled={saving}
                 />
+                <div className="mt-1 flex items-center justify-between text-3xs text-slate-400">
+                  <span>
+                    {content.trim() ? `${content.trim().split(/\s+/).length} palabra(s)` : "0 palabras"}
+                  </span>
+                  <span>{content.length} caracteres</span>
+                </div>
               </Field>
             ) : null}
 

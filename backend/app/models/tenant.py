@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String
 
 from app.core.database import Base
 
@@ -31,6 +31,15 @@ class Tenant(Base):
     # Un cambio de plan que la academia pidió y el superadmin aún no resolvió.
     requested_plan = Column(String(20), nullable=True)
     plan_requested_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Paquete adicional de Ludi IA & Gamificación (Datanuki). Educa actúa como
+    # intermediario/reseller: la academia solicita el paquete y el superadmin
+    # lo activa tras confirmar el acuerdo comercial.
+    has_ludi_addon = Column(Boolean, nullable=False, default=False)
+    ludi_requested = Column(Boolean, nullable=False, default=False)
+    ludi_requested_at = Column(DateTime(timezone=True), nullable=True)
+    ludi_modules = Column(JSON, nullable=False, default=list)
+
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

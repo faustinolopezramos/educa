@@ -226,3 +226,33 @@ def test_the_backend_and_frontend_permission_lists_agree():
     block = re.search(r"export type Permission =(.*?);", types_ts, re.S).group(1)
     in_frontend = set(re.findall(r'"([a-z_]+)"', block))
     assert in_frontend == {p.value for p in Permission}
+
+
+# ---------------- Finance fields in the enrollment list ----------------
+#
+# `GET /enrollments` answered every assistant with the full row — fee, balance
+# and payment status — while the payments endpoints already kept those behind
+# `manage_finance`. Same rule now on both doors.
+_FINANCE_FIELDS = {"payment_status", "amount", "balance", "attendance_blocked"}
+
+
+def test_the_enrollment_list_hides_finance_from_an_assistant_without_it(
+    client, assistant, world
+):
+    assistant(Permission.manage_grades)
+    res = client.get("/enrollments", headers=_login(client))
+    assert res.status_code == 200, res.text
+    assert res.json(), "the assistant should still see the academy's enrollments"
+    for row in res.json():
+        assert not _FINANCE_FIELDS & row.keys(), row
+
+
+def test_the_enrollment_list_shows_finance_to_an_assistant_who_manages_it(
+    client, assistant, world
+):
+    assistant(Permission.manage_finance)
+    res = client.get("/enrollments", headers=_login(client))
+    assert res.status_code == 200, res.text
+    assert res.json()
+    for row in res.json():
+        assert _FINANCE_FIELDS <= row.keys(), row

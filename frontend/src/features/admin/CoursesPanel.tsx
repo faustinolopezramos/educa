@@ -21,8 +21,9 @@ import {
   Toolbar,
 } from "../../components/ui";
 import { IconBook } from "../../components/icons";
-import { DAYS, calculateEndDate, modalityLabel } from "../../lib/format";
+import { DAYS, calculateEndDate, modalityColor, modalityLabel } from "../../lib/format";
 import {
+  useAssignments,
   useCourses,
   useCreateCourse,
   useUpdateCourse,
@@ -65,6 +66,7 @@ export function CoursesPanel() {
   const [teacherWizardCourseId, setTeacherWizardCourseId] = useState<number | null>(null);
   const [scheduleCourseId, setScheduleCourseId] = useState<number | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [previewCourse, setPreviewCourse] = useState<Course | null>(null);
 
   const [form, setForm] = useState({
     level_id: 0,
@@ -339,6 +341,7 @@ export function CoursesPanel() {
                     </div>
                     <ActionMenu
                       items={[
+                        { label: "👁️ Vista previa (alumno)", onClick: () => setPreviewCourse(c) },
                         { label: "Inscribir alumno", onClick: () => setEnrollCourseId(c.id) },
                         {
                           label: assignedTeacher ? "Cambiar profesor" : "Asignar profesor",
@@ -557,6 +560,10 @@ export function CoursesPanel() {
                         <ActionMenu
                           items={[
                             {
+                              label: "👁️ Vista previa (alumno)",
+                              onClick: () => setPreviewCourse(c),
+                            },
+                            {
                               label: "Inscribir alumno",
                               onClick: () => setEnrollCourseId(c.id),
                             },
@@ -697,6 +704,13 @@ export function CoursesPanel() {
           />
         )
       )}
+
+      {previewCourse && (
+        <CourseStudentPreviewModal
+          course={previewCourse}
+          onClose={() => setPreviewCourse(null)}
+        />
+      )}
     </div>
   );
 }
@@ -817,6 +831,135 @@ function EditCourseModal({ course, onClose }: { course: Course; onClose: () => v
           <Field label="Fecha de fin (Sugerida)">
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </Field>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function CourseStudentPreviewModal({
+  course,
+  onClose,
+}: {
+  course: Course;
+  onClose: () => void;
+}) {
+  const { data: levels = [] } = useLevels();
+  const { data: schedules = [] } = useSchedules();
+  const { data: teachers = [] } = useUsers("teacher");
+  const { data: assignments = [] } = useAssignments(course.id);
+  const { data: rooms = [] } = useRooms();
+
+  const level = levels.find((l) => l.id === course.level_id);
+  const courseSchedules = schedules.filter((s) => s.course_id === course.id);
+  const assignedTeacherId = courseSchedules.find((s) => s.teacher_id)?.teacher_id;
+  const teacher = teachers.find((t) => t.id === assignedTeacherId);
+
+  const passingScore = course.passing_score ?? 6.0;
+
+  return (
+    <Modal
+      title={`Vista Previa de Alumno · ${course.name}`}
+      description="Esta es la perspectiva que tienen los estudiantes matriculados en su portal."
+      onClose={onClose}
+      maxWidth="max-w-2xl"
+      footer={
+        <ModalActions>
+          <Button variant="secondary" onClick={onClose}>
+            Cerrar Vista Previa
+          </Button>
+        </ModalActions>
+      }
+    >
+      <div className="space-y-5">
+        {/* Course Banner Simulator */}
+        <div className="rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-5 text-white">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-3xs uppercase tracking-wider font-semibold text-brand-200">
+              Nivel: {level?.name ?? "General"}
+            </span>
+            <span className="rounded-full bg-white/10 px-2 py-0.5 text-3xs font-medium text-brand-100 border border-white/15">
+              Mín. aprobación: {passingScore} pts
+            </span>
+          </div>
+          <h3 className="mt-1.5 text-xl font-bold tracking-tight">{course.name}</h3>
+          <p className="mt-1 text-xs text-brand-100">
+            Profesor: <strong>{teacher?.full_name ?? "Sin asignar"}</strong>
+            {course.start_date && ` · Ciclo: ${course.start_date} a ${course.end_date || "en curso"}`}
+          </p>
+        </div>
+
+        {/* Schedule & Meeting Access */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            Horarios y Acceso a Clases
+          </h4>
+          {courseSchedules.length === 0 ? (
+            <p className="text-xs text-slate-500 italic">No hay franjas horarias programadas para este curso.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {courseSchedules.map((s) => {
+                const room = rooms.find((r) => r.id === s.room_id);
+                return (
+                  <div key={s.id} className="py-2 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-semibold text-slate-900">
+                        {DAYS[s.day_of_week] ?? "Día"} {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
+                      </span>
+                      <p className="text-2xs text-slate-500">
+                        Modalidad: {modalityLabel(s.modality)} {room ? `· Aula: ${room.name}` : ""}
+                      </p>
+                    </div>
+                    <Badge color={modalityColor(s.modality)}>
+                      {modalityLabel(s.modality)}
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Assignments active in this course */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+              Tareas y Asignaciones del Alumno ({assignments.length})
+            </h4>
+            <span className="text-2xs text-slate-500">Ponderan 40% en nota final</span>
+          </div>
+
+          {assignments.length === 0 ? (
+            <p className="text-xs text-slate-500 italic">No hay tareas publicadas actualmente en este grupo.</p>
+          ) : (
+            <div className="space-y-2">
+              {assignments.map((a) => (
+                <div key={a.id} className="rounded-lg border border-slate-100 bg-slate-50/70 p-2.5 flex items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="font-semibold text-slate-800">{a.title}</span>
+                    {a.due_date && (
+                      <p className="text-2xs text-slate-500">
+                        Plazo de entrega: {new Date(a.due_date).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-2xs font-medium text-brand-700 bg-brand-50 px-2 py-0.5 rounded">
+                    Disponible en portal
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Group capacity and solvency note */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-2xs text-slate-600 space-y-1">
+          <p>
+            <strong>Capacidad del grupo:</strong> {course.seats_taken ?? 0} alumnos matriculados de {course.max_students} plazas máximas.
+          </p>
+          <p className="text-slate-500">
+            * Los alumnos solventes pueden consultar sus calificaciones, radar de competencias y pases de reposición en tiempo real desde este curso.
+          </p>
         </div>
       </div>
     </Modal>

@@ -260,7 +260,7 @@ export function CourseCatalog({
 
       {/* Main Content: Grouped Sections by Área Académica */}
       {coursesLoading ? (
-        <div className="py-12 text-center text-slate-400">Cargando catálogo académico…</div>
+        <div className="py-12 text-center text-slate-500">Cargando catálogo académico…</div>
       ) : groupedCourses.length === 0 ? (
         <EmptyState
           icon={<IconBook className="h-6 w-6" />}
@@ -366,7 +366,7 @@ export function CourseCatalog({
                       <div className="mt-4 space-y-3 pt-3 border-t border-slate-100 text-xs">
                         {/* Teacher Assigned Info */}
                         <div className="flex items-center justify-between text-slate-600">
-                          <span className="text-slate-400 font-medium">Profesor:</span>
+                          <span className="text-slate-500 font-medium">Profesor:</span>
                           <span className="font-medium text-slate-800">
                             {assignedTeacher ? assignedTeacher.full_name : "Sin asignar"}
                           </span>

@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.deps import (
     apply_tenant,
     get_current_user,
+    has_user_permission,
     in_tenant,
     require_permission,
     require_role,
@@ -94,8 +95,13 @@ def list_enrollments(
     if course_id is not None:
         stmt = stmt.where(Enrollment.course_id == course_id)
     rows = db.scalars(stmt).all()
-    if current_user.role == UserRole.teacher:
-        # Sin cuota, saldo ni estado de pago: al profesor no le toca saberlo.
+    # Sin cuota, saldo ni estado de pago para quien no lleva las finanzas: el
+    # profesor, y el asistente sin `manage_finance` — la misma regla que aplica
+    # `payments._can_view_enrollment_finance` a los endpoints de cobros.
+    if current_user.role == UserRole.teacher or (
+        current_user.role == UserRole.assistant
+        and not has_user_permission(current_user, Permission.manage_finance)
+    ):
         return [EnrollmentTeachingRead.model_validate(e) for e in rows]
     return [EnrollmentRead.model_validate(e) for e in attach_balances(db, rows)]
 

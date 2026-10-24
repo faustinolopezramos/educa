@@ -7,18 +7,15 @@ from app.services.account_lockout import (
     clear_lockouts,
     LockoutStatus,
 )
-try:
-    from app.services.mfa import (
-        create_mfa_setup,
-        verify_mfa_token,
-        verify_totp,
-        generate_backup_codes,
-        hash_backup_codes,
-        MFASetup,
-        MFAVerificationResult,
-    )
-except Exception:
-    pass
+from app.services.mfa import (
+    create_mfa_setup,
+    verify_mfa_token,
+    verify_totp,
+    generate_backup_codes,
+    hash_backup_codes,
+    MFASetup,
+    MFAVerificationResult,
+)
 
 from app.services.device_sessions import (
     create_device_session,
@@ -40,20 +37,17 @@ from app.services.password_breach import (
     is_password_pwned,
     BreachCheckResult,
 )
-try:
-    from app.services.webauthn import (
-        generate_registration_options_webauthn,
-        verify_registration_response_webauthn,
-        generate_authentication_options_webauthn,
-        verify_authentication_response_webauthn,
-        get_user_credentials,
-        delete_credential,
-        options_to_json_safe,
-        create_challenge,
-        cleanup_expired_challenges,
-    )
-except Exception:
-    pass
+from app.services.webauthn import (
+    generate_registration_options_webauthn,
+    verify_registration_response_webauthn,
+    generate_authentication_options_webauthn,
+    verify_authentication_response_webauthn,
+    get_user_credentials,
+    delete_credential,
+    options_to_json_safe,
+    create_challenge,
+    cleanup_expired_challenges,
+)
 
 
 __all__ = [

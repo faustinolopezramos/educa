@@ -173,7 +173,7 @@ function EnrollmentFinanceDetail({
             <SkeletonRows rows={3} />
           </div>
         ) : !ledger || ledger.movements.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-400">
+          <div className="p-8 text-center text-xs text-slate-500">
             No hay movimientos registrados para esta matrícula aún.
           </div>
         ) : (
@@ -234,7 +234,7 @@ function EnrollmentFinanceDetail({
             <SkeletonRows rows={2} />
           </div>
         ) : invoices.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-400">
+          <div className="p-8 text-center text-xs text-slate-500">
             No se han generado facturas o recibos oficiales para esta matrícula todavía.
           </div>
         ) : (

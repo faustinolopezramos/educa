@@ -122,7 +122,7 @@ export function PaymentReceiptModal({
           {/* Student Info */}
           <div className="grid grid-cols-2 gap-4 border-b border-slate-100 py-3.5 text-xs">
             <div>
-              <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-slate-500">
                 Alumno
               </span>
               <div className="font-semibold text-slate-900">{receipt.studentName}</div>
@@ -136,7 +136,7 @@ export function PaymentReceiptModal({
               )}
             </div>
             <div>
-              <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-slate-500">
                 Curso / Matrícula
               </span>
               <div className="font-semibold text-slate-900">

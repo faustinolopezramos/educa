@@ -42,9 +42,33 @@
 
 ### Row Level Security (RLS) en Supabase
 - Las políticas de seguridad a nivel de fila aíslan los datos de cada academia (`tenant_id`) directamente en PostgreSQL.
-- Se activan en todas las 35 tablas del esquema público mediante la migración de Alembic `f7a8b9c0d1e2_enable_row_level_security`.
-- Protege los datos contra accesos no autorizados o fugas cruzadas entre academias a través de la anon key de Supabase.
+- Se activan en todas las tablas del esquema público mediante la migración `f7a8b9c0d1e2_enable_row_level_security`.
 - Verificación en Supabase: **Database → Tables** → cada tabla debe mostrar el distintivo verde **RLS Enabled**.
+
+**Qué protege y qué no.** Las políticas valen para quien se conecta con un rol que
+*no* las ignora: la `anon key` de Supabase (PostgREST), por ejemplo. El rol con el que
+conecta la API (`postgres` en Supabase) tiene `BYPASSRLS`, y un dueño de tabla se las
+salta también salvo `FORCE ROW LEVEL SECURITY`. Con ese rol, el aislamiento entre
+academias lo dan los filtros de la API (`app/core/deps.py`, probados en
+`tests/test_tenant_isolation.py`). Las políticas son una segunda barrera para el resto
+de caminos de acceso, no sustituyen a esa.
+
+La API lo dice al arrancar (logger `app.rls`): *«El rol de la base de datos se salta
+RLS…»* si es el caso. Para comprobarlo a mano:
+
+```sql
+SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;
+```
+
+**Camino para que la API también quede bajo RLS** (no hecho: exige un rol nuevo y probar
+en staging, y activarlo a ciegas dejaría la API sin ver datos):
+1. Crear un rol `educa_api` sin `BYPASSRLS` con `GRANT` sobre las tablas, y apuntar `DATABASE_URL` a él.
+2. El contexto de RLS (`app.current_tenant_id`…) ya se reaplica en cada transacción (`app/core/rls.py`), así que sobrevive a los `commit()`.
+3. Las rutas sin usuario autenticado que leen datos (`/webhooks/*`, `/auth/login`, recuperación de contraseña) tendrían que fijar su propio contexto o usar un rol aparte.
+4. Sólo entonces, `ALTER TABLE … FORCE ROW LEVEL SECURITY` en las tablas con datos de academia.
+
+`tests/test_row_level_security.py` demuestra, con un rol sin privilegios, que las
+políticas confinan a cada academia, bloquean la escritura cruzada y fallan cerradas sin contexto.
 
 ---
 
@@ -77,9 +101,30 @@ flyctl secrets set \
   SUPABASE_URL="https://xxxxx.supabase.co" \
   SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIs..." \
   TRUST_PROXY_HEADERS="true" \
+  APP_URL="https://tu-app.vercel.app" \
   ACADEMY_TIMEZONE="America/Guatemala"
 ```
 
+> `CLIENT_IP_HEADER` (en `fly.toml`) debe ser `fly-client-ip`: es la cabecera que pone la
+> plataforma y que el cliente no puede falsear. Si la API va detrás de otro proxy, deja
+> `x-forwarded-for` y declara cuántos proxies de confianza hay con `TRUSTED_PROXY_HOPS`
+> (por defecto 1): se toma la dirección que añadió el último, no la primera, que escribe
+> el cliente. Esa IP es la que usan los límites de intentos y el bloqueo de cuentas.
+> `APP_URL` es la dirección pública de la web; los enlaces de los correos (recuperar
+> contraseña) se arman con ella, nunca con la cabecera `Host` de la petición.
+> Sin `REDIS_URL`, el límite de intentos y el bloqueo viven en la memoria del proceso: se
+> pierden al reiniciar y no se comparten entre máquinas. Para más de una instancia, define `REDIS_URL`.
+> La API lo avisa al arrancar (logger `app.limiter`). Con `REDIS_URL` definido, si Redis deja
+> de responder los límites siguen contando en memoria en vez de desactivarse.
+> Con `REDIS_URL` se puede subir `WEB_CONCURRENCY` (procesos de uvicorn por máquina; 1 por
+> defecto). Cada proceso abre hasta `DB_POOL_SIZE + DB_MAX_OVERFLOW` conexiones (10 + 10 por
+> defecto): multiplica por procesos y máquinas y compáralo con el límite del pooler de Supabase.
+> En Zoom, la URL del webhook es `https://<api>/webhooks/zoom`; la API responde sola al
+> desafío `endpoint.url_validation` con `ZOOM_WEBHOOK_SECRET`.
+> `ZOOM_WEBHOOK_SECRET` y `GOOGLE_WEBHOOK_TOKEN` (opcionales) dan a cada proveedor su propio
+> secreto; si faltan, ambos usan `WEBHOOK_SECRET`. Lo más seguro es definir los tres distintos.
+> `FERNET_KEY` también cifra los secretos TOTP del segundo factor: **no la cambies** una vez
+> en uso, o esas cuentas no podrán verificar su código y tendrán que volver a configurar el MFA.
 > `DATABASE_URL` no necesita `sslmode`: en producción el backend se lo añade solo.
 > `SUPABASE_ANON_KEY` es la clave pública (anon), **nunca** la `service_role`.
 > Para permitir las vistas previas de Vercel, añade `CORS_ORIGIN_REGEX` con el

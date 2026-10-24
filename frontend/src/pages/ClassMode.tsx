@@ -239,6 +239,14 @@ export default function ClassMode() {
           </Button>
           <Button
             variant="secondary"
+            onClick={() => navigate("/?m=ludi")}
+            title="Abrir Quizzes con IA, Partida en Vivo con PIN y Gamificación"
+            className="border-brand-300 text-brand-700 hover:bg-brand-50"
+          >
+            🎮 Ludi IA & Quizzes
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => navigate("/?m=clases")}
             title="Reprogramar, cancelar o fijar la ubicación de esta clase"
           >

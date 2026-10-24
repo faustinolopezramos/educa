@@ -97,6 +97,7 @@ function ProgressView({
   /** Honours the old section ids, so a bookmark still lands where it used to. */
   initial: string;
 }) {
+  const [, setSearchParams] = useSearchParams();
   const [view, setView] = useState<"notas" | "avance" | "expediente" | "pagos">(
     initial === "reportes"
       ? "avance"
@@ -107,6 +108,19 @@ function ProgressView({
           : "notas",
   );
 
+  const handleTabChange = (nextView: "notas" | "avance" | "expediente" | "pagos") => {
+    setView(nextView);
+    const subRoute =
+      nextView === "avance"
+        ? "reportes"
+        : nextView === "expediente"
+          ? "kardex"
+          : nextView === "pagos"
+            ? "pagos"
+            : "progreso";
+    setSearchParams({ m: subRoute }, { replace: true });
+  };
+
   return (
     <div>
       <PageHeader
@@ -116,7 +130,7 @@ function ProgressView({
       <div className="mb-4">
         <SegmentedControl
           value={view}
-          onChange={setView}
+          onChange={handleTabChange}
           options={[
             { value: "notas", label: "Notas" },
             { value: "avance", label: "Este periodo" },
@@ -162,7 +176,7 @@ function StudentReport() {
   if (isLoading) return <SkeletonRows rows={4} />;
   if (enrollments.some(isDelinquent)) return <PaymentGate what="tu reporte" />;
 
-  return <ReportView />;
+  return <ReportView hideHeader />;
 }
 
 function WeekView({ isOverdue }: { isOverdue: boolean }) {
@@ -252,6 +266,158 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
       <DebtBanner />
 
       <UrgentAssignmentsBanner onSelectAssignment={setSelectedAssignmentForModal} />
+
+      <div className="mb-6 grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          {next ? (
+            <NextClassHero
+              courseName={courseName(next.sched.course_id)}
+              teacher={teacherName(next.sched.teacher_id)}
+              modality={next.sched.modality}
+              room={roomName(next.sched.room_id)}
+              start={next.start}
+              opensAt={next.opensAt}
+              sessionId={next.sess.id}
+              topic={next.sess.topic}
+              isRescheduled={Boolean(next.sess.origin_session_id)}
+            />
+          ) : (
+            <Card className="h-full">
+              <EmptyState
+                icon={<IconClock className="h-5 w-5" />}
+                title="No tienes clases próximas"
+                message="Cuando se acerque una clase la verás aquí, con el acceso directo al aula."
+              />
+            </Card>
+          )}
+        </div>
+
+        {/* Interactive Week Calendar & Agenda */}
+        <Card className="flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <SectionHeading>Esta semana</SectionHeading>
+              <span className="text-2xs text-slate-500 font-medium">Toca un día para ver detalle</span>
+            </div>
+            <div className="flex gap-1.5">
+              {DAYS.map((d, i) => {
+                const dayClasses = mySchedules.filter((s) => s.day_of_week === i);
+                const has = dayClasses.length > 0;
+                const isToday = i === todayDow;
+                const isSelected = i === selectedDow;
+
+                // Día del mes para la fecha correspondiente a este día de la semana actual
+                const currDate = new Date();
+                const diff = i - todayDow;
+                currDate.setDate(currDate.getDate() + diff);
+                const dayNumber = currDate.getDate();
+
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedDow(i)}
+                    className={`flex-1 rounded-lg py-1.5 text-center transition-all ${
+                      isSelected
+                        ? "bg-slate-100 ring-2 ring-brand-600 font-semibold"
+                        : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <div
+                      className={`text-3xs uppercase tracking-wider font-semibold ${
+                        isToday ? "text-brand-700 font-bold" : "text-slate-500"
+                      }`}
+                    >
+                      {d.slice(0, 2)}
+                    </div>
+                    <div
+                      className={`text-xs font-bold leading-tight mt-0.5 ${
+                        isToday
+                          ? "text-brand-800 font-extrabold"
+                          : isSelected
+                            ? "text-slate-900"
+                            : "text-slate-700"
+                      }`}
+                    >
+                      {dayNumber}
+                    </div>
+                    <div
+                      className={`mx-auto mt-1 h-1.5 w-1.5 rounded-full ${
+                        has ? "bg-brand-600" : "bg-transparent"
+                      } ${isToday && has ? "ring-2 ring-brand-300 ring-offset-1" : ""}`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Agenda of the selected day */}
+          <div className="mt-4 border-t border-slate-100 pt-3 text-xs">
+            <div className="flex items-center justify-between text-slate-500 mb-2">
+              <span className="font-semibold text-slate-700">
+                {DAYS[selectedDow]} {selectedDow === todayDow && "(Hoy)"}
+              </span>
+              {(() => {
+                const count = mySchedules.filter((s) => s.day_of_week === selectedDow).length;
+                return (
+                  <span className="text-2xs text-slate-500">
+                    {count === 0 ? "Sin clases" : count === 1 ? "1 clase" : `${count} clases`}
+                  </span>
+                );
+              })()}
+            </div>
+
+            {(() => {
+              // Check if selected day this week is a holiday
+              const d = new Date();
+              const currDow = localDow();
+              const diff = selectedDow - currDow;
+              d.setDate(d.getDate() + diff);
+              const dateStr = d.toISOString().slice(0, 10);
+              const holiday = holidays.find((h) => h.date === dateStr);
+
+              const dayClasses = mySchedules.filter((s) => s.day_of_week === selectedDow);
+
+              return (
+                <div className="space-y-2">
+                  {holiday && (
+                    <div className="rounded-lg bg-amber-50 p-2 border border-amber-200 text-amber-900 text-2xs">
+                      🎉 <strong>Feriado escolar:</strong> {holiday.name}
+                    </div>
+                  )}
+                  {dayClasses.length === 0 ? (
+                    <p className="text-slate-500 italic py-2 text-center">
+                      No tienes clases programadas para este día.
+                    </p>
+                  ) : (
+                    dayClasses.map((s) => {
+                      const cName = courseName(s.course_id);
+                      const tName = teacherName(s.teacher_id);
+                      const rName = roomName(s.room_id);
+
+                      return (
+                        <div
+                          key={s.id}
+                          className="flex items-center justify-between rounded-lg p-2 border border-slate-100 bg-slate-50/70 transition"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-semibold text-slate-800 truncate">{cName}</div>
+                            <div className="text-2xs text-slate-500">
+                              {formatTime(s.start_time)} – {formatTime(s.end_time)} · Prof. {tName}
+                              {rName ? ` · Aula ${rName}` : s.modality === "virtual" ? " · En línea" : ""}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </Card>
+      </div>
 
       <ActionTray
         title="Pendientes"
@@ -355,140 +521,6 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
         </div>
       )}
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          {next ? (
-            <NextClassHero
-              courseName={courseName(next.sched.course_id)}
-              teacher={teacherName(next.sched.teacher_id)}
-              modality={next.sched.modality}
-              room={roomName(next.sched.room_id)}
-              start={next.start}
-              opensAt={next.opensAt}
-              sessionId={next.sess.id}
-              topic={next.sess.topic}
-            />
-          ) : (
-            <Card className="h-full">
-              <EmptyState
-                icon={<IconClock className="h-5 w-5" />}
-                title="No tienes clases próximas"
-                message="Cuando se acerque una clase la verás aquí, con el acceso directo al aula."
-              />
-            </Card>
-          )}
-        </div>
-
-        {/* Interactive Week Calendar & Agenda */}
-        <Card className="flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <SectionHeading>Esta semana</SectionHeading>
-              <span className="text-2xs text-slate-400 font-medium">Toca un día para ver detalle</span>
-            </div>
-            <div className="flex gap-1.5">
-              {DAYS.map((d, i) => {
-                const dayClasses = mySchedules.filter((s) => s.day_of_week === i);
-                const has = dayClasses.length > 0;
-                const isToday = i === todayDow;
-                const isSelected = i === selectedDow;
-
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setSelectedDow(i)}
-                    className={`flex-1 rounded-lg py-1.5 text-center transition-all ${
-                      isSelected
-                        ? "bg-slate-100 ring-2 ring-brand-600 font-semibold"
-                        : "hover:bg-slate-50"
-                    }`}
-                  >
-                    <div
-                      className={`text-2xs font-semibold ${
-                        isToday ? "text-brand-700 font-bold" : "text-slate-500"
-                      }`}
-                    >
-                      {d.slice(0, 2)}
-                    </div>
-                    <div
-                      className={`mx-auto mt-1 h-2 w-2 rounded-full ${
-                        has ? "bg-brand-600" : "bg-slate-200"
-                      } ${isToday ? "ring-2 ring-brand-300 ring-offset-1" : ""}`}
-                    />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Agenda of the selected day */}
-          <div className="mt-4 border-t border-slate-100 pt-3 text-xs">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="font-semibold text-slate-700">
-                {DAYS[selectedDow]} {selectedDow === todayDow && "(Hoy)"}
-              </span>
-              {(() => {
-                const count = mySchedules.filter((s) => s.day_of_week === selectedDow).length;
-                return (
-                  <span className="text-2xs text-slate-400">
-                    {count === 0 ? "Sin clases" : count === 1 ? "1 clase" : `${count} clases`}
-                  </span>
-                );
-              })()}
-            </div>
-
-            {(() => {
-              // Check if selected day this week is a holiday
-              const d = new Date();
-              const currDow = localDow();
-              const diff = selectedDow - currDow;
-              d.setDate(d.getDate() + diff);
-              const dateStr = d.toISOString().slice(0, 10);
-              const holiday = holidays.find((h) => h.date === dateStr);
-
-              const dayClasses = mySchedules.filter((s) => s.day_of_week === selectedDow);
-
-              return (
-                <div className="space-y-2">
-                  {holiday && (
-                    <div className="rounded-lg bg-amber-50 p-2 border border-amber-200 text-amber-900 text-2xs">
-                      🎉 <strong>Feriado escolar:</strong> {holiday.name}
-                    </div>
-                  )}
-                  {dayClasses.length === 0 ? (
-                    <p className="text-slate-400 italic py-2 text-center">
-                      No tienes clases programadas para este día.
-                    </p>
-                  ) : (
-                    dayClasses.map((s) => {
-                      const cName = courseName(s.course_id);
-                      const tName = teacherName(s.teacher_id);
-                      const rName = roomName(s.room_id);
-
-                      return (
-                        <div
-                          key={s.id}
-                          className="flex items-center justify-between rounded-lg p-2 border border-slate-100 bg-slate-50/70 transition"
-                        >
-                          <div className="min-w-0 pr-2">
-                            <div className="font-semibold text-slate-800 truncate">{cName}</div>
-                            <div className="text-2xs text-slate-500">
-                              {formatTime(s.start_time)} – {formatTime(s.end_time)} · Prof. {tName}
-                              {rName ? ` · Aula ${rName}` : s.modality === "virtual" ? " · En línea" : ""}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </Card>
-      </div>
-
       <SectionHeading>Mis cursos</SectionHeading>
       {current.length === 0 ? (
         <EmptyState
@@ -586,17 +618,17 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
               {/* General Course Info */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
                 <div className="rounded-lg bg-slate-50 p-2.5 border border-slate-100">
-                  <span className="text-slate-400 block text-2xs uppercase font-medium">Código Matrícula</span>
+                  <span className="text-slate-500 block text-2xs uppercase font-medium">Código Matrícula</span>
                   <span className="font-mono font-semibold text-brand-700">{en.enrollment_code}</span>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-2.5 border border-slate-100">
-                  <span className="text-slate-400 block text-2xs uppercase font-medium">Modalidad</span>
+                  <span className="text-slate-500 block text-2xs uppercase font-medium">Modalidad</span>
                   <span className="font-semibold text-slate-800">
                     {modalMod ? courseModalityLabel(modalMod) : "Por definir"}
                   </span>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-2.5 border border-slate-100">
-                  <span className="text-slate-400 block text-2xs uppercase font-medium">Estado Matrícula</span>
+                  <span className="text-slate-500 block text-2xs uppercase font-medium">Estado Matrícula</span>
                   <span className="font-semibold text-slate-800">
                     {ENROLLMENT_LABELS[en.status] ?? en.status}
                   </span>
@@ -629,7 +661,7 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
                     <div className="text-2xs text-red-600">Faltas</div>
                   </div>
                 </div>
-                <p className="mt-2 text-2xs text-slate-400 text-center">
+                <p className="mt-2 text-2xs text-slate-500 text-center">
                   * Las faltas justificadas no penalizan tu tasa de asistencia.
                 </p>
               </div>
@@ -662,7 +694,7 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
                     <span className="text-2xs text-slate-500">Mínimo para aprobar: {c?.passing_score ?? 6.0}</span>
                   </div>
                   {courseGrades.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">
+                    <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">
                       Aún no hay calificaciones registradas por el profesor.
                     </p>
                   ) : (
@@ -694,10 +726,10 @@ function WeekView({ isOverdue }: { isOverdue: boolean }) {
                       <span className="font-semibold text-slate-900 text-xs">
                         📹 Grabaciones de Clase ({courseRecordings.length})
                       </span>
-                      <span className="text-2xs text-slate-400">Material de video para repaso</span>
+                      <span className="text-2xs text-slate-500">Material de video para repaso</span>
                     </div>
                     {courseRecordings.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">
+                      <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">
                         Aún no hay grabaciones publicadas para este curso.
                       </p>
                     ) : (
@@ -912,6 +944,7 @@ function NextClassHero({
   opensAt,
   sessionId,
   topic,
+  isRescheduled = false,
 }: {
   courseName: string;
   teacher: string;
@@ -921,6 +954,7 @@ function NextClassHero({
   opensAt: number;
   sessionId: number;
   topic?: string | null;
+  isRescheduled?: boolean;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -942,8 +976,15 @@ function NextClassHero({
     // mantiene la prioridad visual sin pedirle al alumno que se ponga alerta.
     <div className="flex h-full flex-col rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-6 text-white">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-wider text-brand-200">
-          {countLabel}
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-semibold uppercase tracking-wider text-brand-200">
+            {countLabel}
+          </div>
+          {isRescheduled && (
+            <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-3xs font-semibold text-amber-200 border border-amber-300/30">
+              📅 Sesión Reprogramada
+            </span>
+          )}
         </div>
         {topic && (
           <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-brand-100 border border-white/15">
@@ -1070,7 +1111,7 @@ function CourseCard({
           {pct != null ? (
             <Ring pct={pct} tone={tone} />
           ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-400">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-500">
               —
             </div>
           )}
@@ -1086,7 +1127,7 @@ function CourseCard({
               <span className="text-slate-500">Promedio</span>
               <span className="tabular font-semibold text-slate-900">
                 {gradesHidden ? "—" : (avg ?? "—")}
-                <span className="font-normal text-slate-400">/10</span>
+                <span className="font-normal text-slate-500">/10</span>
               </span>
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">

@@ -268,7 +268,7 @@ export function AssignmentsPanel() {
 
       {/* Assignments Grid */}
       {filteredAssignments.length === 0 ? (
-        <Card className="py-12 text-center text-sm text-slate-400">
+        <Card className="py-12 text-center text-sm text-slate-500">
           No hay asignaciones para mostrar en este filtro.
         </Card>
       ) : (

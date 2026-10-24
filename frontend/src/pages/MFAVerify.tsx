@@ -31,23 +31,6 @@ export default function MFAVerifyPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  if (!rawTempToken) {
-    return (
-      <div className="flex min-h-full items-center justify-center px-4 py-10">
-        <div className="w-full max-w-sm text-center">
-          <p className="text-red-600">Token temporal MFA no encontrado. Vuelve a iniciar sesión.</p>
-          <button
-            type="button"
-            onClick={() => navigate("/login", { replace: true })}
-            className="mt-4 text-brand-700 hover:text-brand-800 underline"
-          >
-            ← Volver al inicio de sesión
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const {
     register,
     handleSubmit,
@@ -72,6 +55,23 @@ export default function MFAVerifyPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (!rawTempToken) {
+    return (
+      <div className="flex min-h-full items-center justify-center px-4 py-10">
+        <div className="w-full max-w-sm text-center">
+          <p className="text-red-600">Token temporal MFA no encontrado. Vuelve a iniciar sesión.</p>
+          <button
+            type="button"
+            onClick={() => navigate("/login", { replace: true })}
+            className="mt-4 text-brand-700 hover:text-brand-800 underline"
+          >
+            ← Volver al inicio de sesión
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -126,7 +126,7 @@ export default function MFAVerifyPage() {
           </form>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-6 text-center text-xs text-slate-500">
           <button
             type="button"
             onClick={() => navigate("/login", { replace: true })}

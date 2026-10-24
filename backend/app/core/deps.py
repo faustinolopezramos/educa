@@ -2,10 +2,11 @@ from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import Select, select, text
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.rls import set_rls_context
 from app.core.security import decode_token
 from app.models import (
     ENROLLMENT_HAS_ACCESS,
@@ -45,8 +46,14 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None:
         raise _credentials_exc
+    # `ver` es obligatorio: un access token sin versión se saltaba la
+    # revocación (cambio de contraseña, baja), que es justo para lo que existe.
+    # `mfa_pending` ya no se emite, pero un token que lo llevara no es una
+    # sesión completa aunque su tipo diga "access".
     token_ver = payload.get("ver")
-    if token_ver is not None and user.token_version != token_ver:
+    if token_ver is None or user.token_version != token_ver:
+        raise _credentials_exc
+    if payload.get("mfa_pending"):
         raise _credentials_exc
     # Deactivating an account has to take effect on the sessions already open,
     # not just at the next login — otherwise a teacher given their baja keeps
@@ -60,24 +67,13 @@ def get_current_user(
     if tenant_suspended(db, user):
         raise _credentials_exc
 
-    # Configure session context for PostgreSQL Row Level Security (RLS)
-    try:
-        if user.tenant_id is not None:
-            db.execute(
-                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
-                {"tid": str(user.tenant_id)},
-            )
-        if user.id is not None:
-            db.execute(
-                text("SELECT set_config('app.current_user_id', :uid, true)"),
-                {"uid": str(user.id)},
-            )
-        if user.role == UserRole.superadmin:
-            db.execute(
-                text("SELECT set_config('app.is_superadmin', 'true', true)")
-            )
-    except Exception:
-        pass
+    # Contexto de PostgreSQL Row Level Security (RLS); ver `app.core.rls`.
+    set_rls_context(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        superadmin=user.role == UserRole.superadmin,
+    )
 
     return user
 

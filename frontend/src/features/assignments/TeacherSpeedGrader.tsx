@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Field, Input, Modal, ModalActions } from "../../components/ui";
 import { api, apiErrorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
@@ -44,6 +45,7 @@ export function TeacherSpeedGrader({
   onClose,
   onGraded,
 }: TeacherSpeedGraderProps) {
+  const qc = useQueryClient();
   const [filter, setFilter] = useState<"all" | "pending" | "graded" | "unsubmitted">("pending");
   const [search, setSearch] = useState("");
   const [currentIndex, setCurrentIndex] = useState(initialStudentIndex);
@@ -72,6 +74,12 @@ export function TeacherSpeedGrader({
   }, [roster, filter, search]);
 
   // Ensure currentIndex stays within bounds of filtered list
+  useEffect(() => {
+    if (filteredStudents.length > 0 && currentIndex >= filteredStudents.length) {
+      setCurrentIndex(filteredStudents.length - 1);
+    }
+  }, [filteredStudents.length, currentIndex]);
+
   const activeStudent: RosterStudentStatus | undefined =
     filteredStudents[currentIndex] || filteredStudents[0];
 
@@ -118,14 +126,35 @@ export function TeacherSpeedGrader({
         feedback: feedback.trim() || null,
       });
 
+      qc.invalidateQueries({ queryKey: ["assignments"] });
+      qc.invalidateQueries({ queryKey: ["assignment-submissions"] });
+      qc.invalidateQueries({ queryKey: ["grades"] });
+      qc.invalidateQueries({ queryKey: ["final-grade"] });
+      qc.invalidateQueries({ queryKey: ["report"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+
       notify(`Nota guardada para ${activeStudent.full_name}`, "success");
       onGraded();
 
       if (advanceToNext) {
-        if (currentIndex < filteredStudents.length - 1) {
-          setCurrentIndex((prev) => prev + 1);
+        if (filter === "pending") {
+          // En la pestaña "pending", el alumno calificado pasará a "graded"
+          // y saldrá del listado filtrado al refrescarse el roster, por lo que el
+          // siguiente alumno pendiente se moverá automáticamente a currentIndex.
+          // Solo si estábamos en el último elemento (o único), retrocedemos o notificamos fin.
+          if (currentIndex >= filteredStudents.length - 1) {
+            if (filteredStudents.length <= 1) {
+              notify("¡Excelente! Has calificado todas las entregas pendientes.", "success");
+            } else {
+              setCurrentIndex((prev) => Math.max(0, prev - 1));
+            }
+          }
         } else {
-          notify("Has llegado al final de la lista.", "info");
+          if (currentIndex < filteredStudents.length - 1) {
+            setCurrentIndex((prev) => prev + 1);
+          } else {
+            notify("Has llegado al final de la lista.", "info");
+          }
         }
       }
     } catch (err) {

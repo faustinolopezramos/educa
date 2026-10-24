@@ -36,6 +36,7 @@ import { TodayView } from "../features/classes/TodayView";
 import { AssignmentsPanel } from "../features/assignments/AssignmentsPanel";
 import { ProfilePanel } from "../features/profile/ProfilePanel";
 import { ReportView } from "../features/reports/ReportView";
+import { TeacherLudiPanel } from "../features/ludi/TeacherLudiPanel";
 import { apiErrorDetail, apiErrorMessage } from "../lib/api";
 import { SCORE_MAX, SCORE_MIN, DAILY_EVALUATION } from "../lib/constants";
 import { absenceStreak, attendancePct, marksOf } from "../lib/attendance";
@@ -56,6 +57,7 @@ import {
 } from "../lib/format";
 import { notify } from "../lib/toast";
 import { useAuth } from "../auth/AuthContext";
+import { useMoney } from "../lib/useMoney";
 import {
   useCancelSession,
   useCloseRegister,
@@ -150,6 +152,7 @@ export default function TeacherDashboard() {
   // Cada panel dibuja su propia cabecera, así que aquí solo se enruta.
   if (section === "clases") return <ClassesView />;
   if (section === "tareas") return <AssignmentsPanel />;
+  if (section === "ludi") return <TeacherLudiPanel />;
   if (section === "reportes") return <ReportView />;
   if (section === "perfil") return <ProfilePanel />;
   if (section === "nomina") return <TeacherSelfPayrollView />;
@@ -158,6 +161,7 @@ export default function TeacherDashboard() {
 
 function TeacherSelfPayrollView() {
   const { user } = useAuth();
+  const { money } = useMoney();
   const now = new Date();
   const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
   const today = now.toISOString().slice(0, 10);
@@ -171,7 +175,23 @@ function TeacherSelfPayrollView() {
       <PageHeader
         title="Mis Horas & Liquidación"
         description="Detalle de clases impartidas, horas lectivas acumuladas y remuneración del período."
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => window.print()}
+            aria-label="Imprimir liquidación de horas"
+          >
+            🖨️ Imprimir Liquidación
+          </Button>
+        }
       />
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-600 flex items-center gap-2.5">
+        <span aria-hidden>💡</span>
+        <span>
+          <strong>Criterio de cómputo:</strong> Las sesiones impartidas se contabilizan en tus horas devengadas una vez que el registro de asistencia ha sido cerrado.
+        </span>
+      </div>
 
       {/* Date Filter */}
       <Card className="p-4">
@@ -200,15 +220,15 @@ function TeacherSelfPayrollView() {
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+          <span className="text-2xs uppercase tracking-wider text-slate-500 font-semibold">
             Tarifa Asignada
           </span>
           <div className="mt-1 text-2xl font-bold text-slate-900">
-            ${payroll?.hourly_rate?.toFixed(2) ?? "0.00"}/h
+            {money(payroll?.hourly_rate ?? 0)}/h
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+          <span className="text-2xs uppercase tracking-wider text-slate-500 font-semibold">
             Horas Impartidas
           </span>
           <div className="mt-1 text-2xl font-bold text-brand-600">
@@ -216,11 +236,11 @@ function TeacherSelfPayrollView() {
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+          <span className="text-2xs uppercase tracking-wider text-slate-500 font-semibold">
             Total Devengado
           </span>
           <div className="mt-1 text-2xl font-bold text-emerald-600">
-            ${payroll?.total_amount?.toFixed(2) ?? "0.00"}
+            {money(payroll?.total_amount ?? 0)}
           </div>
         </div>
       </div>
@@ -233,7 +253,7 @@ function TeacherSelfPayrollView() {
         ) : isError ? (
           <p className="py-8 text-center text-xs text-red-600">No se pudo cargar la información de horas.</p>
         ) : !payroll || payroll.sessions.length === 0 ? (
-          <p className="py-8 text-center text-xs text-slate-400">
+          <p className="py-8 text-center text-xs text-slate-500">
             No se han registrado sesiones dadas en este rango de fechas.
           </p>
         ) : (
@@ -261,10 +281,10 @@ function TeacherSelfPayrollView() {
                       {s.duration_hours.toFixed(1)} h
                     </td>
                     <td className="px-4 py-3 text-right text-slate-600">
-                      ${s.hourly_rate.toFixed(2)}
+                      {money(s.hourly_rate)}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-emerald-700">
-                      ${s.amount.toFixed(2)}
+                      {money(s.amount)}
                     </td>
                   </tr>
                 ))}
@@ -386,6 +406,16 @@ function NowBar({
     );
   }
 
+  function enterClassMode(s: Schedule) {
+    ensure.mutate(
+      { schedule_id: s.id, date: todayLocal() },
+      {
+        onSuccess: (session) => navigate(`/clase/${session.id}`),
+        onError: onMutationError("No se pudo abrir la toma de asistencia"),
+      },
+    );
+  }
+
   if (!featured) return null;
   const { s, when, live } = featured;
   const todayOrNow = when === "ahora" || when === "hoy";
@@ -418,14 +448,23 @@ function NowBar({
       </div>
 
       <div className="flex flex-none flex-wrap items-center gap-2">
+        {live && (
+          <Button disabled={ensure.isPending} onClick={() => enterClassMode(s)}>
+            {ensure.isPending ? "Abriendo…" : "Pasar lista"}
+          </Button>
+        )}
         {/* Una presencial no tiene aula virtual que abrir. */}
         {todayOrNow && needsLink(s.modality) && (
-          <Button disabled={ensure.isPending} onClick={() => enterLobby(s)}>
+          <Button
+            variant={live ? "secondary" : "primary"}
+            disabled={ensure.isPending}
+            onClick={() => enterLobby(s)}
+          >
             {ensure.isPending ? "Abriendo…" : "Entrar al aula"}
           </Button>
         )}
         <Button
-          variant={todayOrNow && needsLink(s.modality) ? "secondary" : "primary"}
+          variant={live || (todayOrNow && needsLink(s.modality)) ? "secondary" : "primary"}
           onClick={() => onGo(s)}
         >
           Gestionar clase
@@ -465,16 +504,20 @@ function ClassDetail({
   const [activeTab, setActiveTab] = useState<"attendance" | "exams">("attendance");
 
   const today = todayLocal();
-  useEffect(() => {
-    if (sessions.length === 0) {
-      setSessionId(null);
-      return;
-    }
+  // La sesión que se abre por defecto: la que se tocó en la agenda, la de hoy,
+  // la última pasada o la primera. Derivada aparte para que el efecto sólo
+  // dispare cuando ese id cambia, no en cada refetch que deja la misma lista
+  // (pisaría la sesión que el profesor eligió a mano).
+  const defaultSessionId = useMemo(() => {
+    if (sessions.length === 0) return null;
     const tapped = sessions.find((s) => s.id === initialSessionId);
     const todays = sessions.find((s) => s.date === today);
     const past = [...sessions].reverse().find((s) => s.date <= today);
-    setSessionId((tapped ?? todays ?? past ?? sessions[0]).id);
-  }, [sessions.length, schedule.id, initialSessionId]);
+    return (tapped ?? todays ?? past ?? sessions[0]).id;
+  }, [sessions, initialSessionId, today]);
+  useEffect(() => {
+    setSessionId(defaultSessionId);
+  }, [defaultSessionId, schedule.id]);
 
   const studentName = (id: number) =>
     students.find((s) => s.id === id)?.full_name ?? `#${id}`;
@@ -1050,7 +1093,7 @@ function SessionSheet({
 
       <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border border-slate-200/80 bg-slate-50/70 p-2.5">
         <div className="relative min-w-[12rem] flex-1 max-w-xs">
-          <IconSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <IconSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
           <Input
             placeholder="Buscar alumno por nombre…"
             value={search}
@@ -1129,7 +1172,7 @@ function SessionSheet({
       </div>
 
       {filteredEnrollments.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400">
+        <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500">
           No hay alumnos que coincidan con la búsqueda o filtro seleccionado.
         </div>
       ) : (
@@ -1509,7 +1552,7 @@ function RosterRow({
       <div className="flex min-w-[13rem] flex-1 items-center gap-2.5">
         <span
           className={`flex h-8 w-8 flex-none items-center justify-center rounded-full text-xs font-semibold ${
-            current ? "bg-slate-100 text-slate-700" : !locked ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-400"
+            current ? "bg-slate-100 text-slate-700" : !locked ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"
           }`}
         >
           {initials(name)}

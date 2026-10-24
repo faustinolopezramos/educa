@@ -10,6 +10,18 @@ def test_forgot_password_anti_enumeration(client, db):
     assert "instrucciones" in res.json()["message"]
 
 
+def test_forgot_password_spends_no_bcrypt_on_an_unknown_email(client, db, monkeypatch):
+    """Ninguna rama hace bcrypt: si sólo la del correo inexistente lo hiciera,
+    la respuesta lenta diría qué correos no tienen cuenta."""
+    import app.routers.auth as auth_router
+
+    calls = []
+    monkeypatch.setattr(auth_router, "verify_password", lambda *a: calls.append(a) or False)
+    res = client.post("/auth/forgot-password", json={"email": "nobody@test.com"})
+    assert res.status_code == 200
+    assert calls == []
+
+
 def test_forgot_password_for_existing_user(client, db):
     tenant = Tenant(name="Academia Reset", slug="reset-slug")
     db.add(tenant)

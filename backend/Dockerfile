@@ -26,8 +26,8 @@ EXPOSE 8080
 # `release_command` de fly.toml: en el arranque las ejecutaba cada máquina que
 # se levantaba, compitiendo entre ellas por el mismo `alembic upgrade head`.
 #
-# Un solo worker a propósito: el limitador de intentos de login vive en la
-# memoria del proceso, así que con dos cada uno llevaba su propia cuenta y el
-# límite real era el doble del configurado. Para escalar de verdad hace falta
-# REDIS_URL (ver app/core/rate_limiter.py).
-CMD uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
+# Un solo worker por defecto: sin REDIS_URL el limitador de intentos de login
+# vive en la memoria del proceso, y con dos cada uno llevaba su propia cuenta
+# (el límite real era el doble). Con REDIS_URL definido se puede subir
+# WEB_CONCURRENCY; las tareas de fondo ya toleran varios procesos (SKIP LOCKED).
+CMD uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers ${WEB_CONCURRENCY:-1}

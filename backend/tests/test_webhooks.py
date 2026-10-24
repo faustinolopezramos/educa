@@ -56,6 +56,23 @@ def test_a_correctly_signed_zoom_event_is_processed(client, secret, zoom_meeting
     assert zoom_meeting.status is MeetingStatus.ended
 
 
+def test_zoom_url_validation_challenge_is_answered(client, secret):
+    """Sin esta respuesta Zoom nunca activa la suscripción de eventos."""
+    body = b'{"event":"endpoint.url_validation","payload":{"plainToken":"abc123"}}'
+    res = client.post("/webhooks/zoom", content=body, headers=zoom_headers(body))
+    assert res.status_code == 200, res.text
+    expected = hmac.new(SECRET.encode(), b"abc123", hashlib.sha256).hexdigest()
+    assert res.json() == {"plainToken": "abc123", "encryptedToken": expected}
+
+
+def test_an_unsigned_url_validation_is_still_rejected(client, secret):
+    body = b'{"event":"endpoint.url_validation","payload":{"plainToken":"abc123"}}'
+    res = client.post(
+        "/webhooks/zoom", content=body, headers=zoom_headers(body, secret="otro")
+    )
+    assert res.status_code == 401
+
+
 def test_a_signed_recording_event_stores_the_url(client, secret, zoom_meeting):
     body = (
         b'{"event":"recording.completed","object":'

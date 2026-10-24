@@ -2,9 +2,25 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
-  ActionMenu, Badge, Button, Card, ConfirmDialog, EmptyState, Field, InlineAlert, Input,
-  MetaItem, Modal, ModalActions, PageHeader, SearchInput, SegmentedControl, Select,
-  Table, Th, Td,
+  ActionMenu,
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  Field,
+  InlineAlert,
+  Input,
+  MetaItem,
+  Modal,
+  ModalActions,
+  PageHeader,
+  SearchInput,
+  SegmentedControl,
+  Select,
+  Table,
+  Th,
+  Td,
 } from "../../components/ui";
 import { IconClipboard } from "../../components/icons";
 import { EnrollWizard } from "../enrollments/EnrollWizard";
@@ -25,16 +41,10 @@ import {
 import { notify } from "../../lib/toast";
 import { apiErrorMessage } from "../../lib/api";
 import { ENROLLMENT_LABELS } from "../../lib/format";
-import type {
-  Course,
-  Enrollment,
-  EnrollmentStatus,
-  PaymentKind,
-  User,
-} from "../../lib/types";
+import type { Course, Enrollment, EnrollmentStatus, PaymentKind, User } from "../../lib/types";
 import { onMutationError } from "./shared";
 import { useAuth } from "../../auth/AuthContext";
-import { canManageEnrollments } from "../../lib/nav";
+import { canManageEnrollments, canViewFinance } from "../../lib/nav";
 import { allowedTransitions, formatBalance, isTerminalStatus } from "../../lib/enrollment";
 import { useMoney } from "../../lib/useMoney";
 import { PaymentReceiptModal, type ReceiptData } from "../enrollments/PaymentReceiptModal";
@@ -45,6 +55,9 @@ const STATUS_LABELS = ENROLLMENT_LABELS as Record<EnrollmentStatus, string>;
 export function EnrollmentsPanel() {
   const { money, currency } = useMoney();
   const { user } = useAuth();
+  // Sin `manage_finance` la API no manda cuota, saldo ni estado de pago: ni
+  // columnas ni filtros que dependan de ellos.
+  const showFinance = canViewFinance(user);
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
   const { data: students = [] } = useUsers("student");
@@ -60,15 +73,32 @@ export function EnrollmentsPanel() {
   const [selectedCourseId, setSelectedCourseId] = useState<number | "all">("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
 
-  // The command palette can jump straight into "new enrollment"; consume the
-  // flag so a refresh or a back-navigation does not reopen the modal.
+  // Deep-linking: support ?status=overdue, ?search=MAT-123, and ?new=1
   const [params, setParams] = useSearchParams();
   const wantsNew = params.get("new") === "1";
+
   useEffect(() => {
-    if (!wantsNew) return;
-    setWizardCourseId("new");
-    params.delete("new");
-    setParams(params, { replace: true });
+    let changed = false;
+    if (wantsNew) {
+      setWizardCourseId("new");
+      params.delete("new");
+      changed = true;
+    }
+    const statusParam = params.get("status");
+    if (statusParam && ["active", "overdue", "paid", "all"].includes(statusParam)) {
+      setSelectedStatus(statusParam);
+      params.delete("status");
+      changed = true;
+    }
+    const searchParam = params.get("search");
+    if (searchParam) {
+      setSearchTerm(searchParam);
+      params.delete("search");
+      changed = true;
+    }
+    if (changed) {
+      setParams(params, { replace: true });
+    }
   }, [wantsNew, params, setParams]);
 
   const filteredEnrollments = enrollments.filter((e) => {
@@ -116,25 +146,29 @@ export function EnrollmentsPanel() {
           <>
             <MetaItem value={enrollments.length} label="matrículas" />
             <MetaItem value={activeCount} label="activas" />
-            <span>
-              <strong
-                className={`font-semibold ${overdueCount > 0 ? "text-red-700" : "text-slate-900"}`}
-              >
-                {overdueCount}
-              </strong>{" "}
-              <span className="text-slate-500">en mora</span>
-            </span>
+            {showFinance && (
+              <span>
+                <strong
+                  className={`font-semibold ${overdueCount > 0 ? "text-red-700" : "text-slate-900"}`}
+                >
+                  {overdueCount}
+                </strong>{" "}
+                <span className="text-slate-500">en mora</span>
+              </span>
+            )}
           </>
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => openQuickPay()}
-              className="border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-            >
-              💵 Cobro Rápido
-            </Button>
+            {showFinance && (
+              <Button
+                variant="secondary"
+                onClick={() => openQuickPay()}
+                className="border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+              >
+                💵 Cobro Rápido
+              </Button>
+            )}
             <Button onClick={() => setWizardCourseId("new")}>Nueva matrícula</Button>
           </div>
         }
@@ -155,7 +189,7 @@ export function EnrollmentsPanel() {
           options={[
             { value: "all", label: "Todas", count: enrollments.length },
             { value: "active", label: "Activas", count: activeCount },
-            { value: "overdue", label: "En mora", count: overdueCount },
+            ...(showFinance ? [{ value: "overdue", label: "En mora", count: overdueCount }] : []),
           ]}
         />
         <Select
@@ -229,9 +263,13 @@ export function EnrollmentsPanel() {
                       <Th>Código</Th>
                       <Th>Alumno</Th>
                       <Th>Estado</Th>
-                      <Th>Pago</Th>
-                      <Th align="right">Saldo</Th>
-                      <Th>Asistencia</Th>
+                      {showFinance && (
+                        <>
+                          <Th>Pago</Th>
+                          <Th align="right">Saldo</Th>
+                          <Th>Asistencia</Th>
+                        </>
+                      )}
                       <Th align="right">Acciones</Th>
                     </tr>
                   </thead>
@@ -263,37 +301,41 @@ export function EnrollmentsPanel() {
                           <Td>
                             <StatusSelect enrollment={e} />
                           </Td>
-                          <Td>
-                            <Badge
-                              color={
-                                e.payment_status === "paid"
-                                  ? "green"
-                                  : e.payment_status === "overdue"
-                                    ? "red"
-                                    : "amber"
-                              }
-                            >
-                              {e.payment_status === "paid"
-                                ? "Al día"
-                                : e.payment_status === "overdue"
-                                  ? "En mora"
-                                  : "Pendiente"}
-                            </Badge>
-                          </Td>
-                          <Td align="right">
-                            <span
-                              className={
-                                e.balance > 0.005
-                                  ? "tabular text-sm font-medium text-slate-900"
-                                  : "tabular text-sm text-slate-500"
-                              }
-                            >
-                              {formatBalance(e.balance, currency)}
-                            </span>
-                          </Td>
-                          <Td>
-                            <AttendanceToggle enrollment={e} />
-                          </Td>
+                          {showFinance && (
+                            <>
+                              <Td>
+                                <Badge
+                                  color={
+                                    e.payment_status === "paid"
+                                      ? "green"
+                                      : e.payment_status === "overdue"
+                                        ? "red"
+                                        : "amber"
+                                  }
+                                >
+                                  {e.payment_status === "paid"
+                                    ? "Al día"
+                                    : e.payment_status === "overdue"
+                                      ? "En mora"
+                                      : "Pendiente"}
+                                </Badge>
+                              </Td>
+                              <Td align="right">
+                                <span
+                                  className={
+                                    e.balance > 0.005
+                                      ? "tabular text-sm font-medium text-slate-900"
+                                      : "tabular text-sm text-slate-500"
+                                  }
+                                >
+                                  {formatBalance(e.balance, currency)}
+                                </span>
+                              </Td>
+                              <Td>
+                                <AttendanceToggle enrollment={e} />
+                              </Td>
+                            </>
+                          )}
                           <Td align="right">
                             <ActionMenu
                               items={[
@@ -305,7 +347,9 @@ export function EnrollmentsPanel() {
                                       },
                                     ]
                                   : []),
-                                { label: "Pagos e historial", onClick: () => setFinances(e) },
+                                ...(showFinance
+                                  ? [{ label: "Pagos e historial", onClick: () => setFinances(e) }]
+                                  : []),
                                 {
                                   label: "Trasladar a otro curso",
                                   onClick: () => setTransferEnrollment(e),
@@ -329,9 +373,7 @@ export function EnrollmentsPanel() {
         </div>
       )}
 
-      {finances && (
-        <FinancesModal enrollment={finances} onClose={() => setFinances(null)} />
-      )}
+      {finances && <FinancesModal enrollment={finances} onClose={() => setFinances(null)} />}
 
       {transferEnrollment && (
         <TransferCourseModal
@@ -356,18 +398,19 @@ export function EnrollmentsPanel() {
               {/* Deleting an enrollment cascades to everything hanging off it.
                   Saying "no se puede deshacer" without naming what goes leaves
                   the destructive part invisible until it has happened. */}
-              , y con ella <strong>su asistencia, sus notas y todo su historial de
-              pagos y comprobantes</strong>. Esta acción no se puede deshacer.
-              {deleting.balance > 0.005 && (
+              , y con ella{" "}
+              <strong>su asistencia, sus notas y todo su historial de pagos y comprobantes</strong>.
+              Esta acción no se puede deshacer.
+              {showFinance && deleting.balance > 0.005 && (
                 <>
                   {" "}
                   Esta matrícula tiene un saldo pendiente de{" "}
-                  <strong>{money(deleting.balance)}</strong>: al eliminarla, esa
-                  deuda deja de aparecer en el sistema.
+                  <strong>{money(deleting.balance)}</strong>: al eliminarla, esa deuda deja de
+                  aparecer en el sistema.
                 </>
-              )}
-              {" "}Si el alumno simplemente abandonó el curso, márcalo como{" "}
-              <strong>Desistió</strong> en vez de borrarlo: conserva el historial.
+              )}{" "}
+              Si el alumno simplemente abandonó el curso, márcalo como <strong>Desistió</strong> en
+              vez de borrarlo: conserva el historial.
             </>
           }
           busy={deleteEnrollment.isPending}
@@ -474,7 +517,8 @@ function TransferCourseModal({
 }) {
   const update = useUpdateEnrollment();
   const [newCourseId, setNewCourseId] = useState(enrollment.course_id);
-  const studentName = students.find((s) => s.id === enrollment.student_id)?.full_name ?? `#${enrollment.student_id}`;
+  const studentName =
+    students.find((s) => s.id === enrollment.student_id)?.full_name ?? `#${enrollment.student_id}`;
   const selectedCourse = courses.find((c) => c.id === newCourseId);
 
   const hasStarted = selectedCourse?.start_date
@@ -509,10 +553,7 @@ function TransferCourseModal({
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button
-            type="submit"
-            disabled={update.isPending || newCourseId === enrollment.course_id}
-          >
+          <Button type="submit" disabled={update.isPending || newCourseId === enrollment.course_id}>
             {update.isPending ? "Trasladando…" : "Confirmar traslado"}
           </Button>
         </ModalActions>
@@ -540,8 +581,8 @@ function TransferCourseModal({
 
         {hasStarted && (
           <InlineAlert type="info" title="Este curso ya empezó">
-            Los pagos registrados se conservan, y el alumno aparecerá de inmediato en la lista
-            de asistencia del nuevo curso.
+            Los pagos registrados se conservan, y el alumno aparecerá de inmediato en la lista de
+            asistencia del nuevo curso.
           </InlineAlert>
         )}
       </div>
@@ -549,13 +590,7 @@ function TransferCourseModal({
   );
 }
 
-function FinancesModal({
-  enrollment,
-  onClose,
-}: {
-  enrollment: Enrollment;
-  onClose: () => void;
-}) {
+function FinancesModal({ enrollment, onClose }: { enrollment: Enrollment; onClose: () => void }) {
   const { money, symbol } = useMoney();
   const { data: students = [] } = useUsers("student");
   const { data: courses = [] } = useCourses();
@@ -598,10 +633,7 @@ function FinancesModal({
           setAmount("");
           setNotes("");
           setDueDate("");
-          notify(
-            isCharge ? "Cobro registrado con éxito" : "Pago registrado con éxito",
-            "success",
-          );
+          notify(isCharge ? "Cobro registrado con éxito" : "Pago registrado con éxito", "success");
           if (kind === "payment") {
             const prevBal = ledger?.balance ?? 0;
             setSelectedReceipt({
@@ -633,13 +665,7 @@ function FinancesModal({
       onClose={onClose}
       onSubmit={submitPayment}
       footer={
-        <ModalActions
-          hint={
-            ledger
-              ? `Saldo pendiente: ${money(ledger.balance)}`
-              : undefined
-          }
-        >
+        <ModalActions hint={ledger ? `Saldo pendiente: ${money(ledger.balance)}` : undefined}>
           <Button variant="secondary" onClick={onClose}>
             Cerrar
           </Button>
@@ -734,9 +760,7 @@ function FinancesModal({
               variant="secondary"
               size="sm"
               disabled={issueInvoice.isPending || (ledger?.paid ?? 0) <= 0}
-              title={
-                (ledger?.paid ?? 0) <= 0 ? "Solo se factura lo ya cobrado" : undefined
-              }
+              title={(ledger?.paid ?? 0) <= 0 ? "Solo se factura lo ya cobrado" : undefined}
               onClick={() =>
                 issueInvoice.mutate(enrollment.id, {
                   onSuccess: () => notify("Factura emitida", "success"),
@@ -788,10 +812,8 @@ function FinancesModal({
                     <span className="font-semibold text-slate-900">
                       {tx.kind === "payment" ? "Pago recibido" : "Cobro / cuota"}
                     </span>{" "}
-                    <span className="text-2xs font-mono text-slate-500">
-                      ({tx.method || "—"})
-                    </span>
-                    <div className="text-2xs text-slate-400">
+                    <span className="text-2xs font-mono text-slate-500">({tx.method || "—"})</span>
+                    <div className="text-2xs text-slate-500">
                       {tx.paid_at.slice(0, 16).replace("T", " ")}
                     </div>
                   </div>
@@ -836,10 +858,7 @@ function FinancesModal({
       </div>
 
       {selectedReceipt && (
-        <PaymentReceiptModal
-          receipt={selectedReceipt}
-          onClose={() => setSelectedReceipt(null)}
-        />
+        <PaymentReceiptModal receipt={selectedReceipt} onClose={() => setSelectedReceipt(null)} />
       )}
     </Modal>
   );

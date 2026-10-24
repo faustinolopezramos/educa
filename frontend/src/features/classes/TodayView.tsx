@@ -3,9 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button, Card, EmptyState, PageHeader } from "../../components/ui";
 import { IconCalendar, IconCheck, IconVideo } from "../../components/icons";
-import { useAgenda, useEnsureSession } from "../../lib/queries";
+import { useAgenda, useCourses, useEnsureSession, useSchedules } from "../../lib/queries";
 import { apiErrorMessage } from "../../lib/api";
-import { formatTime, modalityLabel, needsLink, todayLocal } from "../../lib/format";
+import { dayName, formatTime, localDow, modalityLabel, needsLink, todayLocal } from "../../lib/format";
 import {
   durationHours,
   elapsedPct,
@@ -35,6 +35,8 @@ export function TodayView() {
   const [, setParams] = useSearchParams();
   const today = todayLocal();
   const { data: agenda = [], isLoading } = useAgenda();
+  const { data: schedules = [] } = useSchedules(true);
+  const { data: courses = [] } = useCourses();
 
   // El reloj avanza aunque nadie toque la pantalla: una clase empieza, otra
   // termina y su lista pasa a estar pendiente. Sin esto había que recargar para
@@ -49,6 +51,47 @@ export function TodayView() {
       [...agenda].sort((a, b) => a.start_time.localeCompare(b.start_time)),
     [agenda],
   );
+
+  const nextUpcoming = useMemo(() => {
+    if (schedules.length === 0) return null;
+    const currentDow = localDow();
+    const nowTime = `${String(new Date().getHours()).padStart(2, "0")}:${String(
+      new Date().getMinutes(),
+    ).padStart(2, "0")}:00`;
+
+    // 1. Later today?
+    const todaysLater = schedules
+      .filter((s) => s.day_of_week === currentDow && s.start_time > nowTime)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    if (todaysLater.length > 0) {
+      const s = todaysLater[0];
+      const course = courses.find((c) => c.id === s.course_id);
+      return {
+        schedule: s,
+        when: "hoy",
+        courseName: course?.name ?? "tu clase",
+      };
+    }
+
+    // 2. Next in week
+    const otherDays = schedules
+      .filter((s) => s.day_of_week !== currentDow)
+      .sort((a, b) => {
+        const da = (a.day_of_week - currentDow + 7) % 7 || 7;
+        const db = (b.day_of_week - currentDow + 7) % 7 || 7;
+        return da - db || a.start_time.localeCompare(b.start_time);
+      });
+    if (otherDays.length > 0) {
+      const s = otherDays[0];
+      const course = courses.find((c) => c.id === s.course_id);
+      return {
+        schedule: s,
+        when: dayName(s.day_of_week),
+        courseName: course?.name ?? "tu clase",
+      };
+    }
+    return null;
+  }, [schedules, courses]);
 
   const pending = classes.filter((c) => phaseOf(c, minutes) === "open").length;
   const live = classes.find((c) => phaseOf(c, minutes) === "live");
@@ -88,7 +131,11 @@ export function TodayView() {
           <EmptyState
             icon={<IconCalendar className="h-5 w-5" />}
             title="Hoy no tienes clases"
-            message="Cuando tengas una clase programada aparecerá aquí, con la lista lista para pasar."
+            message={
+              nextUpcoming
+                ? `Tu próxima clase es ${nextUpcoming.when === "hoy" ? "hoy" : "el " + nextUpcoming.when} a las ${formatTime(nextUpcoming.schedule.start_time)} (${nextUpcoming.courseName}).`
+                : "Cuando tengas una clase programada aparecerá aquí, con la lista lista para pasar."
+            }
             action={
               <Button variant="secondary" onClick={() => setParams({ m: "clases" })}>
                 Ver todas mis clases
@@ -210,6 +257,13 @@ function ClassBlock({
                   {ensure.isPending ? "Abriendo…" : "Entrar al aula"}
                 </Button>
               )}
+              <Button
+                variant="secondary"
+                className="border-slate-600 bg-transparent text-slate-100 hover:bg-slate-800"
+                onClick={() => navigate("/?m=ludi")}
+              >
+                🎮 Quiz Ludi
+              </Button>
               <Button onClick={() => navigate(`/clase/${entry.session_id}`)}>
                 Pasar lista
               </Button>

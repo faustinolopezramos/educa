@@ -257,7 +257,7 @@ export function QuickPayModal({
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+                <span className="text-2xs font-semibold uppercase tracking-wider text-slate-500">
                   Alumno seleccionado
                 </span>
                 <div className="text-sm font-bold text-slate-900">{selectedStudent.full_name}</div>

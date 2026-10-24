@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canManageGrades, canSeeSection, defaultSection, getNavForUser } from "../nav";
+import { canManageGrades, canSeeSection, canViewFinance, defaultSection, getNavForUser } from "../nav";
 import type { Permission, Role, User } from "../types";
 
 function user(role: Role, permissions: Permission[] = []): User {
@@ -168,5 +168,16 @@ describe("getNavForUser", () => {
       expect(section).toBeTruthy();
       expect(canSeeSection(user(role), section)).toBe(true);
     }
+  });
+});
+
+describe("canViewFinance", () => {
+  it("matches the API: admins and finance assistants only", () => {
+    expect(canViewFinance(user("admin"))).toBe(true);
+    expect(canViewFinance(user("superadmin"))).toBe(true);
+    expect(canViewFinance(user("assistant", ["manage_finance"]))).toBe(true);
+    expect(canViewFinance(user("assistant", ["manage_enrollments"]))).toBe(false);
+    expect(canViewFinance(user("teacher"))).toBe(false);
+    expect(canViewFinance(null)).toBe(false);
   });
 });

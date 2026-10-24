@@ -2,12 +2,20 @@ from datetime import datetime, timedelta, timezone
 
 import secrets
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt sólo mira los primeros 72 bytes. passlib los recortaba en silencio y
+# así se guardaron los hashes existentes; bcrypt 5 en cambio lanza un error con
+# una entrada más larga. Se recorta igual que antes para que ambos lados sigan
+# coincidiendo con lo ya guardado.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _bcrypt_input(password: str) -> bytes:
+    return password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
 
 _ALGORITHM = settings.jwt_algorithm
 _SECRET = settings.jwt_secret
@@ -15,11 +23,11 @@ _SECRET = settings.jwt_secret
 # Verified on every login attempt whose email doesn't match a user, so that
 # "no such account" costs the same bcrypt work as "wrong password" — without
 # this, a timing difference lets an attacker enumerate registered emails.
-_DUMMY_PASSWORD_HASH = pwd_context.hash("educa-timing-guard-dummy-password")
-
-
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(_bcrypt_input(password), bcrypt.gensalt()).decode("ascii")
+
+
+_DUMMY_PASSWORD_HASH = hash_password("educa-timing-guard-dummy-password")
 
 
 def generate_password() -> str:
@@ -33,7 +41,11 @@ def generate_password() -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(_bcrypt_input(plain_password), hashed_password.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        # Un hash que no es bcrypt no puede validar ninguna contraseña.
+        return False
 
 
 def create_access_token(subject: str, extra: dict | None = None) -> str:
@@ -41,6 +53,31 @@ def create_access_token(subject: str, extra: dict | None = None) -> str:
     payload: dict = {"sub": subject, "exp": expire, "type": "access"}
     if extra:
         payload.update(extra)
+    return jwt.encode(payload, _SECRET, algorithm=_ALGORITHM)
+
+
+# Lo que dura el desafío de segundo factor: el tiempo para abrir la app
+# autenticadora y teclear el código, no más.
+MFA_CHALLENGE_EXPIRE_MINUTES = 5
+
+
+def create_mfa_challenge_token(subject: str, role: str, token_version: int) -> str:
+    """Token del desafío MFA: lo que se entrega tras acertar la contraseña.
+
+    Lleva `type: "mfa"`, no `"access"`, a propósito. Cuando era un access token
+    con una marca `mfa_pending`, `get_current_user` lo aceptaba en cualquier
+    endpoint —nadie miraba la marca— y bastaba la contraseña para entrar. Con un
+    tipo propio, `get_current_user` lo rechaza como a cualquier token ajeno, y
+    sólo `/auth/mfa/verify` sabe canjearlo.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=MFA_CHALLENGE_EXPIRE_MINUTES)
+    payload: dict = {
+        "sub": subject,
+        "exp": expire,
+        "type": "mfa",
+        "role": role,
+        "ver": token_version,
+    }
     return jwt.encode(payload, _SECRET, algorithm=_ALGORITHM)
 
 
@@ -77,6 +114,12 @@ def create_password_reset_token(
 
 def decode_token(token: str) -> dict | None:
     try:
-        return jwt.decode(token, _SECRET, algorithms=[_ALGORITHM])
+        # `exp` y `sub` obligatorios: un token firmado sin caducidad no caduca nunca.
+        return jwt.decode(
+            token,
+            _SECRET,
+            algorithms=[_ALGORITHM],
+            options={"require": ["exp", "sub"]},
+        )
     except jwt.PyJWTError:
         return None

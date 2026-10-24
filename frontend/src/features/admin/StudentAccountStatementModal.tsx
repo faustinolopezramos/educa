@@ -97,6 +97,12 @@ export function StudentAccountStatementModal({
             ) : undefined
           }
         >
+          <Button
+            variant="secondary"
+            onClick={() => window.print()}
+          >
+            🖨️ Imprimir Estado de Cuenta
+          </Button>
           <Button variant="secondary" onClick={onClose}>
             Cerrar
           </Button>
@@ -136,7 +142,7 @@ export function StudentAccountStatementModal({
 
         {/* Enrollment / Course Selector */}
         {studentEnrollments.length === 0 ? (
-          <div className="py-8 text-center text-slate-400 italic">
+          <div className="py-8 text-center text-slate-500 italic">
             El alumno no cuenta con matrículas o cursos registrados.
           </div>
         ) : (
@@ -276,9 +282,9 @@ export function StudentAccountStatementModal({
               </div>
 
               {ledgerLoading ? (
-                <div className="py-6 text-center text-slate-400">Cargando estado de cuenta…</div>
+                <div className="py-6 text-center text-slate-500">Cargando estado de cuenta…</div>
               ) : !ledger || ledger.movements.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 italic bg-slate-50/50 rounded-xl border border-slate-200/60">
+                <div className="py-8 text-center text-slate-500 italic bg-slate-50/50 rounded-xl border border-slate-200/60">
                   No existen movimientos financieros registrados para esta matrícula.
                 </div>
               ) : (

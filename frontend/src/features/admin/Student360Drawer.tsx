@@ -7,6 +7,7 @@ import {
   useCreatePayment,
   useEnrollmentLedger,
   useEnrollments,
+  useMakeUpCredits,
 } from "../../lib/queries";
 import { notify } from "../../lib/toast";
 import type { PaymentKind, User } from "../../lib/types";
@@ -60,12 +61,13 @@ export function Student360Drawer({
   onMatricular?: (studentId: number) => void;
 }) {
   const { money, symbol } = useMoney();
-  const [activeTab, setActiveTab] = useState<"kardex" | "finances">("kardex");
+  const [activeTab, setActiveTab] = useState<"kardex" | "finances" | "makeups">("kardex");
   const [kardexData, setKardexData] = useState<StudentKardexResponse | null>(null);
 
   // Enrollments & Finances query
   const { data: enrollments = [] } = useEnrollments();
   const { data: courses = [] } = useCourses();
+  const { data: makeups = [], isLoading: loadingMakeups } = useMakeUpCredits(student.id);
   const studentEnrollments = enrollments.filter((e) => e.student_id === student.id);
 
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | null>(
@@ -204,6 +206,17 @@ export function Student360Drawer({
           >
             Estado Financiero & Pagos
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("makeups")}
+            className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition ${
+              activeTab === "makeups"
+                ? "border-brand-600 text-brand-600"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Pases de Recuperación {makeups.length > 0 && `(${makeups.length})`}
+          </button>
         </div>
 
         {/* TAB 1: EXPEDIENTE ACADÉMICO */}
@@ -248,7 +261,7 @@ export function Student360Drawer({
                   <span className="text-2xs font-bold uppercase tracking-wider text-slate-700">
                     Competencias MCER (Marco Común Europeo)
                   </span>
-                  <span className="text-2xs text-slate-400">Escala 0–10</span>
+                  <span className="text-2xs text-slate-500">Escala 0–10</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {Object.entries(summary.skills_breakdown).map(([skill, score]) => (
@@ -277,7 +290,7 @@ export function Student360Drawer({
                 Historial de Cursos e Inscripciones
               </h4>
               {history.length === 0 ? (
-                <p className="text-xs italic text-slate-400 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <p className="text-xs italic text-slate-500 p-3 bg-slate-50 rounded-lg border border-slate-200">
                   El alumno no registra cursos previos.
                 </p>
               ) : (
@@ -326,7 +339,7 @@ export function Student360Drawer({
                                 {item.final_score} pts
                               </span>
                             ) : (
-                              <span className="text-xs text-slate-400">En curso</span>
+                              <span className="text-xs text-slate-500">En curso</span>
                             )}
                           </Td>
                           <Td>
@@ -522,7 +535,7 @@ export function Student360Drawer({
                                   🖨️ Ver Recibo
                                 </Button>
                               ) : (
-                                <span className="text-2xs text-slate-400">—</span>
+                                <span className="text-2xs text-slate-500">—</span>
                               )}
                             </Td>
                           </tr>
@@ -532,6 +545,112 @@ export function Student360Drawer({
                   </Card>
                 )}
               </>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: PASES DE RECUPERACIÓN */}
+        {activeTab === "makeups" && (
+          <div className="space-y-4">
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Card padding="sm">
+                <div className="text-2xs text-slate-500 font-medium">Disponibles para agendar</div>
+                <div className="text-lg font-bold text-emerald-600 mt-0.5">
+                  {makeups.filter((m) => m.status === "available").length}
+                </div>
+              </Card>
+              <Card padding="sm">
+                <div className="text-2xs text-slate-500 font-medium">Reservados / En Curso</div>
+                <div className="text-lg font-bold text-blue-600 mt-0.5">
+                  {makeups.filter((m) => m.status === "booked").length}
+                </div>
+              </Card>
+              <Card padding="sm">
+                <div className="text-2xs text-slate-500 font-medium">Completados / Expirados</div>
+                <div className="text-lg font-bold text-slate-700 mt-0.5">
+                  {makeups.filter((m) => m.status === "attended" || m.status === "expired").length}
+                </div>
+              </Card>
+            </div>
+
+            {loadingMakeups ? (
+              <p className="py-8 text-center text-xs text-slate-500">Cargando pases de recuperación…</p>
+            ) : makeups.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center bg-slate-50/50">
+                <p className="text-sm font-medium text-slate-700">Sin pases de recuperación</p>
+                <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+                  El alumno no registra inasistencias compensadas ni pases emitidos en sus matrículas actuales o históricas.
+                </p>
+              </div>
+            ) : (
+              <Card padding="none" className="overflow-hidden">
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Pase & Nivel</Th>
+                      <Th>Inasistencia Origen</Th>
+                      <Th>Clase Agendada</Th>
+                      <Th>Vigencia</Th>
+                      <Th align="right">Estado</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {makeups.map((m) => (
+                      <tr key={m.id} className="hover:bg-slate-50">
+                        <Td>
+                          <div className="font-semibold text-slate-900 text-xs">Pase #{m.id}</div>
+                          <div className="text-2xs text-slate-500">{m.level_name ?? "Nivel general"}</div>
+                        </Td>
+                        <Td>
+                          <div className="text-xs text-slate-800">{m.course_name ?? "—"}</div>
+                          {m.origin_session_date && (
+                            <div className="text-2xs text-slate-500">{m.origin_session_date}</div>
+                          )}
+                        </Td>
+                        <Td>
+                          {m.status === "booked" ? (
+                            <div>
+                              <div className="text-xs font-medium text-blue-700">
+                                {m.target_session_date} {m.target_session_time && `· ${m.target_session_time}`}
+                              </div>
+                              <div className="text-2xs text-slate-500">{m.target_course_name}</div>
+                            </div>
+                          ) : m.status === "attended" ? (
+                            <span className="text-xs text-emerald-700 font-medium">Asistencia registrada</span>
+                          ) : (
+                            <span className="text-xs text-slate-500 italic">Sin agendar aún</span>
+                          )}
+                        </Td>
+                        <Td>
+                          <span className="text-xs tabular font-medium text-slate-700">{m.expires_at}</span>
+                        </Td>
+                        <Td align="right">
+                          <Badge
+                            color={
+                              m.status === "available"
+                                ? "green"
+                                : m.status === "booked"
+                                  ? "indigo"
+                                  : m.status === "attended"
+                                    ? "sky"
+                                    : "slate"
+                            }
+                          >
+                            {m.status === "available"
+                              ? "Disponible"
+                              : m.status === "booked"
+                                ? "Agendada"
+                                : m.status === "attended"
+                                  ? "Completada"
+                                  : "Expirada"}
+                          </Badge>
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </Card>
             )}
           </div>
         )}

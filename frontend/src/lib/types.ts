@@ -36,6 +36,11 @@ export interface Tenant {
   /** Plan que la academia pidió y aún no se ha resuelto. */
   requested_plan: string | null;
   plan_requested_at: string | null;
+  /** Paquete Ludi IA & Gamificación */
+  has_ludi_addon?: boolean;
+  ludi_requested?: boolean;
+  ludi_requested_at?: string | null;
+  ludi_modules?: string[];
 }
 
 export interface PlanOption {
@@ -54,8 +59,19 @@ export interface AcademyPlan {
   active_students: number;
   requested_plan: string | null;
   plan_requested_at: string | null;
+  has_ludi_addon?: boolean;
+  ludi_requested?: boolean;
+  ludi_requested_at?: string | null;
+  ludi_modules?: string[];
   currency: string;
   plans: PlanOption[];
+}
+
+export interface LeaderboardEntry {
+  student_id: number;
+  student_name: string;
+  xp: number;
+  rank?: number;
 }
 
 export interface User {

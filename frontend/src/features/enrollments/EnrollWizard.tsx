@@ -260,7 +260,7 @@ export function EnrollWizard({
                       type="button"
                       aria-label={`Quitar a ${s?.full_name ?? id}`}
                       onClick={() => setPicked((p) => p.filter((x) => x !== id))}
-                      className="text-slate-400 hover:text-slate-700"
+                      className="text-slate-500 hover:text-slate-700"
                     >
                       ×
                     </button>
@@ -322,11 +322,11 @@ export function EnrollWizard({
                 </div>
               </div>
               <div className="border-t border-slate-100 px-3 py-2">
-                <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+                <span className="text-2xs font-semibold uppercase tracking-wider text-slate-500">
                   Horario
                 </span>
                 {courseSchedules.length === 0 ? (
-                  <p className="mt-1 text-xs italic text-slate-400">
+                  <p className="mt-1 text-xs italic text-slate-500">
                     Sin horario definido.
                   </p>
                 ) : (

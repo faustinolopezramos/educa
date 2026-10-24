@@ -10,6 +10,8 @@ import {
   Field,
   InlineAlert,
   Input,
+  Modal,
+  ModalActions,
   SectionHeading,
   Select,
   SkeletonRows,
@@ -580,7 +582,7 @@ function TeacherLanguagesForm({ user }: { user: User }) {
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {teacherLangs.length === 0 ? (
-              <span className="text-xs italic text-slate-400">
+              <span className="text-xs italic text-slate-500">
                 No tienes idiomas o materias asignadas.
               </span>
             ) : (
@@ -812,8 +814,6 @@ interface DeviceSessionListResponse {
 
 function DeviceSessionsPanel() {
   const { user } = useAuth();
-  if (!user) return null;
-
   const [sessions, setSessions] = useState<DeviceSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -821,8 +821,10 @@ function DeviceSessionsPanel() {
 
   // Cargar sesiones al montar
   useEffect(() => {
-    loadSessions();
+    if (user) loadSessions();
   }, []);
+
+  if (!user) return null;
 
   async function loadSessions() {
     setLoading(true);
@@ -1005,18 +1007,34 @@ interface WebAuthnCredentialListResponse {
 
 function PasskeysPanel() {
   const { user } = useAuth();
-  if (!user) return null;
-
   const [credentials, setCredentials] = useState<WebAuthnCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
+  // Registrar una passkey toca la seguridad de la cuenta: se confirma con la
+  // contraseña (y el código del autenticador, si la cuenta lo tiene).
+  const [confirming, setConfirming] = useState(false);
+  const [password, setPassword] = useState("");
+  const [mfaToken, setMfaToken] = useState("");
+  const [needsMfa, setNeedsMfa] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  function openConfirm() {
+    setPassword("");
+    setMfaToken("");
+    setNeedsMfa(false);
+    setConfirmError(null);
+    setRegisterError(null);
+    setConfirming(true);
+  }
 
   // Cargar credenciales al montar
   useEffect(() => {
-    loadCredentials();
+    if (user) loadCredentials();
   }, []);
+
+  if (!user) return null;
 
   async function loadCredentials() {
     setLoading(true);
@@ -1035,9 +1053,28 @@ function PasskeysPanel() {
   async function startRegistration() {
     setRegistering(true);
     setRegisterError(null);
+    setConfirmError(null);
     try {
-      // 1. Obtener opciones de registro
-      const { data: startRes } = await api.post<{ options: string }>("/auth/webauthn/register/start");
+      // 1. Obtener opciones de registro (confirmando antes la identidad)
+      let startRes: { options: string };
+      try {
+        const res = await api.post<{ options: string }>("/auth/webauthn/register/start", {
+          password,
+          mfa_token: mfaToken.trim() || undefined,
+        });
+        startRes = res.data;
+      } catch (e) {
+        const detail = (e as { response?: { data?: { detail?: { code?: string } } } })?.response
+          ?.data?.detail;
+        if (detail && typeof detail === "object" && detail.code === "mfa_token_required") {
+          setNeedsMfa(true);
+        }
+        setConfirmError(apiErrorMessage(e, "No se pudo confirmar tu identidad"));
+        return;
+      }
+      setConfirming(false);
+      setPassword("");
+      setMfaToken("");
       const options = JSON.parse(startRes.options);
 
       // 2. Pedir al navegador que cree la credencial
@@ -1141,7 +1178,7 @@ function PasskeysPanel() {
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <Button
-          onClick={startRegistration}
+          onClick={openConfirm}
           disabled={registering || !isSupported || loading}
           className={isSupported ? "" : "opacity-50 cursor-not-allowed"}
         >
@@ -1221,6 +1258,59 @@ function PasskeysPanel() {
             </div>
           ))}
         </div>
+      )}
+
+      {confirming && (
+        <Modal
+          title="Confirma tu identidad"
+          description="Una passkey permite entrar sin contraseña, así que antes de añadirla hay que comprobar que eres tú."
+          onClose={() => !registering && setConfirming(false)}
+          maxWidth="max-w-sm"
+          onSubmit={() => {
+            if (password && !registering) void startRegistration();
+          }}
+          footer={
+            <ModalActions>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={registering}
+                onClick={() => setConfirming(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={registering || !password}>
+                {registering ? "Comprobando…" : "Continuar"}
+              </Button>
+            </ModalActions>
+          }
+        >
+          <div className="space-y-3">
+            <Field label="Contraseña actual" error={needsMfa ? null : confirmError}>
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            {needsMfa && (
+              <Field
+                label="Código de verificación"
+                hint="El de tu app autenticadora, o un código de respaldo."
+                error={confirmError}
+              >
+                <Input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={8}
+                  value={mfaToken}
+                  onChange={(e) => setMfaToken(e.target.value)}
+                />
+              </Field>
+            )}
+          </div>
+        </Modal>
       )}
     </Card>
   );

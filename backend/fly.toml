@@ -13,6 +13,10 @@ primary_region = "dfw"
 [env]
   PORT = "8080"
   PYTHONUNBUFFERED = "1"
+  # Detrás del proxy de Fly la IP real viene en `Fly-Client-IP`, que pone la
+  # plataforma. Con TRUST_PROXY_HEADERS=true (ver DEPLOYMENT.md) es de la que
+  # se fían los límites de intentos; `X-Forwarded-For` lo puede escribir el cliente.
+  CLIENT_IP_HEADER = "fly-client-ip"
 
 [http_service]
   internal_port = 8080

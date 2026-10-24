@@ -361,7 +361,7 @@ export function RegisterTeacherWizard({ initialCourseId, initialTeacherId, onClo
                     ? "border-brand-500 bg-brand-50/60 text-brand-900 font-semibold shadow-2xs"
                     : completed
                     ? "border-emerald-200 bg-emerald-50/50 text-emerald-800"
-                    : "border-slate-100 bg-slate-50 text-slate-400"
+                    : "border-slate-100 bg-slate-50 text-slate-500"
                 }`}
               >
                 <span

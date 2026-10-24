@@ -47,7 +47,7 @@ export function MyAvailabilityCollapsible() {
         </div>
         <div className="flex items-center gap-2">
           <Badge color="indigo">{isOpen ? "Ocultar" : "Ver y Gestionar"}</Badge>
-          <span className="text-xs font-bold text-slate-400">
+          <span className="text-xs font-bold text-slate-500">
             {isOpen ? "▲" : "▼"}
           </span>
         </div>

@@ -184,12 +184,12 @@ export function FirstSteps({ steps }: { steps: SetupStep[] }) {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-slate-400">
+                        <span className="text-[10px] font-semibold text-slate-500">
                           {categoryTag(step.key)}
                         </span>
                         <p
                           className={`text-sm font-semibold ${
-                            step.done ? "text-slate-400 line-through" : "text-slate-900"
+                            step.done ? "text-slate-500 line-through" : "text-slate-900"
                           }`}
                         >
                           {step.label}

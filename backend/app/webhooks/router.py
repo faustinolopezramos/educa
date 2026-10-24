@@ -49,16 +49,25 @@ def _timestamp_is_fresh(raw: str) -> bool:
     return abs(time.time() - sent_at) <= _MAX_TIMESTAMP_SKEW_SECONDS
 
 
+def _secret_for(provider: ProviderName) -> str:
+    """Un secreto por proveedor; el común sólo si ese no está definido."""
+    specific = {
+        ProviderName.zoom: settings.zoom_webhook_secret,
+        ProviderName.google: settings.google_webhook_token,
+    }.get(provider, "")
+    return specific or settings.webhook_secret
+
+
 def _signature_is_valid(provider: ProviderName, request: Request, body: bytes) -> bool:
     """Verify the provider's signature over the raw request body.
 
     Every branch returns False rather than raising, so an unknown or malformed
     header can never be mistaken for a valid signature.
     """
-    secret = settings.webhook_secret
+    secret = _secret_for(provider)
     if not secret:
         logger.warning(
-            "Rejected %s webhook: WEBHOOK_SECRET is not configured", provider.value
+            "Rejected %s webhook: no webhook secret is configured", provider.value
         )
         return False
 
@@ -135,6 +144,19 @@ def receive_webhook(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Malformed JSON body")
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Expected a JSON object")
+
+    # Zoom no activa una suscripción hasta que el endpoint responde a su desafío
+    # (`endpoint.url_validation`) con el `plainToken` firmado con el mismo
+    # secreto. La petición llega firmada como cualquier otra, así que ya pasó
+    # por `_signature_is_valid`.
+    if provider is ProviderName.zoom and payload.get("event") == "endpoint.url_validation":
+        plain = (payload.get("payload") or {}).get("plainToken")
+        if not isinstance(plain, str) or not plain:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missing plainToken")
+        encrypted = hmac.new(
+            _secret_for(provider).encode(), plain.encode(), hashlib.sha256
+        ).hexdigest()
+        return {"plainToken": plain, "encryptedToken": encrypted}
 
     # Normalize the two events we care about. Providers differ in shape; this
     # is a best-effort extraction to be refined per provider.

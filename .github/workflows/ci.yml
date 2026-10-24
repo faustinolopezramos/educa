@@ -9,6 +9,13 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 es lo que corre en producción (backend/Dockerfile); 3.13 es lo que
+        # usa el entorno local de desarrollo. Que ambos pasen evita que algo
+        # funcione «en mi máquina» y falle desplegado, o al revés.
+        python-version: ["3.11", "3.13"]
     services:
       postgres:
         image: postgres:16
@@ -30,12 +37,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       # requirements-dev.txt pulls in requirements.txt and adds pytest, which
       # the step below needs and the runtime file deliberately does not carry.
       - run: pip install -r requirements-dev.txt
       - run: cp .env.example .env
+      # Falla ante un aviso de seguridad conocido en lo que se instala. Es ruidoso
+      # a propósito: una dependencia vulnerable debe verse el día que se publica.
+      - run: pip install pip-audit && pip-audit -r requirements.txt
       - run: alembic upgrade head
         env:
           DATABASE_URL: postgresql+psycopg://educa:educa@localhost:5432/educa_test
@@ -52,9 +62,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
+      # Sólo los errores rompen el CI (reglas de los hooks); los avisos de
+      # accesibilidad se ven en el log y se limpian por tandas.
+      - run: npm run lint
+      # Sólo dependencias de producción y sólo gravedad alta o crítica: las de
+      # desarrollo (vite, vitest, tailwind) no llegan al navegador del usuario.
+      - run: npm audit --omit=dev --audit-level=high
       # `npm run build` runs `tsc -b` first, so typechecking is covered here.
       - run: npm run build
         env:

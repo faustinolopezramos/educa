@@ -230,13 +230,13 @@ export function AssignTeacherModal({
                   <li key={a.id} className="px-3 py-1.5 text-xs text-slate-700">
                     {teachers.find((t) => t.id === a.teacher_id)?.full_name ??
                       `#${a.teacher_id}`}
-                    {a.is_lead && <span className="ml-1.5 text-slate-400">· titular</span>}
+                    {a.is_lead && <span className="ml-1.5 text-slate-500">· titular</span>}
                   </li>
                 ))}
               </ul>
             )}
             <div className="border-t border-slate-100 px-3 py-2">
-              <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-slate-500">
                 Horario
               </span>
               {courseSchedules.length === 0 ? (

@@ -26,7 +26,7 @@ export function AcademyKpis() {
   // to turning students away.
   const occupancyTone =
     occupancy == null
-      ? "text-slate-400"
+      ? "text-slate-500"
       : occupancy >= 0.9
         ? "text-emerald-700"
         : occupancy < 0.5
@@ -34,7 +34,7 @@ export function AcademyKpis() {
           : "text-slate-900";
 
   return (
-    <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Kpi
         label="Cursos activos"
         value={kpis.active_courses}
@@ -94,7 +94,7 @@ function Kpi({
         onClick={onClick}
         className="w-full text-left transition-opacity hover:opacity-80"
       >
-        <div className="text-2xs font-medium uppercase tracking-wider text-slate-400">
+        <div className="text-2xs font-medium uppercase tracking-wider text-slate-500">
           {label}
         </div>
         <div className={`tabular mt-1 text-2xl font-bold ${valueClassName}`}>{value}</div>

@@ -117,7 +117,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
           <div className="mt-1 text-2xl font-bold text-brand-700">
             {summary.global_gpa > 0 ? `${summary.global_gpa} / 10` : "—"}
           </div>
-          <div className="mt-0.5 text-xs text-slate-400">Escala 0–10</div>
+          <div className="mt-0.5 text-xs text-slate-500">Escala 0–10</div>
         </Card>
 
         <Card className="p-4 border-slate-200 bg-white">
@@ -127,7 +127,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
           <div className="mt-1 text-2xl font-bold text-emerald-700">
             {summary.overall_attendance_rate}%
           </div>
-          <div className="mt-0.5 text-xs text-slate-400">Excluye justificadas</div>
+          <div className="mt-0.5 text-xs text-slate-500">Excluye justificadas</div>
         </Card>
 
         <Card className="p-4 border-slate-200 bg-white">
@@ -137,7 +137,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
           <div className="mt-1 text-2xl font-bold text-slate-900">
             {summary.total_courses_passed}
           </div>
-          <div className="mt-0.5 text-xs text-slate-400">
+          <div className="mt-0.5 text-xs text-slate-500">
             {summary.total_courses_failed > 0
               ? `${summary.total_courses_failed} reprobado(s)`
               : "0 reprobados"}
@@ -186,7 +186,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-medium text-slate-700">{label}</span>
                     <span className={`font-bold tabular ${isLow ? "text-red-600" : "text-slate-900"}`}>
-                      {avg.toFixed(1)} <span className="text-2xs font-normal text-slate-400">/ 10</span>
+                      {avg.toFixed(1)} <span className="text-2xs font-normal text-slate-500">/ 10</span>
                     </span>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
@@ -228,7 +228,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
         </div>
 
         {history.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">
+          <div className="p-8 text-center text-slate-500">
             No tienes materias registradas en tu historial por el momento.
           </div>
         ) : (
@@ -288,7 +288,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
                           ✗ Reprobado
                         </span>
                       ) : (
-                        <span className="text-2xs text-slate-400">Cursando</span>
+                        <span className="text-2xs text-slate-500">Cursando</span>
                       )}
                     </span>
                   </div>
@@ -355,7 +355,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
                           {entry.final_score.toFixed(1)}
                         </span>
                       ) : (
-                        <span className="text-slate-400 font-normal">En curso</span>
+                        <span className="text-slate-500 font-normal">En curso</span>
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-center">
@@ -368,7 +368,7 @@ Emitido el: ${new Date().toLocaleDateString()}`;
                           <span>✗</span> Reprobado
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-400">Cursando</span>
+                        <span className="text-xs text-slate-500">Cursando</span>
                       )}
                     </td>
                   </tr>

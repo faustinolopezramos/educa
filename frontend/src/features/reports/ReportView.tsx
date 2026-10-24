@@ -1,5 +1,5 @@
 import { useState } from "react";
-
+import { useAuth } from "../../auth/AuthContext";
 import {
   Badge,
   Button,
@@ -27,7 +27,13 @@ function pct(rate: number | null): string {
   return rate == null ? "—" : `${Math.round(rate * 100)}%`;
 }
 
-export function ReportView() {
+interface ReportViewProps {
+  hideHeader?: boolean;
+}
+
+export function ReportView({ hideHeader = false }: ReportViewProps = {}) {
+  const { user } = useAuth();
+  const isStudent = user?.role === "student";
   const [activeTab, setActiveTab] = useState<"consolidated" | "standard">("consolidated");
   const [period, setPeriod] = useState<ReportPeriod>("month");
   const [anchor, setAnchor] = useState<string>("");
@@ -36,54 +42,73 @@ export function ReportView() {
 
   return (
     <div>
-      <PageHeader
-        title="Reportes"
-        description="La nota consolidada pondera 40% tareas, 50% exámenes y 10% asistencia."
-        actions={
-          <>
+      {!hideHeader && (
+        <PageHeader
+          title="Reportes"
+          description="La nota consolidada pondera 40% tareas, 50% exámenes y 10% asistencia."
+          actions={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  downloadReport("pdf", period, anchor || undefined).catch(() =>
+                    notify("No se pudo descargar el PDF", "error"),
+                  )
+                }
+              >
+                Descargar PDF
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  downloadReport("csv", period, anchor || undefined).catch(() =>
+                    notify("No se pudo descargar el CSV", "error"),
+                  )
+                }
+              >
+                Descargar CSV
+              </Button>
+            </>
+          }
+        />
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5">
+        {!isStudent && (
+          <SegmentedControl
+            value={activeTab}
+            onChange={setActiveTab}
+            options={[
+              { value: "consolidated", label: "Rendimiento" },
+              { value: "standard", label: "Sesiones" },
+            ]}
+          />
+        )}
+        <div className={`${isStudent ? "" : "ml-auto"} flex items-center gap-2`}>
+          <SegmentedControl value={period} onChange={setPeriod} options={PERIODS} />
+          <Input
+            type="date"
+            aria-label="Fecha de referencia del periodo"
+            className="w-auto text-xs"
+            value={anchor}
+            onChange={(e) => setAnchor(e.target.value)}
+          />
+        </div>
+        {isStudent && (
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="secondary"
+              size="sm"
               onClick={() =>
                 downloadReport("pdf", period, anchor || undefined).catch(() =>
                   notify("No se pudo descargar el PDF", "error"),
                 )
               }
             >
-              Descargar PDF
+              📄 Descargar PDF
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                downloadReport("csv", period, anchor || undefined).catch(() =>
-                  notify("No se pudo descargar el CSV", "error"),
-                )
-              }
-            >
-              Descargar CSV
-            </Button>
-          </>
-        }
-      />
-
-      <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5">
-        <SegmentedControl
-          value={activeTab}
-          onChange={setActiveTab}
-          options={[
-            { value: "consolidated", label: "Rendimiento" },
-            { value: "standard", label: "Sesiones" },
-          ]}
-        />
-        <div className="ml-auto flex items-center gap-2">
-          <SegmentedControl value={period} onChange={setPeriod} options={PERIODS} />
-          <Input
-            type="date"
-            aria-label="Fecha de referencia del periodo"
-            className="w-auto"
-            value={anchor}
-            onChange={(e) => setAnchor(e.target.value)}
-          />
-        </div>
+          </div>
+        )}
       </div>
 
       {isLoading || !report ? (
@@ -134,7 +159,7 @@ export function ReportView() {
                         score < 6.0 ? "text-red-600" : "text-slate-900"
                       }`}
                     >
-                      {score.toFixed(1)} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                      {score.toFixed(1)} <span className="text-xs font-normal text-slate-500">/ 10</span>
                     </div>
                   </div>
                 ))}

@@ -7,16 +7,21 @@ idiomas, niveles, cursos, horarios, matrículas, asistencia y calificaciones) y 
 **Stack:** FastAPI + SQLAlchemy + Alembic + PostgreSQL · React + Vite + TypeScript +
 TailwindCSS + TanStack Query + React Router + React Hook Form + Zod.
 
-Esta es la **Fase 1 (Fundación)**: núcleo académico completo, auth con roles y un
-Lobby con prueba de cámara/micrófono. La integración de video usa el patrón *Strategy*
-con un **proveedor manual** (el profesor pega la URL de la reunión); las APIs reales de
-Zoom/Google quedan como esqueletos listos para implementar.
+**Estado actual:** plataforma multi-academia (cada academia es un *tenant* con su
+plan), con el núcleo académico completo, finanzas (cargos, cobros, saldos y
+comprobantes), reposiciones, renovaciones, reportes en PDF y avisos por correo,
+WhatsApp y push. La autenticación cubre roles y permisos de asistente, MFA (TOTP con
+códigos de respaldo), passkeys (WebAuthn), bloqueo de cuentas, rotación de refresh
+tokens y sesiones por dispositivo. La integración de video usa el patrón *Strategy*
+con un **proveedor manual** (el profesor pega la URL de la reunión); los webhooks de
+Zoom/Google ya verifican firmas, pero las APIs para crear reuniones siguen siendo
+esqueletos.
 
 ---
 
 ## Requisitos
 
-- Docker (para PostgreSQL) · Python 3.11+ · Node 18+
+- Docker (para PostgreSQL) · Python 3.11+ · Node 22+
 
 ---
 
@@ -287,5 +292,5 @@ tarde se rechaza aunque su firma sea impecable.
 
 ## Fuera de alcance (fases futuras)
 
-Integración real de Zoom/Google/Teams, módulo de Finanzas/facturación, chat en vivo por
-WebSockets, pizarra colaborativa y grabaciones automáticas vía webhook real.
+Creación de reuniones por API en Zoom/Google/Teams, chat en vivo por WebSockets y
+pizarra colaborativa.

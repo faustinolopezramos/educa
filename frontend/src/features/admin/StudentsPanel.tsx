@@ -82,15 +82,25 @@ export function StudentsPanel() {
     courseName?: string;
   } | null>(null);
 
-  const urlSearch = params.get("search");
   useEffect(() => {
+    let changed = false;
+    const urlSearch = params.get("search");
     if (urlSearch) {
       setSearch(urlSearch);
       setTab("todos");
       params.delete("search");
+      changed = true;
+    }
+    const urlTab = params.get("tab");
+    if (urlTab && ["activos", "sin_curso", "morosos", "baja", "todos"].includes(urlTab)) {
+      setTab(urlTab as Tab);
+      params.delete("tab");
+      changed = true;
+    }
+    if (changed) {
       setParams(params, { replace: true });
     }
-  }, [urlSearch, params, setParams]);
+  }, [params, setParams]);
 
   const update = useUpdateUser();
 
@@ -343,7 +353,7 @@ export function StudentsPanel() {
                         {current.length}
                       </span>
                       {mine.length > current.length && (
-                        <span className="ml-1 text-xs text-slate-400">
+                        <span className="ml-1 text-xs text-slate-500">
                           (+{mine.length - current.length} anteriores)
                         </span>
                       )}

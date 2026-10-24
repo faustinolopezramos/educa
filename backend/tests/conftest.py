@@ -102,15 +102,52 @@ def db(engine) -> Session:
         connection.close()
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "real_breach_check: usa el servicio real de contraseñas filtradas (con HTTP simulado)",
+    )
+
+
+@pytest.fixture(autouse=True)
+def offline_password_breach_check(monkeypatch, request):
+    """La comprobación de contraseñas filtradas no sale a internet en las pruebas.
+
+    Consulta HaveIBeenPwned de verdad, y las contraseñas de las pruebas
+    (`Password123!`) figuran en cientos de miles de filtraciones: con red, el
+    registro de academias respondía 422 y la suite se ponía en rojo; sin red,
+    pasaba. Una prueba no puede depender de eso. `test_password_breach.py`
+    ejercita el servicio real contra una respuesta simulada.
+    """
+    from app.services import password_breach
+
+    # Las pruebas del propio servicio necesitan la función real (con `httpx`
+    # simulado); se excluyen con `pytestmark = pytest.mark.real_breach_check`.
+    if request.node.get_closest_marker("real_breach_check"):
+        return
+    monkeypatch.setattr(
+        password_breach,
+        "check_password_breach_sync",
+        lambda password: password_breach.BreachCheckResult(compromised=False),
+    )
+
+
 @pytest.fixture
 def client(db: Session) -> TestClient:
     app.dependency_overrides[get_db] = lambda: db
     # The login rate limiter tracks attempts per client IP in a module-level
     # dict that outlives any one request, so without clearing it here, tests
     # that call auth() a few times each start tripping each other's 429s.
+    from app.core.rate_limiter import get_rate_limiter
     from app.main import _login_attempts
 
     _login_attempts.clear()
+    # También los plazos de bloqueo (`account_lockout`): viven en el mismo
+    # limitador y, sin vaciarlos, una prueba que bloquea una cuenta bloquearía
+    # a las siguientes.
+    limiter = get_rate_limiter()
+    if hasattr(limiter, "reset"):
+        limiter.reset()
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -151,6 +188,18 @@ def make_session(db: Session, schedule: Schedule, on: date, **kw) -> ClassSessio
     db.add(session)
     db.flush()
     return session
+
+
+def clear_route_limits() -> None:
+    """Olvida el tope por minuto del middleware, sin tocar el bloqueo de cuentas.
+
+    Ambos comparten el diccionario de `_login_attempts`; las claves del
+    middleware empiezan por la ruta (`/auth/...`), las del bloqueo por `lockout:`.
+    """
+    from app.main import _login_attempts
+
+    for key in [k for k in _login_attempts if k.startswith("/")]:
+        del _login_attempts[key]
 
 
 def auth(client: TestClient, email: str, password: str = "secret123") -> dict[str, str]:

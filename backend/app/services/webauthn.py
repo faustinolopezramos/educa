@@ -1,104 +1,61 @@
-"""Servicio WebAuthn / Passkeys para autenticación sin contraseña."""
+"""Servicio WebAuthn / Passkeys.
+
+Una passkey es una credencial que *se tiene* y que el autenticador sólo usa tras
+verificar a la persona (huella, rostro, PIN): por eso aquí la verificación de
+usuario es obligatoria, no «preferida». Con `PREFERRED` un autenticador sin PIN
+ni biometría respondía igual, y una passkey robada del dispositivo valía como
+contraseña.
+"""
 
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-
-# Compatibilidad: webauthn 1.1.0 espera `from cbor2 import decoder`
-import sys
-import types
-import typing
-
-try:
-    import cbor2
-    if not hasattr(cbor2, "decoder"):
-        _cbor2_decoder = types.ModuleType("cbor2.decoder")
-        for _attr in dir(cbor2):
-            if not _attr.startswith("__"):
-                setattr(_cbor2_decoder, _attr, getattr(cbor2, _attr))
-        _cbor2_decoder.loads = cbor2.loads
-        _cbor2_decoder.load = cbor2.load
-        cbor2.decoder = _cbor2_decoder
-        sys.modules["cbor2.decoder"] = _cbor2_decoder
-except ImportError:
-    pass
-
-# Compatibilidad: webauthn 1.1.0 fue escrito para Pydantic v1 donde campos
-# Optional[...] sin default tenían implícito `= None`. En Pydantic v2 esto lanza
-# ValidationError al instanciar `att_stmt: AttestationStatement = AttestationStatement()`.
-try:
-    from pydantic import BaseModel
-
-    _orig_base_model_init = BaseModel.__init__
-
-    def _webauthn_compat_model_init(self, /, **data: typing.Any) -> None:
-        if self.__class__.__module__.startswith("webauthn"):
-            fields = getattr(self.__class__, "model_fields", None)
-            if fields:
-                for field_name, field_info in fields.items():
-                    if field_name not in data:
-                        annot = field_info.annotation
-                        origin = getattr(annot, "__origin__", None)
-                        args = getattr(annot, "__args__", ())
-                        if (
-                            origin is typing.Union
-                            or (hasattr(types, "UnionType") and origin is types.UnionType)
-                            or str(origin) in ("typing.Union", "types.UnionType")
-                        ) and type(None) in args:
-                            data[field_name] = None
-        return _orig_base_model_init(self, **data)
-
-    BaseModel.__init__ = _webauthn_compat_model_init
-except Exception:
-    pass
-
-try:
-    from webauthn import (
-        generate_registration_options,
-        verify_registration_response,
-        generate_authentication_options,
-        verify_authentication_response,
-        options_to_json,
-    )
-    from webauthn.helpers import (
-        PublicKeyCredentialCreationOptions,
-        PublicKeyCredentialRequestOptions,
-        PublicKeyCredentialDescriptor,
-        AuthenticatorSelectionCriteria,
-        AuthenticatorAttachment,
-        UserVerificationRequirement,
-        ResidentKeyRequirement,
-        AttestationConveyancePreference,
-        PublicKeyCredentialType,
-        AuthenticatorTransport,
-    )
-    WEBAUTHN_AVAILABLE = True
-except Exception as _webauthn_err:
-    logger = logging.getLogger(__name__)
-    logger.warning("WebAuthn library not available: %s", _webauthn_err)
-    WEBAUTHN_AVAILABLE = False
-    PublicKeyCredentialCreationOptions = typing.Any  # type: ignore
-    PublicKeyCredentialRequestOptions = typing.Any  # type: ignore
-
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import WebAuthnCredential, WebAuthnChallenge, User
+from app.models import User, WebAuthnChallenge, WebAuthnCredential
 
 logger = logging.getLogger(__name__)
 
-# Configuración WebAuthn
-RP_ID = settings.webauthn_rp_id if hasattr(settings, 'webauthn_rp_id') else "localhost"
+try:
+    from webauthn import (
+        generate_authentication_options,
+        generate_registration_options,
+        options_to_json,
+        verify_authentication_response,
+        verify_registration_response,
+    )
+    from webauthn.helpers.structs import (
+        AttestationConveyancePreference,
+        AuthenticatorAttachment,
+        AuthenticatorSelectionCriteria,
+        AuthenticatorTransport,
+        PublicKeyCredentialDescriptor,
+        PublicKeyCredentialType,
+        ResidentKeyRequirement,
+        UserVerificationRequirement,
+    )
+
+    WEBAUTHN_AVAILABLE = True
+except Exception as _err:  # pragma: no cover - sólo si la librería falta o es incompatible
+    logger.error("La librería WebAuthn no está disponible, las passkeys se desactivan: %s", _err)
+    WEBAUTHN_AVAILABLE = False
+
 RP_NAME = "EDUCA"
-ORIGIN = settings.webauthn_origin if hasattr(settings, 'webauthn_origin') else "http://localhost:5173"
 CHALLENGE_TTL_SECONDS = 300  # 5 minutos
+
+REGISTRATION = "registration"
+AUTHENTICATION = "authentication"
+
+
+def _require_available() -> None:
+    if not WEBAUTHN_AVAILABLE:
+        raise ValueError("El servicio WebAuthn no está disponible en este servidor")
 
 
 def base64url_encode(data: bytes) -> str:
@@ -112,37 +69,47 @@ def base64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + padding)
 
 
-def create_challenge(db: Session, user_id: int | None, challenge_type: str) -> str:
-    """Crea un nuevo desafío WebAuthn y lo guarda en la BD."""
-    challenge_bytes = secrets.token_bytes(32)
-    challenge = base64url_encode(challenge_bytes)
+def create_challenge(db: Session, user_id: int | None, challenge_type: str) -> bytes:
+    """Crea y guarda un desafío; devuelve los bytes que hay que dar a la librería.
 
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=CHALLENGE_TTL_SECONDS)
-
-    db_challenge = WebAuthnChallenge(
-        user_id=user_id,
-        challenge=challenge,
-        challenge_type=challenge_type,
-        expires_at=expires_at,
+    El desafío que se guarda tiene que ser el mismo que recibe el navegador. Antes
+    cada lado generaba el suyo —la librería uno al armar las opciones, este módulo
+    otro al guardarlo—, así que al terminar ningún desafío enviado por el cliente
+    coincidía con uno guardado.
+    """
+    raw = secrets.token_bytes(32)
+    db.add(
+        WebAuthnChallenge(
+            user_id=user_id,
+            challenge=base64url_encode(raw),
+            challenge_type=challenge_type,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=CHALLENGE_TTL_SECONDS),
+        )
     )
-    db.add(db_challenge)
     db.flush()
+    return raw
 
-    return challenge
 
+def consume_challenge(
+    db: Session,
+    challenge: str,
+    challenge_type: str,
+    user_id: int | None = None,
+) -> WebAuthnChallenge | None:
+    """Obtiene y elimina un desafío vigente (un solo uso).
 
-def get_challenge(db: Session, challenge: str) -> WebAuthnChallenge | None:
-    """Obtiene un desafío válido (no expirado)."""
-    return db.scalar(
+    Debe ser del tipo pedido —uno de registro no sirve para autenticar— y, si se
+    indica `user_id`, haberse emitido para esa persona.
+    """
+    stmt = (
         select(WebAuthnChallenge)
         .where(WebAuthnChallenge.challenge == challenge)
+        .where(WebAuthnChallenge.challenge_type == challenge_type)
         .where(WebAuthnChallenge.expires_at > datetime.now(timezone.utc))
     )
-
-
-def consume_challenge(db: Session, challenge: str) -> WebAuthnChallenge | None:
-    """Obtiene y elimina un desafío (one-time use)."""
-    chal = get_challenge(db, challenge)
+    if user_id is not None:
+        stmt = stmt.where(WebAuthnChallenge.user_id == user_id)
+    chal = db.scalar(stmt)
     if chal:
         db.delete(chal)
         db.flush()
@@ -157,48 +124,52 @@ def cleanup_expired_challenges(db: Session) -> int:
     return result.rowcount
 
 
-def generate_registration_options_webauthn(
-    user: User,
-    db: Session,
-) -> PublicKeyCredentialCreationOptions:
-    """Genera opciones para registrar una nueva credencial WebAuthn."""
-    if not WEBAUTHN_AVAILABLE:
-        raise ValueError("El servicio WebAuthn no está disponible en este servidor")
-
-    # Obtener credenciales existentes para excluir
-    existing_creds = db.scalars(
-        select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id)
-    ).all()
-
-    exclude_credentials = [
-        PublicKeyCredentialDescriptor(
-            id=base64url_decode(cred.credential_id),
-            type=PublicKeyCredentialType.PUBLIC_KEY,
-            transports=[AuthenticatorTransport(t) for t in cred.transports.split(",")] if cred.transports else None,
+def _descriptors(creds: list[WebAuthnCredential]) -> list:
+    out = []
+    for cred in creds:
+        transports = None
+        if cred.transports:
+            transports = []
+            for t in cred.transports.split(","):
+                try:
+                    transports.append(AuthenticatorTransport(t))
+                except ValueError:
+                    continue  # un transporte desconocido no invalida la credencial
+        out.append(
+            PublicKeyCredentialDescriptor(
+                id=base64url_decode(cred.credential_id),
+                type=PublicKeyCredentialType.PUBLIC_KEY,
+                transports=transports or None,
+            )
         )
-        for cred in existing_creds
-    ]
+    return out
 
-    options = generate_registration_options(
-        rp_id=RP_ID,
+
+def generate_registration_options_webauthn(user: User, db: Session):
+    """Genera opciones para registrar una nueva credencial WebAuthn."""
+    _require_available()
+
+    existing = list(
+        db.scalars(select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id)).all()
+    )
+    challenge = create_challenge(db, user.id, REGISTRATION)
+
+    return generate_registration_options(
+        rp_id=settings.webauthn_rp_id,
         rp_name=RP_NAME,
         user_id=str(user.id).encode(),
         user_name=user.email,
         user_display_name=user.full_name,
-        exclude_credentials=exclude_credentials,
+        challenge=challenge,
+        exclude_credentials=_descriptors(existing),
         authenticator_selection=AuthenticatorSelectionCriteria(
             authenticator_attachment=AuthenticatorAttachment.PLATFORM,
             resident_key=ResidentKeyRequirement.PREFERRED,
-            user_verification=UserVerificationRequirement.PREFERRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
         ),
         attestation=AttestationConveyancePreference.NONE,
-        timeout=60000,  # 60 segundos
+        timeout=60000,
     )
-
-    # Guardar challenge
-    create_challenge(db, user.id, "registration")
-
-    return options
 
 
 def verify_registration_response_webauthn(
@@ -208,79 +179,64 @@ def verify_registration_response_webauthn(
     expected_challenge: str,
 ) -> WebAuthnCredential:
     """Verifica la respuesta de registro WebAuthn y guarda la credencial."""
-    if not WEBAUTHN_AVAILABLE:
-        raise ValueError("El servicio WebAuthn no está disponible en este servidor")
+    _require_available()
 
-    # Consumir challenge
-    chal = consume_challenge(db, expected_challenge)
-
-    if not chal:
+    if not consume_challenge(db, expected_challenge, REGISTRATION, user_id=user.id):
         raise ValueError("Challenge inválido o expirado")
 
-    # Verificar respuesta
-    verification = verify_registration_response(
-        credential=credential,
-        expected_challenge=base64url_decode(expected_challenge),
-        expected_rp_id=RP_ID,
-        expected_origin=ORIGIN,
-        require_user_verification=False,
-    )
+    try:
+        verification = verify_registration_response(
+            credential=credential,
+            expected_challenge=base64url_decode(expected_challenge),
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        # La librería lanza tipos distintos según qué falle (origen, firma, formato…);
+        # para quien llama todos son «la respuesta no vale».
+        logger.warning("Registro WebAuthn rechazado para el usuario %s: %s", user.id, exc)
+        raise ValueError("No se pudo verificar la passkey") from exc
 
-    # Crear credencial
-    credential_id = base64url_encode(verification.credential_id)
-    public_key = base64url_encode(verification.credential_public_key)
-
+    transports = (credential.get("response") or {}).get("transports") or []
     webauthn_cred = WebAuthnCredential(
         user_id=user.id,
-        credential_id=credential_id,
-        public_key=public_key,
+        credential_id=base64url_encode(verification.credential_id),
+        public_key=base64url_encode(verification.credential_public_key),
         sign_count=verification.sign_count,
         name=f"Passkey {datetime.now(timezone.utc).strftime('%d/%m/%Y')}",
-        authenticator_type="platform",  # Por ahora asumimos platform
-        transports=",".join([t.value for t in credential.get("response", {}).get("transports", [])]) if credential.get("response", {}).get("transports") else None,
-        aaguid=verification.aaguid.hex() if verification.aaguid else None,
+        authenticator_type="platform",
+        transports=",".join(str(t) for t in transports) or None,
+        aaguid=str(verification.aaguid) if verification.aaguid else None,
     )
     db.add(webauthn_cred)
     db.flush()
-
     return webauthn_cred
 
 
-def generate_authentication_options_webauthn(
-    db: Session,
-    user_id: int | None = None,
-) -> PublicKeyCredentialRequestOptions:
-    """Genera opciones para autenticación WebAuthn."""
-    if not WEBAUTHN_AVAILABLE:
-        raise ValueError("El servicio WebAuthn no está disponible en este servidor")
+def generate_authentication_options_webauthn(db: Session, user_id: int | None = None):
+    """Genera opciones para autenticación WebAuthn.
 
-    allow_credentials = []
+    Sin `user_id` es el flujo de credencial detectable (el navegador ofrece las
+    passkeys que tiene para este sitio); con él, sólo las de esa persona.
+    """
+    _require_available()
 
+    allow = None
     if user_id:
-        # Solo credenciales del usuario específico
-        creds = db.scalars(
-            select(WebAuthnCredential).where(WebAuthnCredential.user_id == user_id)
-        ).all()
-        allow_credentials = [
-            PublicKeyCredentialDescriptor(
-                id=base64url_decode(cred.credential_id),
-                type=PublicKeyCredentialType.PUBLIC_KEY,
-                transports=[AuthenticatorTransport(t) for t in cred.transports.split(",")] if cred.transports else None,
-            )
-            for cred in creds
-        ]
+        creds = list(
+            db.scalars(select(WebAuthnCredential).where(WebAuthnCredential.user_id == user_id)).all()
+        )
+        allow = _descriptors(creds) or None
+    challenge = create_challenge(db, user_id, AUTHENTICATION)
 
-    options = generate_authentication_options(
-        rp_id=RP_ID,
-        allow_credentials=allow_credentials if allow_credentials else None,
-        user_verification=UserVerificationRequirement.PREFERRED,
+    return generate_authentication_options(
+        rp_id=settings.webauthn_rp_id,
+        challenge=challenge,
+        allow_credentials=allow,
+        user_verification=UserVerificationRequirement.REQUIRED,
         timeout=60000,
     )
-
-    # Guardar challenge
-    create_challenge(db, user_id, "authentication")
-
-    return options
 
 
 def verify_authentication_response_webauthn(
@@ -289,15 +245,11 @@ def verify_authentication_response_webauthn(
     expected_challenge: str,
 ) -> WebAuthnCredential:
     """Verifica la respuesta de autenticación WebAuthn."""
-    if not WEBAUTHN_AVAILABLE:
-        raise ValueError("El servicio WebAuthn no está disponible en este servidor")
+    _require_available()
 
-    # Consumir challenge
-    chal = consume_challenge(db, expected_challenge)
-    if not chal:
+    if not consume_challenge(db, expected_challenge, AUTHENTICATION):
         raise ValueError("Challenge inválido o expirado")
 
-    # Buscar credencial
     credential_id = credential.get("id")
     if not credential_id:
         raise ValueError("Credential ID faltante")
@@ -308,22 +260,23 @@ def verify_authentication_response_webauthn(
     if not webauthn_cred:
         raise ValueError("Credencial no encontrada")
 
-    # Verificar respuesta
-    verification = verify_authentication_response(
-        credential=credential,
-        expected_challenge=base64url_decode(expected_challenge),
-        expected_rp_id=RP_ID,
-        expected_origin=ORIGIN,
-        credential_public_key=base64url_decode(webauthn_cred.public_key),
-        credential_current_sign_count=webauthn_cred.sign_count,
-        require_user_verification=False,
-    )
+    try:
+        verification = verify_authentication_response(
+            credential=credential,
+            expected_challenge=base64url_decode(expected_challenge),
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+            credential_public_key=base64url_decode(webauthn_cred.public_key),
+            credential_current_sign_count=webauthn_cred.sign_count,
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        logger.warning("Autenticación WebAuthn rechazada (credencial %s): %s", webauthn_cred.id, exc)
+        raise ValueError("No se pudo verificar la passkey") from exc
 
-    # Actualizar sign count y última uso
     webauthn_cred.sign_count = verification.new_sign_count
     webauthn_cred.last_used_at = datetime.now(timezone.utc)
     db.flush()
-
     return webauthn_cred
 
 
@@ -348,8 +301,7 @@ def delete_credential(db: Session, credential_id: int, user_id: int) -> bool:
     return result.rowcount > 0
 
 
-def options_to_json_safe(options: PublicKeyCredentialCreationOptions | PublicKeyCredentialRequestOptions) -> str:
-    """Convierte opciones WebAuthn a JSON seguro para el frontend."""
-    if not WEBAUTHN_AVAILABLE:
-        raise ValueError("El servicio WebAuthn no está disponible en este servidor")
+def options_to_json_safe(options) -> str:
+    """Convierte opciones WebAuthn a JSON para el frontend."""
+    _require_available()
     return options_to_json(options)

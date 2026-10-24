@@ -4,6 +4,7 @@ import {
   ActionMenu,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -17,6 +18,7 @@ import {
 import { IconCalendar } from "../../components/icons";
 import { useCreateHoliday, useDeleteHoliday, useHolidays } from "../../lib/queries";
 import { notify } from "../../lib/toast";
+import type { Holiday } from "../../lib/types";
 import { onMutationError } from "./shared";
 
 export function HolidaysPanel() {
@@ -25,6 +27,7 @@ export function HolidaysPanel() {
   const del = useDeleteHoliday();
   const [form, setForm] = useState({ date: "", name: "" });
   const [searchTerm, setSearchTerm] = useState("");
+  const [toDelete, setToDelete] = useState<Holiday | null>(null);
 
   const filteredHolidays = holidays.filter((h) => {
     if (!searchTerm.trim()) return true;
@@ -130,11 +133,7 @@ export function HolidaysPanel() {
                         items={[
                           {
                             label: "Eliminar día festivo",
-                            onClick: () =>
-                              del.mutate(h.id, {
-                                onSuccess: () => notify("Festivo eliminado", "success"),
-                                onError: onMutationError("No se pudo eliminar"),
-                              }),
+                            onClick: () => setToDelete(h),
                             danger: true,
                           },
                         ]}
@@ -147,6 +146,30 @@ export function HolidaysPanel() {
           )}
         </Card>
       </div>
+
+      {toDelete && (
+        <ConfirmDialog
+          title="Eliminar día festivo"
+          message={
+            <>
+              ¿Seguro que deseas eliminar el festivo{" "}
+              <strong>{toDelete.name}</strong> ({toDelete.date})? Las clases programadas para esta fecha
+              volverán a estar activas en el calendario.
+            </>
+          }
+          busy={del.isPending}
+          onConfirm={() => {
+            del.mutate(toDelete.id, {
+              onSuccess: () => {
+                notify(`Día festivo "${toDelete.name}" eliminado`, "success");
+                setToDelete(null);
+              },
+              onError: onMutationError("No se pudo eliminar el día festivo"),
+            });
+          }}
+          onClose={() => setToDelete(null)}
+        />
+      )}
     </div>
   );
 }

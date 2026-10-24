@@ -58,6 +58,8 @@ class TenantUpdate(PatchModel):
     tax_id: str | None = Field(None, max_length=50)
     phone: str | None = Field(None, max_length=50)
     address: str | None = Field(None, max_length=255)
+    has_ludi_addon: bool | None = None
+    ludi_modules: list[str] | None = None
 
     _tz = field_validator("timezone")(_known_timezone)
     _currency = field_validator("currency")(_known_currency)
@@ -70,9 +72,26 @@ class TenantRead(TenantBase):
     plan_tier: str | None = None
     requested_plan: str | None = None
     plan_requested_at: datetime | None = None
+    has_ludi_addon: bool = False
+    ludi_requested: bool = False
+    ludi_requested_at: datetime | None = None
+    ludi_modules: list[str] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
+
+
+class LudiAddonRequest(BaseModel):
+    modules: list[str] = Field(
+        default_factory=lambda: ["lessons", "tutor", "voice", "live", "gamification"]
+    )
+
+
+class LudiAddonActivate(BaseModel):
+    enabled: bool = True
+    modules: list[str] = Field(
+        default_factory=lambda: ["lessons", "tutor", "voice", "live", "gamification"]
+    )
 
 
 class TenantSummary(TenantRead):

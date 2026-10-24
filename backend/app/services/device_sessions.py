@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from user_agents import parse as parse_user_agent
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from app.models import DeviceSession, User
+from app.models import DeviceSession, RefreshSession, User
 from app.core.security import decode_token
 
 
@@ -106,16 +106,66 @@ def get_device_session(db: Session, session_id: int, user_id: int) -> DeviceSess
     )
 
 
-def revoke_device_session(db: Session, session_id: int, user_id: int) -> bool:
-    """Revoca una sesión de dispositivo específica."""
-    result = db.execute(
+def rotate_device_session(db: Session, user_id: int, old_jti: str | None, new_jti: str) -> None:
+    """Hace que la sesión de dispositivo siga al refresh token que se acaba de rotar."""
+    if not old_jti:
+        return
+    db.execute(
         update(DeviceSession)
+        .where(DeviceSession.user_id == user_id, DeviceSession.refresh_jti == old_jti)
+        .values(refresh_jti=new_jti, last_used_at=datetime.now(timezone.utc))
+    )
+
+
+def _revoke_refresh_sessions(db: Session, user_id: int, jtis: list[str] | None = None, keep: str | None = None) -> None:
+    """Mata los refresh tokens que sostienen esas sesiones.
+
+    Marcar la fila del dispositivo no cerraba nada: el refresh token seguía
+    canjeándose por tokens nuevos. Lo que cierra una sesión es su `RefreshSession`.
+    (El access token vigente caduca solo, en `jwt_expire_minutes`.)
+    """
+    stmt = (
+        update(RefreshSession)
+        .where(RefreshSession.user_id == user_id, RefreshSession.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+    if jtis is not None:
+        stmt = stmt.where(RefreshSession.jti.in_(jtis))
+    if keep is not None:
+        stmt = stmt.where(RefreshSession.jti != keep)
+    db.execute(stmt)
+
+
+def is_explicitly_revoked(db: Session, user_id: int, jti: str) -> bool:
+    """Si ese refresh token pertenece a un dispositivo que su dueño cerró.
+
+    Un token *rotado* ya no tiene sesión de dispositivo (ésta pasó a su sucesor),
+    así que sólo los cerrados a propósito cumplen esto.
+    """
+    return (
+        db.scalar(
+            select(DeviceSession.id)
+            .where(DeviceSession.user_id == user_id)
+            .where(DeviceSession.refresh_jti == jti)
+            .where(DeviceSession.revoked_at.is_not(None))
+        )
+        is not None
+    )
+
+
+def revoke_device_session(db: Session, session_id: int, user_id: int) -> bool:
+    """Revoca una sesión de dispositivo específica, y con ella su refresh token."""
+    row = db.scalar(
+        select(DeviceSession)
         .where(DeviceSession.id == session_id)
         .where(DeviceSession.user_id == user_id)
         .where(DeviceSession.revoked_at.is_(None))
-        .values(revoked_at=datetime.now(timezone.utc))
     )
-    return result.rowcount > 0
+    if row is None:
+        return False
+    row.revoked_at = datetime.now(timezone.utc)
+    _revoke_refresh_sessions(db, user_id, jtis=[row.refresh_jti])
+    return True
 
 
 def revoke_all_other_device_sessions(db: Session, user_id: int, keep_jti: str) -> int:
@@ -127,6 +177,7 @@ def revoke_all_other_device_sessions(db: Session, user_id: int, keep_jti: str) -
         .where(DeviceSession.refresh_jti != keep_jti)
         .values(revoked_at=datetime.now(timezone.utc))
     )
+    _revoke_refresh_sessions(db, user_id, keep=keep_jti)
     return result.rowcount
 
 
@@ -138,12 +189,13 @@ def revoke_all_device_sessions(db: Session, user_id: int) -> int:
         .where(DeviceSession.revoked_at.is_(None))
         .values(revoked_at=datetime.now(timezone.utc))
     )
+    _revoke_refresh_sessions(db, user_id)
     return result.rowcount
 
 
 def cleanup_old_device_sessions(db: Session, days: int = 30) -> int:
     """Limpia sesiones de dispositivo antiguas revocadas."""
-    cutoff = datetime.now(timezone.utc) - datetime.timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     result = db.execute(
         delete(DeviceSession).where(
             DeviceSession.revoked_at.is_not(None),

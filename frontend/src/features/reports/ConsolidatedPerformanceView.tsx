@@ -127,7 +127,7 @@ export function ConsolidatedPerformanceView({ report }: { report: Report }) {
             <div className="flex items-center gap-3">
               <span className="tabular text-4xl font-bold tracking-tight text-brand-700">
                 {score(studentReport.consolidated_score)}
-                <span className="text-lg font-semibold text-slate-400">/10</span>
+                <span className="text-lg font-semibold text-slate-500">/10</span>
               </span>
               <StatusBadge status={studentReport.performance_status} />
             </div>
@@ -244,7 +244,7 @@ export function ConsolidatedPerformanceView({ report }: { report: Report }) {
                   </Td>
                   <Td align="right">
                     <div className="tabular">{score(st.assignments_avg)}</div>
-                    <div className="tabular text-xs text-slate-400">
+                    <div className="tabular text-xs text-slate-500">
                       {percent(st.assignments_completion_rate)} entregado
                     </div>
                   </Td>
@@ -291,7 +291,7 @@ function MetricCard({
     <Card padding="sm">
       <div className="flex items-baseline justify-between">
         <SectionHeading className="!mb-0">
-          {label} <span className="font-normal text-slate-400">{weight}</span>
+          {label} <span className="font-normal text-slate-500">{weight}</span>
         </SectionHeading>
         <span className="tabular text-base font-bold text-slate-900">{value}</span>
       </div>

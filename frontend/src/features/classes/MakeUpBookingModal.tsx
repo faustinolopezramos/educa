@@ -125,7 +125,7 @@ export function MakeUpBookingModal({ credit, onClose, onSuccess }: Props) {
               <p className="text-xs text-slate-500">
                 No hay sesiones paralelas disponibles con aforo libre para este nivel en este momento.
               </p>
-              <p className="text-2xs text-slate-400 mt-1">
+              <p className="text-2xs text-slate-500 mt-1">
                 Consulta con la secretaría académica si requieres habilitar un cupo especial.
               </p>
             </div>

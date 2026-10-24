@@ -118,7 +118,7 @@ export function ActionTray({
               )}
             </span>
 
-            <IconChevronRight className="mt-1 h-4 w-4 flex-none text-slate-400 transition-transform group-hover:translate-x-0.5" />
+            <IconChevronRight className="mt-1 h-4 w-4 flex-none text-slate-500 transition-transform group-hover:translate-x-0.5" />
           </button>
         ))}
       </div>

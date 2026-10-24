@@ -52,6 +52,11 @@ export default function Lobby() {
 
   const [remaining, setRemaining] = useState<number>(0);
   const [av, setAv] = useState<AvStatus>("idle");
+  // Antes de los `return` tempranos de abajo: un hook tras ellos cambia el
+  // número de hooks entre renderizados (cargando → cargado) y React lo rechaza.
+  const [bypassedAv, setBypassedAv] = useState(() => {
+    return typeof window !== "undefined" && sessionStorage.getItem("educa_av_skipped") === "true";
+  });
 
   useEffect(() => {
     if (!session || !schedule) return;
@@ -114,9 +119,6 @@ export default function Lobby() {
       user.role === "superadmin" ||
       (!!schedule && schedule.teacher_id === user.id));
   const isSavedAvOk = typeof window !== "undefined" && sessionStorage.getItem("educa_av_ok") === "true";
-  const [bypassedAv, setBypassedAv] = useState(() => {
-    return typeof window !== "undefined" && sessionStorage.getItem("educa_av_skipped") === "true";
-  });
   const avReady = av === "ok" || isSavedAvOk || bypassedAv;
 
   const handleBypass = () => {

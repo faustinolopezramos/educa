@@ -269,7 +269,7 @@ export function StudentBulkImportModal({ onClose, onSuccess }: StudentBulkImport
             <p className="mt-2 text-xs font-semibold text-slate-800">
               {fileName ? `Archivo: ${fileName}` : "Arrastra tu archivo CSV aquí o haz clic para examinar"}
             </p>
-            <p className="mt-0.5 text-2xs text-slate-400">
+            <p className="mt-0.5 text-2xs text-slate-500">
               Archivos .csv o .txt delimitados por coma o punto y coma
             </p>
           </div>

@@ -246,7 +246,7 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
             </div>
             <span
               className={`text-xs font-semibold ${
-                step === 1 ? "text-slate-900" : "text-slate-400"
+                step === 1 ? "text-slate-900" : "text-slate-500"
               }`}
             >
               Datos & Fechas
@@ -262,14 +262,14 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
                   ? "bg-brand-600 text-white"
                   : step > 2
                   ? "bg-brand-100 text-brand-700"
-                  : "bg-slate-100 text-slate-400"
+                  : "bg-slate-100 text-slate-500"
               }`}
             >
               2
             </div>
             <span
               className={`text-xs font-semibold ${
-                step === 2 ? "text-slate-900" : "text-slate-400"
+                step === 2 ? "text-slate-900" : "text-slate-500"
               }`}
             >
               Horarios Fijos
@@ -283,14 +283,14 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
               className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${
                 step === 3
                   ? "bg-brand-600 text-white"
-                  : "bg-slate-100 text-slate-400"
+                  : "bg-slate-100 text-slate-500"
               }`}
             >
               3
             </div>
             <span
               className={`text-xs font-semibold ${
-                step === 3 ? "text-slate-900" : "text-slate-400"
+                step === 3 ? "text-slate-900" : "text-slate-500"
               }`}
             >
               Profesor Adaptable
@@ -542,7 +542,7 @@ export function UnifiedCourseWizardModal({ onClose, onSuccess }: Props) {
 
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               {teachers.length === 0 ? (
-                <div className="text-slate-400 italic text-xs py-4 text-center">
+                <div className="text-slate-500 italic text-xs py-4 text-center">
                   No hay profesores registrados.
                 </div>
               ) : (

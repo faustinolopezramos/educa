@@ -154,7 +154,7 @@ export function RoomsPanel() {
                     </Td>
                     <Td align="right">
                       <span className="tabular">
-                        {r.capacity ? r.capacity : <span className="text-slate-400">Sin límite</span>}
+                        {r.capacity ? r.capacity : <span className="text-slate-500">Sin límite</span>}
                       </span>
                     </Td>
                     <Td>

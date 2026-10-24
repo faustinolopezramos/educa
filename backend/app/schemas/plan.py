@@ -21,6 +21,10 @@ class AcademyPlanRead(BaseModel):
     active_students: int
     requested_plan: str | None
     plan_requested_at: datetime | None
+    has_ludi_addon: bool = False
+    ludi_requested: bool = False
+    ludi_requested_at: datetime | None = None
+    ludi_modules: list[str] = []
     #: Los precios se cobran en quetzales.
     currency: str = "GTQ"
     plans: list[PlanRead]

@@ -439,7 +439,7 @@ export default function RegisterAcademy() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 focus:outline-none"
                   >
                     {showPassword ? <IconEyeOff /> : <IconEye />}
                   </button>
@@ -474,7 +474,7 @@ export default function RegisterAcademy() {
                   placeholder="+502 5555-1234"
                   {...register("phone")}
                 />
-                <p className="mt-0.5 text-[11px] text-slate-400">
+                <p className="mt-0.5 text-[11px] text-slate-500">
                   Para coordinar tu sesión de bienvenida y soporte inicial.
                 </p>
               </div>

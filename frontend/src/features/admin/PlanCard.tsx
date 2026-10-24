@@ -4,6 +4,7 @@ import { Badge, Button, Card, Modal, ModalActions, SectionHeading } from "../../
 import { formatDateTime } from "../../lib/format";
 import { formatQuetzales } from "../../lib/plans";
 import { useAcademyPlan, useCancelPlanRequest, useRequestPlan } from "../../lib/queries";
+import { useDirectToggleLudiAddon, useRequestLudiAddon } from "../../lib/queries/ludi";
 import { notify } from "../../lib/toast";
 import type { AcademyPlan } from "../../lib/types";
 import { onMutationError } from "./shared";
@@ -20,7 +21,9 @@ import { onMutationError } from "./shared";
 export function PlanCard() {
   const { data: plan } = useAcademyPlan();
   const cancel = useCancelPlanRequest();
+  const directToggleLudi = useDirectToggleLudiAddon();
   const [choosing, setChoosing] = useState(false);
+  const [requestingLudi, setRequestingLudi] = useState(false);
 
   if (!plan) return null;
 
@@ -103,8 +106,124 @@ export function PlanCard() {
         </div>
       )}
 
+      {/* Paquete Ludi IA & Gamificación */}
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-800">Paquete Ludi IA</span>
+            {plan.has_ludi_addon ? (
+              <Badge color="green">Activo</Badge>
+            ) : plan.ludi_requested ? (
+              <Badge color="indigo">Solicitado</Badge>
+            ) : (
+              <Badge color="slate">No activo</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {plan.has_ludi_addon ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={directToggleLudi.isPending}
+                onClick={() =>
+                  directToggleLudi.mutate(
+                    { enabled: false },
+                    {
+                      onSuccess: () => notify("Paquete Ludi desactivado", "success"),
+                      onError: onMutationError("No se pudo desactivar"),
+                    },
+                  )
+                }
+              >
+                {directToggleLudi.isPending ? "Guardando…" : "Desactivar"}
+              </Button>
+            ) : (
+              <>
+                {!plan.ludi_requested && (
+                  <Button variant="secondary" size="sm" onClick={() => setRequestingLudi(true)}>
+                    Solicitar
+                  </Button>
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={directToggleLudi.isPending}
+                  onClick={() =>
+                    directToggleLudi.mutate(
+                      { enabled: true },
+                      {
+                        onSuccess: () => notify("¡Paquete Ludi activado con éxito!", "success"),
+                        onError: onMutationError("No se pudo activar"),
+                      },
+                    )
+                  }
+                >
+                  {directToggleLudi.isPending ? "Activando…" : "Activar ahora"}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          {plan.has_ludi_addon
+            ? "Tu academia cuenta con tutoría IA, evaluación fonética por voz y quizzes interactivos."
+            : plan.ludi_requested
+            ? "Solicitud enviada a Educa. El superadministrador la activará al confirmar el acuerdo."
+            : "Agrega lecciones interactivas, práctica de pronunciación por voz y gamificación para tus cursos."}
+        </p>
+      </div>
+
       {choosing && <PlanRequestModal plan={plan} onClose={() => setChoosing(false)} />}
+      {requestingLudi && <LudiRequestModal onClose={() => setRequestingLudi(false)} />}
     </Card>
+  );
+}
+
+function LudiRequestModal({ onClose }: { onClose: () => void }) {
+  const requestLudi = useRequestLudiAddon();
+
+  function submit() {
+    requestLudi.mutate(undefined, {
+      onSuccess: () => {
+        notify("Solicitud del Paquete Ludi enviada. Te contactaremos para coordinar la activación.", "success");
+        onClose();
+      },
+      onError: onMutationError("No se pudo solicitar el paquete Ludi"),
+    });
+  }
+
+  return (
+    <Modal
+      title="Solicitar Paquete Ludi IA & Gamificación"
+      description="Potencia los cursos de tu academia con herramientas de vanguardia operadas por EDUCA a través de Ludi (Datanuki)."
+      onClose={onClose}
+      onSubmit={submit}
+      footer={
+        <ModalActions>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" disabled={requestLudi.isPending}>
+            {requestLudi.isPending ? "Enviando…" : "Confirmar Solicitud"}
+          </Button>
+        </ModalActions>
+      }
+    >
+      <div className="space-y-3 text-xs text-slate-600">
+        <div className="rounded-lg bg-indigo-50/70 p-3 text-indigo-950">
+          <p className="font-semibold">Módulos incluidos en el paquete:</p>
+          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-indigo-900">
+            <li><b>Laboratorio de Pronunciación:</b> Evaluación fonética de voz con IA (Azure Speech).</li>
+            <li><b>Tutor Conversacional (RAG):</b> Respuestas automáticas 24/7 sobre el material de cada curso.</li>
+            <li><b>Quizzes y Partidas en Vivo:</b> Dinámicas sincrónicas con PIN (estilo Kahoot) para clases.</li>
+            <li><b>Gamificación:</b> Puntos de experiencia (XP) y tablas de clasificación para retención estudiantil.</li>
+          </ul>
+        </div>
+        <p className="text-slate-500">
+          Al confirmar, el equipo de EDUCA recibirá tu solicitud para acordar la facturación y habilitar el servicio en tus cursos.
+        </p>
+      </div>
+    </Modal>
   );
 }
 

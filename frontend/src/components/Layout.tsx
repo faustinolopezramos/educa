@@ -5,7 +5,7 @@ import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { defaultSection, getNavForUser, type NavItem } from "../lib/nav";
 import { syncPushSubscription } from "../lib/push";
-import { useLocationProposals } from "../lib/queries";
+import { useDashboard, useLocationProposals } from "../lib/queries";
 import { CommandPalette, openCommandPalette } from "./CommandPalette";
 import { QuickPayModal, OPEN_QUICK_PAY_EVENT } from "../features/enrollments/QuickPayModal";
 import {
@@ -284,10 +284,16 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 lg:px-8 lg:py-8">
+        <main
+          className={`mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 lg:px-8 lg:py-8 ${
+            user.role === "student" || user.role === "teacher" ? "pb-24 lg:pb-8" : ""
+          }`}
+        >
           <Outlet />
         </main>
       </div>
+      {user.role === "student" && <StudentBottomNav activeId={activeId} />}
+      {user.role === "teacher" && <TeacherBottomNav activeId={activeId} />}
       {quickPayState.open && (
         <QuickPayModal
           initialStudentId={quickPayState.studentId}
@@ -298,6 +304,125 @@ export function Layout() {
       <CommandPalette />
       <Toaster />
     </div>
+  );
+}
+
+function StudentBottomNav({ activeId }: { activeId: string }) {
+  const { data: dash } = useDashboard();
+  const pendingTasks =
+    dash?.items.find((i) => i.kind === "pending_assignments")?.count ?? 0;
+
+  const items = [
+    { id: "inicio", label: "Mi semana", icon: IconHome },
+    { id: "tareas", label: "Tareas", icon: IconClipboard, badge: pendingTasks },
+    { id: "progreso", label: "Mi progreso", icon: IconChart },
+    { id: "perfil", label: "Perfil", icon: IconUser },
+  ];
+
+  return (
+    <nav
+      aria-label="Navegación móvil del estudiante"
+      className="fixed bottom-0 inset-x-0 z-40 flex h-16 items-center justify-around border-t border-slate-200/90 bg-white/95 px-2 py-1 shadow-lg backdrop-blur-md lg:hidden"
+    >
+      {items.map((item) => {
+        const Icon = item.icon;
+        const isActive =
+          activeId === item.id ||
+          (item.id === "progreso" &&
+            (activeId === "calificaciones" ||
+              activeId === "reportes" ||
+              activeId === "kardex" ||
+              activeId === "pagos"));
+
+        return (
+          <Link
+            key={item.id}
+            to={`/?m=${item.id}`}
+            className={`relative flex flex-1 flex-col items-center justify-center py-1 transition-all ${
+              isActive
+                ? "text-brand-700 font-bold"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <div className="relative">
+              <Icon className={`h-5 w-5 ${isActive ? "stroke-[2.5]" : ""}`} />
+              {item.badge != null && item.badge > 0 ? (
+                <span className="absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-3xs font-bold text-white">
+                  {item.badge > 9 ? "9+" : item.badge}
+                </span>
+              ) : null}
+            </div>
+            <span
+              className={`mt-0.5 text-3xs tracking-tight ${
+                isActive ? "font-bold text-brand-800" : "font-medium"
+              }`}
+            >
+              {item.label}
+            </span>
+            {isActive && (
+              <span className="absolute bottom-0 h-0.5 w-6 rounded-full bg-brand-600" />
+            )}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function TeacherBottomNav({ activeId }: { activeId: string }) {
+  const { data: dash } = useDashboard();
+  const pendingGrading =
+    dash?.items.find((i) => i.kind === "pending_grading")?.count ?? 0;
+
+  const items = [
+    { id: "hoy", label: "Hoy", icon: IconHome },
+    { id: "clases", label: "Clases", icon: IconBook },
+    { id: "tareas", label: "Tareas", icon: IconClipboard, badge: pendingGrading },
+    { id: "nomina", label: "Nómina", icon: IconCash },
+    { id: "perfil", label: "Perfil", icon: IconUser },
+  ];
+
+  return (
+    <nav
+      aria-label="Navegación móvil del profesor"
+      className="fixed bottom-0 inset-x-0 z-40 flex h-16 items-center justify-around border-t border-slate-200/90 bg-white/95 px-2 py-1 shadow-lg backdrop-blur-md lg:hidden"
+    >
+      {items.map((item) => {
+        const Icon = item.icon;
+        const isActive = activeId === item.id;
+
+        return (
+          <Link
+            key={item.id}
+            to={`/?m=${item.id}`}
+            className={`relative flex flex-1 flex-col items-center justify-center py-1 transition-all ${
+              isActive
+                ? "text-brand-700 font-bold"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <div className="relative">
+              <Icon className={`h-5 w-5 ${isActive ? "stroke-[2.5]" : ""}`} />
+              {item.badge != null && item.badge > 0 ? (
+                <span className="absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-3xs font-bold text-white">
+                  {item.badge > 9 ? "9+" : item.badge}
+                </span>
+              ) : null}
+            </div>
+            <span
+              className={`mt-0.5 text-3xs tracking-tight ${
+                isActive ? "font-bold text-brand-800" : "font-medium"
+              }`}
+            >
+              {item.label}
+            </span>
+            {isActive && (
+              <span className="absolute bottom-0 h-0.5 w-6 rounded-full bg-brand-600" />
+            )}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 

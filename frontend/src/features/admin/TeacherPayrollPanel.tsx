@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, Input, Modal, ModalActions, PageTitle, SectionHeading } from "../../components/ui";
+import { Button, Card, Input, Modal, ModalActions, PageHeader, SectionHeading } from "../../components/ui";
 import {
   useAcademyPayrollSummary,
   useTeacherPayroll,
@@ -93,16 +93,15 @@ export function TeacherPayrollPanel() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <PageTitle subtitle="Gestión y Control de Honorarios Docentes">
-            Liquidación de Horas / Nómina
-          </PageTitle>
-        </div>
-        <Button variant="secondary" onClick={handleExportCsv} disabled={!summary?.teachers.length}>
-          📥 Exportar CSV
-        </Button>
-      </div>
+      <PageHeader
+        title="Liquidación de Horas & Nómina"
+        description="Gestión y control de honorarios docentes, horas impartidas y liquidación del período."
+        actions={
+          <Button variant="secondary" onClick={handleExportCsv} disabled={!summary?.teachers.length}>
+            📥 Exportar Nómina CSV
+          </Button>
+        }
+      />
 
       {/* Date Filter Bar */}
       <Card className="p-4">
@@ -154,7 +153,7 @@ export function TeacherPayrollPanel() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+          <span className="text-2xs uppercase tracking-wider text-slate-500 font-semibold">
             Profesores con Clases
           </span>
           <div className="mt-1 text-2xl font-bold text-slate-900">
@@ -162,7 +161,7 @@ export function TeacherPayrollPanel() {
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+          <span className="text-2xs uppercase tracking-wider text-slate-500 font-semibold">
             Total Horas Impartidas
           </span>
           <div className="mt-1 text-2xl font-bold text-brand-600">
@@ -170,7 +169,7 @@ export function TeacherPayrollPanel() {
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-2xs uppercase tracking-wider text-slate-400 font-semibold">
+          <span className="text-2xs uppercase tracking-wider text-slate-500 font-semibold">
             Total a Liquidar
           </span>
           <div className="mt-1 text-2xl font-bold text-emerald-600">
@@ -187,7 +186,7 @@ export function TeacherPayrollPanel() {
         ) : isError ? (
           <p className="py-8 text-center text-xs text-red-600">No se pudo cargar la liquidación de nómina.</p>
         ) : !summary || summary.teachers.length === 0 ? (
-          <p className="py-8 text-center text-xs text-slate-400">
+          <p className="py-8 text-center text-xs text-slate-500">
             No se registraron clases dadas en el período seleccionado.
           </p>
         ) : (
@@ -208,7 +207,7 @@ export function TeacherPayrollPanel() {
                   <tr key={t.teacher_id} className="hover:bg-slate-50/50">
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-900">{t.teacher_name}</div>
-                      <div className="text-2xs text-slate-400">{t.email}</div>
+                      <div className="text-2xs text-slate-500">{t.email}</div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -345,7 +344,7 @@ function TeacherDetailModal({
         {isLoading ? (
           <p className="py-6 text-center text-xs text-slate-500">Cargando sesiones…</p>
         ) : !report || report.sessions.length === 0 ? (
-          <p className="py-6 text-center text-xs text-slate-400">No se encontraron sesiones registradas.</p>
+          <p className="py-6 text-center text-xs text-slate-500">No se encontraron sesiones registradas.</p>
         ) : (
           <div className="max-h-80 overflow-y-auto pr-1">
             <table className="w-full text-left text-2xs">

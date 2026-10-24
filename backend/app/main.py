@@ -5,16 +5,19 @@ from functools import wraps
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.http import client_ip
 from app.routers import (
     academy,
     assignments,
     attendance,
     audit,
     auth,
+    auth_security,
     catalog,
     dashboard,
     enrollments,
@@ -22,6 +25,7 @@ from app.routers import (
     grading,
     holidays,
     locations,
+    ludi,
     makeups,
     meetings,
     notifications,
@@ -64,24 +68,33 @@ _RATE_LIMITED_PATHS: dict[str, int] = {
     # Crear una academia no falla con 401: lo que hay que frenar son las altas
     # en masa, así que aquí cuenta cada intento y no sólo los fallidos.
     "/auth/register-academy": 3,
+    # Adivinar el código de 6 dígitos del segundo factor. Cuenta los fallos
+    # (401); el bloqueo por cuenta de `account_lockout` es el tope duro.
+    "/auth/mfa/verify": LOGIN_RATE_LIMIT,
+    # Cada petición manda un correo y adivinar un token firmado de reseteo es
+    # inviable, pero ambas puertas estaban abiertas al ruido y al abuso.
+    "/auth/forgot-password": 5,
+    "/auth/reset-password": 10,
+    # Acceso con passkey: el primer paso es público y deja una fila (el desafío)
+    # por llamada, así que cuenta cada una; el segundo cuenta los fallos.
+    "/auth/webauthn/authenticate/start": 10,
+    "/auth/webauthn/authenticate/finish": LOGIN_RATE_LIMIT * 2,
 }
 
 # Rutas en las que cada intento gasta presupuesto, salga bien o mal.
-_COUNT_EVERY_ATTEMPT: frozenset[str] = frozenset({"/auth/register-academy"})
+_COUNT_EVERY_ATTEMPT: frozenset[str] = frozenset(
+    {
+        "/auth/register-academy",
+        "/auth/forgot-password",
+        "/auth/reset-password",
+        "/auth/webauthn/authenticate/start",
+    }
+)
 
 
 def _client_key(request: Request) -> str:
-    """Who to count this attempt against.
-
-    `X-Forwarded-For` is only honoured when the deployment says it sits behind
-    a proxy it trusts. Reading it unconditionally would let any client forge a
-    fresh identity per request and opt out of the limit entirely.
-    """
-    if settings.trust_proxy_headers:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """Who to count this attempt against (ver `app.core.http.client_ip`)."""
+    return client_ip(request)
 
 
 def _bucket_key(request: Request) -> str:
@@ -96,6 +109,19 @@ def _bucket_key(request: Request) -> str:
     return f"{request.url.path}|{_client_key(request)}"
 
 
+async def _limiter_call(fn, *args):
+    """Run a limiter method without stalling the event loop.
+
+    Redis is a network round trip on a synchronous client; awaited inline it
+    froze every other request on this single worker while it waited. The
+    in-memory limiter stays on the loop: it is microseconds of dict work, and
+    keeping it single-threaded spares its lists from concurrent mutation.
+    """
+    if _rate_limiter is _memory_limiter:
+        return fn(*args)
+    return await run_in_threadpool(fn, *args)
+
+
 async def rate_limit_middleware(request: Request, call_next):
     limit = _RATE_LIMITED_PATHS.get(request.url.path)
     if limit is None or request.method != "POST":
@@ -103,7 +129,7 @@ async def rate_limit_middleware(request: Request, call_next):
 
     client_ip = _bucket_key(request)
 
-    if _rate_limiter.is_rate_limited(client_ip, limit, LOGIN_RATE_WINDOW):
+    if await _limiter_call(_rate_limiter.is_rate_limited, client_ip, limit, LOGIN_RATE_WINDOW):
         from fastapi.responses import JSONResponse
 
         return JSONResponse(
@@ -116,7 +142,7 @@ async def rate_limit_middleware(request: Request, call_next):
     # networks — a classroom behind one NAT address ran out of budget after
     # five students signed in normally.
     if response.status_code == 401 or request.url.path in _COUNT_EVERY_ATTEMPT:
-        _rate_limiter.record_failed_attempt(client_ip, LOGIN_RATE_WINDOW)
+        await _limiter_call(_rate_limiter.record_failed_attempt, client_ip, LOGIN_RATE_WINDOW)
     return response
 
 
@@ -135,6 +161,13 @@ async def cache_middleware(request: Request, call_next):
             response.headers.setdefault("Cache-Control", "private, max-age=30")
         elif path.startswith(("/schedules", "/teachers", "/holidays")):
             response.headers.setdefault("Cache-Control", "private, max-age=15")
+
+        # La respuesta depende de quién pregunta. `private` evita el caché
+        # compartido, pero el del navegador se indexa por URL: en un equipo
+        # compartido, quien entraba después recibía la respuesta del anterior
+        # mientras durara `max-age`. `Vary` lo hace distinguir por credencial.
+        if response.headers.get("Cache-Control", "").startswith("private"):
+            response.headers.append("Vary", "Authorization")
     return response
 
 
@@ -143,11 +176,58 @@ async def cache_middleware(request: Request, call_next):
 # cualquiera que pase; en desarrollo sigue estando, que es donde hace falta.
 _docs_enabled = not settings.is_production
 
+def _report_rls_posture() -> None:
+    """Deja en el log si las políticas de RLS están en vigor para esta API."""
+    import logging
+
+    from app.core.rls import connection_bypasses_rls
+
+    log = logging.getLogger("app.rls")
+    with SessionLocal() as db:
+        bypass = connection_bypasses_rls(db)
+    if bypass:
+        log.warning(
+            "El rol de la base de datos se salta RLS: el aislamiento entre academias "
+            "depende sólo de los filtros de la API (ver DEPLOYMENT.md, «Row Level Security»)."
+        )
+    elif bypass is False:
+        log.info("RLS en vigor para el rol de la API.")
+        if settings.background_jobs_interval_seconds > 0:
+            # Las tareas de fondo abren su sesión sin usuario, así que no fijan
+            # contexto de RLS: con las políticas en vigor leerían tablas vacías
+            # sin dar ningún error.
+            log.warning(
+                "Las tareas de fondo corren sin contexto de RLS y con este rol no verán las "
+                "filas de ninguna academia: no se enviarán avisos ni correrá el barrido de riesgo."
+            )
+
+
+def _report_limiter_posture() -> None:
+    """Avisa de que los bloqueos viven en memoria: se pierden en cada despliegue."""
+    import logging
+
+    if settings.web_concurrency > 1 and not settings.redis_url:
+        logging.getLogger("app.limiter").warning(
+            "WEB_CONCURRENCY=%s sin REDIS_URL: cada proceso cuenta sus propios intentos, "
+            "así que los límites de login valen %s veces lo configurado.",
+            settings.web_concurrency,
+            settings.web_concurrency,
+        )
+    elif settings.is_production and not settings.redis_url:
+        logging.getLogger("app.limiter").warning(
+            "Sin REDIS_URL, los límites de intentos y el bloqueo de cuentas viven en la "
+            "memoria del proceso: se reinician con cada despliegue y no se comparten entre "
+            "máquinas (ver DEPLOYMENT.md)."
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Tareas de fondo: enviar los avisos por correo/WhatsApp y el barrido
     # semanal de alumnos en riesgo (app/services/background.py).
     loop = start_background_jobs(SessionLocal)
+    _report_rls_posture()
+    _report_limiter_posture()
     try:
         yield
     finally:
@@ -174,9 +254,12 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 
-app.middleware("http")(security_headers_middleware)
-app.middleware("http")(rate_limit_middleware)
+# El último registrado es el más externo. Las cabeceras de seguridad van por
+# fuera de todo lo demás para que también las lleve el 429 que el limitador
+# devuelve sin llegar a los endpoints.
 app.middleware("http")(cache_middleware)
+app.middleware("http")(rate_limit_middleware)
+app.middleware("http")(security_headers_middleware)
 
 # En producción sólo entran los orígenes declarados en CORS_ORIGINS, más el
 # patrón opcional CORS_ORIGIN_REGEX para las vistas previas del propio proyecto.
@@ -204,6 +287,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(auth.router)
+app.include_router(auth_security.router)
 app.include_router(tenants.router)
 app.include_router(academy.router)
 app.include_router(users.router)
@@ -228,4 +312,5 @@ app.include_router(push.router)
 app.include_router(payments.router)
 app.include_router(audit.router)
 app.include_router(dashboard.router)
+app.include_router(ludi.router)
 app.include_router(webhooks.router)

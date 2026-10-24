@@ -213,7 +213,7 @@ function TeacherRow({
       </Td>
       <Td>
         {qualLangs.length === 0 ? (
-          <span className="text-xs text-slate-400">Todas las áreas</span>
+          <span className="text-xs text-slate-500">Todas las áreas</span>
         ) : (
           <div className="flex flex-wrap gap-1">
             {qualLangs.map((ql) => {
@@ -234,7 +234,7 @@ function TeacherRow({
       </Td>
       <Td>
         {assignments.length === 0 ? (
-          <span className="text-xs text-slate-400">Sin cursos activos</span>
+          <span className="text-xs text-slate-500">Sin cursos activos</span>
         ) : (
           <span className="text-xs text-slate-700">
             {assignments.length} curso{assignments.length === 1 ? "" : "s"} ·{" "}

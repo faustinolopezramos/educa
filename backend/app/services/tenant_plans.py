@@ -39,6 +39,10 @@ def academy_plan(db: Session, tenant: Tenant) -> AcademyPlanRead:
         active_students=count_tenant_active_students(db, tenant.id),
         requested_plan=tenant.requested_plan,
         plan_requested_at=tenant.plan_requested_at,
+        has_ludi_addon=tenant.has_ludi_addon,
+        ludi_requested=tenant.ludi_requested,
+        ludi_requested_at=tenant.ludi_requested_at,
+        ludi_modules=tenant.ludi_modules or [],
         plans=catalog(),
     )
 
@@ -154,3 +158,71 @@ def reject_request(db: Session, actor: User, tenant: Tenant, reason: str | None)
 def sync_plan_with_quota(tenant: Tenant) -> None:
     """Tras editar el cupo a mano, el plan es el que tenga ese cupo, o "a medida"."""
     tenant.plan_tier = plan_for_quota(tenant.max_active_students)
+
+
+# --- Gestión del Paquete Ludi (B2B Add-on) ---
+
+DEFAULT_LUDI_MODULES = ["lessons", "tutor", "voice", "live", "gamification"]
+
+
+def request_ludi_addon(
+    db: Session, actor: User, tenant: Tenant, modules: list[str] | None = None
+) -> None:
+    """La academia solicita a Educa la activación del paquete Ludi."""
+    if tenant.has_ludi_addon:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Tu academia ya tiene activo el paquete Ludi"
+        )
+    before = snapshot(tenant)
+    tenant.ludi_requested = True
+    tenant.ludi_requested_at = datetime.now(timezone.utc)
+    if modules:
+        tenant.ludi_modules = modules
+    record(db, actor, "req_ludi_addon", "tenant", tenant.id, before, snapshot(tenant))
+    notify_superadmins(
+        db,
+        "ludi_request",
+        f"{tenant.name} solicita el Paquete Ludi IA & Gamificación",
+        (
+            f"La academia {tenant.name} ({tenant.slug}) ha solicitado activar el "
+            "paquete interactivo de Ludi (Datanuki). Actívalo en la gestión de academias "
+            "al confirmar el acuerdo comercial."
+        ),
+        {"tenant_id": tenant.id},
+    )
+
+
+def activate_ludi_addon(
+    db: Session, actor: User, tenant: Tenant, modules: list[str] | None = None
+) -> None:
+    """El superadministrador de Educa activa el paquete Ludi para la academia."""
+    before = snapshot(tenant)
+    tenant.has_ludi_addon = True
+    tenant.ludi_requested = False
+    tenant.ludi_requested_at = None
+    tenant.ludi_modules = modules if modules is not None else (tenant.ludi_modules or DEFAULT_LUDI_MODULES)
+    record(db, actor, "act_ludi_addon", "tenant", tenant.id, before, snapshot(tenant))
+    notify_tenant_admins(
+        db,
+        tenant.id,
+        "ludi_activated",
+        "Paquete Ludi IA & Gamificación activo",
+        "Tu academia ya cuenta con acceso a lecciones IA, tutoría RAG, evaluación por voz y gamificación.",
+    )
+
+
+def deactivate_ludi_addon(db: Session, actor: User, tenant: Tenant) -> None:
+    """El superadministrador de Educa desactiva el paquete Ludi para la academia."""
+    before = snapshot(tenant)
+    tenant.has_ludi_addon = False
+    tenant.ludi_requested = False
+    tenant.ludi_requested_at = None
+    record(db, actor, "deact_ludi", "tenant", tenant.id, before, snapshot(tenant))
+    notify_tenant_admins(
+        db,
+        tenant.id,
+        "ludi_deactivated",
+        "Paquete Ludi desactivado",
+        "El servicio de Ludi ha sido desactivado para tu academia.",
+    )
+

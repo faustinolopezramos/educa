@@ -74,7 +74,12 @@ export function SchedulePlanner() {
   const remove = useDeleteSchedule();
   const checkConflict = useCheckScheduleConflict();
 
-  const [viewMode, setViewMode] = useState<"calendar" | "list">("calendar");
+  const [viewMode, setViewMode] = useState<"calendar" | "list">(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      return "list";
+    }
+    return "calendar";
+  });
   const [filterCourse, setFilterCourse] = useState<number | "all">("all");
   const [filterTeacher, setFilterTeacher] = useState<number | "all">("all");
   const [filterModality, setFilterModality] = useState<Modality | "all">("all");
@@ -444,14 +449,14 @@ export function SchedulePlanner() {
 
             <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl">
               <div>
-                <span className="text-slate-400 font-medium block">Profesor Encargado</span>
+                <span className="text-slate-500 font-medium block">Profesor Encargado</span>
                 <span className="font-bold text-slate-800">
                   {selectedTeacher ? selectedTeacher.full_name : "Sin profesor"}
                 </span>
               </div>
 
               <div>
-                <span className="text-slate-400 font-medium block">Aula / Ubicación</span>
+                <span className="text-slate-500 font-medium block">Aula / Ubicación</span>
                 <span className="font-bold text-slate-800">
                   {!usesRoom(selectedSchedule.modality)
                     ? "Enlace Virtual (Lobby)"
@@ -462,14 +467,14 @@ export function SchedulePlanner() {
               </div>
 
               <div>
-                <span className="text-slate-400 font-medium block">Alumnos Inscritos</span>
+                <span className="text-slate-500 font-medium block">Alumnos Inscritos</span>
                 <span className="font-bold text-emerald-700">
                   {selectedEnrolledCount} / {selectedCourse?.max_students || "—"} cupos
                 </span>
               </div>
 
               <div>
-                <span className="text-slate-400 font-medium block">ID Horario</span>
+                <span className="text-slate-500 font-medium block">ID Horario</span>
                 <span className="font-semibold text-slate-600">#{selectedSchedule.id}</span>
               </div>
             </div>

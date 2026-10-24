@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, Field, Input, Modal, ModalActions, Select } from "../../components/ui";
 import { api, apiErrorMessage } from "../../lib/api";
 import { notify } from "../../lib/toast";
+import { safeUrl } from "../../lib/urls";
 import type { Course } from "../../lib/types";
 
 interface TeacherAssignmentModalProps {
@@ -17,6 +19,7 @@ export function TeacherAssignmentModal({
   onClose,
   onCreated,
 }: TeacherAssignmentModalProps) {
+  const qc = useQueryClient();
   const [courseId, setCourseId] = useState<number>(
     initialCourseId || (courses.length > 0 ? courses[0].id : 0)
   );
@@ -30,7 +33,7 @@ export function TeacherAssignmentModal({
   function applyDatePreset(preset: "3d" | "weekend" | "7d") {
     setDatePreset(preset);
     const now = new Date();
-    let target = new Date();
+    const target = new Date();
 
     if (preset === "3d") {
       target.setDate(now.getDate() + 3);
@@ -71,15 +74,28 @@ export function TeacherAssignmentModal({
       }
     }
 
+    let sanitizedResourceUrl: string | null = null;
+    const rawUrl = resourceUrl.trim();
+    if (rawUrl) {
+      const candidate = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+      if (!safeUrl(candidate)) {
+        notify("Ingresa un enlace web válido para el recurso", "error");
+        return;
+      }
+      sanitizedResourceUrl = candidate;
+    }
+
     setSaving(true);
     try {
       await api.post("/assignments", {
         course_id: courseId,
         title: title.trim(),
         description: description.trim() || null,
-        resource_url: resourceUrl.trim() || null,
+        resource_url: sanitizedResourceUrl,
         due_date: formattedDueDate,
       });
+      qc.invalidateQueries({ queryKey: ["assignments"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       notify("Tarea publicada con éxito", "success");
       onCreated();
       onClose();
@@ -136,7 +152,7 @@ export function TeacherAssignmentModal({
         <Field label="Instrucciones y Pautas">
           <textarea
             rows={4}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50"
             placeholder="Detalla qué deben hacer los alumnos, extensión requerida o criterios clave…"
             value={description}
             onChange={(e) => setDescription(e.target.value)}

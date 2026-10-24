@@ -174,3 +174,18 @@ a:hover {
     display: table-header-group;
   }
 }
+
+/* Quien pide menos movimiento en su sistema (por vestibular, migraña, TDAH…) no
+   debería ver animaciones ni transiciones: WCAG 2.3.3. Se acortan a casi cero en
+   vez de quitarlas para que los estados (`animationend`, `transitionend`) sigan
+   disparándose. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

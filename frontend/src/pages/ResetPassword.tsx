@@ -217,12 +217,12 @@ export default function ResetPassword() {
           )}
         </Card>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-6 text-center text-xs text-slate-500">
           <Link to="/" className="hover:text-slate-600 underline">
             ← Volver a la portada
           </Link>
         </p>
-        <LegalLinks className="mt-3 justify-center text-slate-400" />
+        <LegalLinks className="mt-3 justify-center text-slate-500" />
       </div>
     </div>
   );

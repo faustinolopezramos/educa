@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Badge, Button, Card, Field, InlineAlert, Input, PageHeader, SegmentedControl,
 } from "../../components/ui";
@@ -6,7 +7,14 @@ import { api, apiErrorMessage } from "../../lib/api";
 import { notify } from "../../lib/toast";
 import type { ProviderName } from "../../lib/types";
 
+interface MeetingProviderRecord {
+  id: number;
+  name: ProviderName;
+  is_active: boolean;
+}
+
 export function VideoProvidersPanel() {
+  const queryClient = useQueryClient();
   const [provider, setProvider] = useState<ProviderName>("manual");
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -19,6 +27,22 @@ export function VideoProvidersPanel() {
   // Google Credentials
   const [googleAccessToken, setGoogleAccessToken] = useState("");
   const [googleCalendarId, setGoogleCalendarId] = useState("primary");
+
+  const { data: providersList = [], isLoading } = useQuery<MeetingProviderRecord[]>({
+    queryKey: ["meeting_providers"],
+    queryFn: async () => (await api.get<MeetingProviderRecord[]>("/meetings/providers")).data,
+  });
+
+  const activeSavedProvider = providersList.find((p) => p.is_active)?.name ?? "manual";
+
+  useEffect(() => {
+    if (providersList.length > 0) {
+      const active = providersList.find((p) => p.is_active);
+      if (active) {
+        setProvider(active.name);
+      }
+    }
+  }, [providersList]);
 
   async function handleTestConnection() {
     setTesting(true);
@@ -60,7 +84,13 @@ export function VideoProvidersPanel() {
         credentials,
       });
 
-      notify(`Proveedor ${provider.toUpperCase()} guardado y activado`, "success");
+      await queryClient.invalidateQueries({ queryKey: ["meeting_providers"] });
+      notify(
+        provider === "manual"
+          ? "Modo manual activado con éxito"
+          : `Proveedor ${provider.toUpperCase()} guardado y activado`,
+        "success",
+      );
     } catch (err) {
       notify(apiErrorMessage(err, "Error al guardar la configuración del proveedor"), "error");
     } finally {
@@ -74,8 +104,12 @@ export function VideoProvidersPanel() {
         title="Videoconferencias"
         description="Cómo se generan los enlaces de las clases virtuales."
         actions={
-          <Badge color={provider === "manual" ? "slate" : "green"} dot>
-            {provider === "manual" ? "Modo manual" : provider.toUpperCase()}
+          <Badge color={activeSavedProvider === "manual" ? "slate" : "green"} dot>
+            {isLoading
+              ? "Cargando…"
+              : activeSavedProvider === "manual"
+              ? "Modo manual activo"
+              : `${activeSavedProvider.toUpperCase()} activo`}
           </Badge>
         }
       />
@@ -92,10 +126,19 @@ export function VideoProvidersPanel() {
         />
 
         {provider === "manual" && (
-          <InlineAlert type="info" title="No hay nada que configurar">
-            Cada profesor pega el enlace de Zoom, Meet o Teams al proponer la ubicación de su
-            clase. No hacen falta credenciales.
-          </InlineAlert>
+          <div className="space-y-4">
+            <InlineAlert type="info" title="No hay nada que configurar">
+              Cada profesor pega el enlace de Zoom, Meet o Teams al proponer la ubicación de su
+              clase. No hacen falta credenciales.
+            </InlineAlert>
+            {activeSavedProvider !== "manual" && (
+              <div className="flex gap-2 border-t border-slate-100 pt-4">
+                <Button onClick={handleSaveProvider} disabled={saving}>
+                  {saving ? "Guardando…" : "Revertir y activar Modo Manual"}
+                </Button>
+              </div>
+            )}
+          </div>
         )}
 
         {provider === "zoom" && (

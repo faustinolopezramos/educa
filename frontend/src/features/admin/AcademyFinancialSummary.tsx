@@ -55,7 +55,7 @@ export function AcademyFinancialSummary() {
   }, [enrollments, payrollSummary]);
 
   return (
-    <Card padding="sm" className="mb-4">
+    <Card padding="sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
         <div>
           <SectionHeading>Salud Financiera del Ciclo</SectionHeading>
@@ -116,7 +116,7 @@ export function AcademyFinancialSummary() {
             {stats.overdueCount > 0 ? (
               <button
                 type="button"
-                onClick={() => setParams({ m: "enrollments" })}
+                onClick={() => setParams({ m: "enrollments", status: "overdue" })}
                 className="text-brand-600 hover:underline"
               >
                 Ver alumnos en mora →

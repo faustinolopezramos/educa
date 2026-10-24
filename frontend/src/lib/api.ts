@@ -183,11 +183,17 @@ export async function requestPasswordReset(email: string, tenantSlug?: string): 
   return res.data.message;
 }
 
-/** Restablece la contraseña con el token recibido por correo. */
+/**
+ * Restablece la contraseña con el token recibido por correo.
+ *
+ * Con MFA activo la respuesta no trae sesión sino un desafío (`temp_token`): la
+ * contraseña ya cambió, pero la sesión se gana en el login con el código. En ese
+ * caso no se toca el almacenamiento.
+ */
 export async function submitPasswordReset(token: string, newPassword: string): Promise<void> {
-  const res = await api.post<{ access_token: string; refresh_token: string }>("/auth/reset-password", {
-    token,
-    new_password: newPassword,
-  });
-  setToken(res.data.access_token, res.data.refresh_token);
+  const res = await api.post<{ access_token?: string; refresh_token?: string; temp_token?: string }>(
+    "/auth/reset-password",
+    { token, new_password: newPassword },
+  );
+  if (res.data.access_token) setToken(res.data.access_token, res.data.refresh_token);
 }

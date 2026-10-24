@@ -102,6 +102,7 @@ export const NAV: Record<Role, NavGroup[]> = {
         { id: "hoy", label: "Hoy" },
         { id: "clases", label: "Mis clases" },
         { id: "tareas", label: "Tareas" },
+        { id: "ludi", label: "Ludi IA & Quizzes" },
         { id: "nomina", label: "Mis Horas / Nómina" },
         { id: "reportes", label: "Reporte" },
       ],
@@ -215,6 +216,15 @@ export function canManageEnrollments(user: User | null): boolean {
     return (user.permissions || []).includes("manage_enrollments");
   }
   return true;
+}
+
+/** Cuotas, saldos, estado de pago y bloqueo por mora. Mirrors
+ *  `_can_view_enrollment_finance` on the API: an assistant without
+ *  `manage_finance` gets matrículas without any of those fields. */
+export function canViewFinance(user: User | null): boolean {
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "superadmin") return true;
+  return user.role === "assistant" && (user.permissions || []).includes("manage_finance");
 }
 
 export function getNavForUser(user: User | null): NavGroup[] {

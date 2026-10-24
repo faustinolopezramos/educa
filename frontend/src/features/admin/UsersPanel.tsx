@@ -235,7 +235,7 @@ export function UsersPanel() {
                       <div className="font-medium text-slate-900">{u.full_name}</div>
                       <div className="mt-0.5 font-mono text-xs text-slate-500">{u.email}</div>
                       {u.cui_passport && (
-                        <div className="mt-0.5 font-mono text-xs text-slate-400">
+                        <div className="mt-0.5 font-mono text-xs text-slate-500">
                           {u.cui_passport}
                         </div>
                       )}

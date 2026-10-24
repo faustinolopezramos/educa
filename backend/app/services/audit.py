@@ -19,7 +19,15 @@ from sqlalchemy.orm import Session
 from app.models import AuditLog, User
 
 # Never copy secrets into the audit trail, even to record that they changed.
-_REDACTED = {"password_hash", "api_credentials_encrypted"}
+# `mfa_secret` is the TOTP seed: whoever reads it can mint valid codes, and
+# `GET /audit` hands this trail to every admin of the academy. The backup-code
+# hashes go with it — they are brute-forceable offline.
+_REDACTED = {
+    "password_hash",
+    "api_credentials_encrypted",
+    "mfa_secret",
+    "mfa_backup_codes",
+}
 
 
 def _jsonable(value: Any) -> Any:

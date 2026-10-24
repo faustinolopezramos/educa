@@ -159,7 +159,7 @@ export function NotificationSettingsPanel() {
 
   if (isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center text-slate-400">
+      <div className="flex h-64 items-center justify-center text-slate-500">
         Cargando configuración de notificaciones…
       </div>
     );
@@ -182,7 +182,7 @@ export function NotificationSettingsPanel() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
             Canal WhatsApp
           </div>
           <div className="mt-1 flex items-baseline gap-2">
@@ -201,7 +201,7 @@ export function NotificationSettingsPanel() {
         </Card>
 
         <Card className="p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
             Alumnos con WhatsApp Activo
           </div>
           <div className="mt-1 flex items-baseline gap-2">
@@ -218,7 +218,7 @@ export function NotificationSettingsPanel() {
         </Card>
 
         <Card className="p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
             Mensajes Entregados (30 Días)
           </div>
           <div className="mt-1 flex items-baseline gap-2">
@@ -391,7 +391,7 @@ export function NotificationSettingsPanel() {
                       value={phoneNumberId}
                       onChange={(e) => setPhoneNumberId(e.target.value)}
                     />
-                    <p className="mt-1 text-[11px] text-slate-400">
+                    <p className="mt-1 text-[11px] text-slate-500">
                       Encuéntralo en Meta for Developers $\rightarrow$ WhatsApp $\rightarrow$ API Setup.
                     </p>
                   </div>
@@ -410,7 +410,7 @@ export function NotificationSettingsPanel() {
                       value={whatsappToken}
                       onChange={(e) => setWhatsappToken(e.target.value)}
                     />
-                    <p className="mt-1 text-[11px] text-slate-400">
+                    <p className="mt-1 text-[11px] text-slate-500">
                       Generado en Meta Business Manager con permiso <code className="bg-stone-200 px-1 rounded">whatsapp_business_messaging</code>.
                     </p>
                   </div>
@@ -432,7 +432,7 @@ export function NotificationSettingsPanel() {
                     </option>
                   ))}
                 </Select>
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-[11px] text-slate-500">
                   Se antepone automáticamente a los teléfonos que se registren sin el símbolo "+".
                 </p>
               </div>

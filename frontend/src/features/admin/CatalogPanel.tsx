@@ -176,7 +176,7 @@ export function CatalogPanel() {
                   <button
                     type="button"
                     onClick={() => setToDeleteLang(lang)}
-                    className="-mr-1 -mt-1 flex-none rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    className="-mr-1 -mt-1 flex-none rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
                     aria-label={`Eliminar la materia ${lang.name}`}
                   >
                     <IconClose className="h-3.5 w-3.5" />
@@ -210,7 +210,7 @@ export function CatalogPanel() {
                         <button
                           type="button"
                           onClick={() => setToDeleteLevel(lvl)}
-                          className="flex-none rounded p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          className="flex-none rounded p-1 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
                           aria-label={`Eliminar el nivel ${lvl.code}`}
                         >
                           <IconClose className="h-3 w-3" />

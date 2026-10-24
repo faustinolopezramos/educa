@@ -59,7 +59,7 @@ export function InicioPanel() {
     canSeeSection(user, "reports");
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         title={firstName ? `Hola, ${firstName}` : "Resumen"}
         description={

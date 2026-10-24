@@ -128,7 +128,7 @@ export function AuditPanel() {
                   </Td>
                   <Td>
                     <span className="text-slate-800">{ENTITY_LABELS[r.entity] ?? r.entity}</span>{" "}
-                    <span className="font-mono text-xs text-slate-400">#{r.entity_id}</span>
+                    <span className="font-mono text-xs text-slate-500">#{r.entity_id}</span>
                   </Td>
                   <Td>
                     <span className="font-mono text-xs text-slate-700">{diff(r)}</span>

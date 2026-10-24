@@ -15,6 +15,17 @@ class MFASetupResponse(BaseModel):
     otpauth_url: str
 
 
+class ReauthRequest(BaseModel):
+    """Confirmación de identidad para tocar la seguridad de la cuenta.
+
+    Un access token sólo prueba que alguien tiene la sesión abierta, no que sea
+    la persona: con una sesión robada se podía registrar una passkey propia o
+    cambiar el segundo factor. Con MFA activo hace falta además el código.
+    """
+    password: str = Field(..., max_length=256)
+    mfa_token: str | None = Field(None, max_length=8)
+
+
 class MFAEnableRequest(BaseModel):
     """Solicitud para activar MFA tras verificar el primer token."""
     token: str = Field(..., min_length=6, max_length=8)
@@ -28,7 +39,7 @@ class MFAVerifyRequest(BaseModel):
 class MFADisableRequest(BaseModel):
     """Solicitud para desactivar MFA."""
     password: str
-    token: str | None = Field(None, min_length=6, max_length=8)
+    token: str = Field(min_length=6, max_length=8)
 
 
 class MFARegenerateBackupCodesResponse(BaseModel):

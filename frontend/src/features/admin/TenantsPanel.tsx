@@ -27,6 +27,7 @@ import {
   useTenants,
   useUpdateTenant,
 } from "../../lib/queries";
+import { useToggleLudiAddon } from "../../lib/queries/ludi";
 import { notify } from "../../lib/toast";
 import type { Tenant } from "../../lib/types";
 import { onMutationError } from "./shared";
@@ -769,6 +770,7 @@ function planSummary(code: PlanCode): string {
 function TenantPlan({ tenant }: { tenant: Tenant }) {
   const activate = useActivatePlan();
   const reject = useRejectPlanRequest();
+  const toggleLudi = useToggleLudiAddon();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [other, setOther] = useState<PlanCode | "">("");
@@ -885,6 +887,55 @@ function TenantPlan({ tenant }: { tenant: Tenant }) {
           No se puede bajar a un plan con menos plazas que alumnos activos. Para un cupo a medida,
           edítalo en «Datos».
         </p>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4">
+        <SectionHeading>Paquete Ludi IA & Gamificación (Datanuki)</SectionHeading>
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-xs">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-800">Estado del servicio:</span>
+              {tenant.has_ludi_addon ? (
+                <Badge color="green">Activo</Badge>
+              ) : tenant.ludi_requested ? (
+                <Badge color="indigo">Solicitud pendiente</Badge>
+              ) : (
+                <Badge color="slate">Inactivo</Badge>
+              )}
+            </div>
+            <p className="mt-1 text-slate-500">
+              {tenant.has_ludi_addon
+                ? "La academia tiene habilitado el tutor RAG, práctica de pronunciación y quizzes en vivo."
+                : "Habilita este paquete para que la academia acceda a las herramientas de IA y gamificación."}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant={tenant.has_ludi_addon ? "danger" : "primary"}
+            disabled={toggleLudi.isPending}
+            onClick={() =>
+              toggleLudi.mutate(
+                { tenantId: tenant.id, enabled: !tenant.has_ludi_addon },
+                {
+                  onSuccess: () =>
+                    notify(
+                      tenant.has_ludi_addon
+                        ? "Paquete Ludi desactivado"
+                        : "Paquete Ludi activado con éxito",
+                      "success",
+                    ),
+                  onError: onMutationError("No se pudo actualizar el paquete Ludi"),
+                },
+              )
+            }
+          >
+            {toggleLudi.isPending
+              ? "Guardando…"
+              : tenant.has_ludi_addon
+              ? "Desactivar Ludi"
+              : "Activar Paquete Ludi"}
+          </Button>
+        </div>
       </div>
     </div>
   );

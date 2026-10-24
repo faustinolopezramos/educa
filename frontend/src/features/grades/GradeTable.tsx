@@ -249,7 +249,7 @@ export function GradeTable({ enrollments, students }: Props) {
                   </td>
                   <td className="px-3 py-2 text-center border-b border-slate-100">
                     {avg == null ? (
-                      <span className="text-2xs text-slate-400">Sin notas</span>
+                      <span className="text-2xs text-slate-500">Sin notas</span>
                     ) : isPassing ? (
                       <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-2xs font-bold text-emerald-700 border border-emerald-200">
                         Aprobando
@@ -266,7 +266,7 @@ export function GradeTable({ enrollments, students }: Props) {
           </tbody>
         </table>
       </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <p>
           Escala {SCORE_MIN}–{SCORE_MAX}. Aprobación mínima: 6.0. Guardado automático.
         </p>

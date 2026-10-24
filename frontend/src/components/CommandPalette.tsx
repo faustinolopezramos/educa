@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import { canManageEnrollments, canSeeSection, NAV } from "../lib/nav";
-import { useCourses, useUsers } from "../lib/queries";
+import { useAssignments, useCourses, useEnrollments, useSchedules, useUsers } from "../lib/queries";
+import { formatDateTime } from "../lib/format";
 import { openQuickPay } from "../features/enrollments/QuickPayModal";
 
 interface Command {
@@ -36,9 +37,15 @@ export function CommandPalette() {
 
   const isStaff =
     user?.role === "admin" || user?.role === "superadmin" || user?.role === "assistant";
+  const isStudent = user?.role === "student";
+  const isTeacher = user?.role === "teacher";
 
-  const { data: students = [] } = useUsers(isStaff ? "student" : undefined);
+  const { data: students = [] } = useUsers("student", isStaff);
+  const { data: teachers = [] } = useUsers("teacher", isStaff);
   const { data: courses = [] } = useCourses();
+  const { data: enrollments = [] } = useEnrollments();
+  const { data: assignments = [] } = useAssignments();
+  const { data: schedules = [] } = useSchedules(isTeacher);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -108,6 +115,16 @@ export function CommandPalette() {
       });
     }
 
+    if (user.role === "admin" || user.role === "superadmin" || perms.has("manage_students")) {
+      list.push({
+        id: "action-import-students",
+        label: "📥 Importar alumnos desde CSV / Excel",
+        group: "Acciones Rápidas",
+        keywords: "importar alumnos csv excel masivo carga estudiantes plantilla",
+        run: () => navigate("/?m=students"),
+      });
+    }
+
     if (
       user.role === "admin" ||
       user.role === "superadmin" ||
@@ -121,6 +138,72 @@ export function CommandPalette() {
         keywords: "nuevo curso agregar",
         run: () => navigate("/?m=courses&new=1"),
       });
+    }
+
+    if (user.role === "student") {
+      list.push(
+        {
+          id: "student-kardex",
+          label: "🎓 Mi Expediente Académico (Kardex)",
+          group: "Acceso Rápido",
+          keywords: "kardex notas historial certificado calificaciones promedio materias",
+          run: () => navigate("/?m=kardex"),
+        },
+        {
+          id: "student-payments",
+          label: "💳 Mis Pagos y Facturas",
+          group: "Acceso Rápido",
+          keywords: "pagos saldo cuota deuda estado de cuenta recibo factura comprobante",
+          run: () => navigate("/?m=pagos"),
+        },
+        {
+          id: "student-report",
+          label: "📈 Mi Reporte de Rendimiento",
+          group: "Acceso Rápido",
+          keywords: "avance reporte rendimiento porcentaje tareas examenes asistencia",
+          run: () => navigate("/?m=reportes"),
+        },
+      );
+    }
+
+    if (user.role === "teacher") {
+      list.push(
+        {
+          id: "teacher-today",
+          label: "📅 Mi Jornada de Hoy",
+          group: "Acceso Rápido",
+          keywords: "hoy clases agenda ahora clase actual asistencia",
+          run: () => navigate("/?m=hoy"),
+        },
+        {
+          id: "teacher-classes",
+          label: "📚 Mis Clases y Asistencia",
+          group: "Acceso Rápido",
+          keywords: "clases asistencia lista cursos horarios estudiantes calificar",
+          run: () => navigate("/?m=clases"),
+        },
+        {
+          id: "teacher-grading",
+          label: "📝 Calificar Tareas y Entregas",
+          group: "Acceso Rápido",
+          keywords: "tareas calificar speedgrader entregas pendientes notas deberes",
+          run: () => navigate("/?m=tareas"),
+        },
+        {
+          id: "teacher-payroll",
+          label: "💰 Mi Nómina y Liquidación",
+          group: "Acceso Rápido",
+          keywords: "nomina liquidacion sueldo pago horas honorarios tarifa devengado",
+          run: () => navigate("/?m=nomina"),
+        },
+        {
+          id: "teacher-reports",
+          label: "📈 Reporte de Rendimiento y Asistencias",
+          group: "Acceso Rápido",
+          keywords: "reportes porcentaje ausencias asistencia general estadisticas",
+          run: () => navigate("/?m=reportes"),
+        },
+      );
     }
 
     return list;
@@ -137,8 +220,70 @@ export function CommandPalette() {
         (c.keywords ?? "").includes(q),
     );
 
-    // Entity search for staff (Students and Courses 360)
+    // Entity search for staff and students
     const entityMatches: Command[] = [];
+
+    if (isStudent && q.length >= 2) {
+      // Mis Cursos
+      const myCourseIds = new Set(enrollments.map((e) => e.course_id));
+      const myCourseHits = courses
+        .filter((c) => myCourseIds.has(c.id) && c.name.toLowerCase().includes(q))
+        .map((c) => ({
+          id: `my-course-${c.id}`,
+          label: `📚 Curso: ${c.name}`,
+          sublabel: "Abrir en Mi Semana",
+          group: "Mis Cursos",
+          run: () => navigate("/?m=inicio"),
+        }));
+
+      // Mis Tareas
+      const taskHits = assignments
+        .filter((a) => a.title.toLowerCase().includes(q) || (a.description ?? "").toLowerCase().includes(q))
+        .slice(0, 4)
+        .map((a) => ({
+          id: `my-task-${a.id}`,
+          label: `📝 Tarea: ${a.title}`,
+          sublabel: a.due_date ? `Vence: ${formatDateTime(a.due_date)}` : "Sin fecha límite",
+          group: "Mis Tareas",
+          run: () => navigate("/?m=tareas"),
+        }));
+
+      entityMatches.push(...myCourseHits, ...taskHits);
+    }
+
+    if (isTeacher && q.length >= 2) {
+      const myTaughtCourseIds = new Set(schedules.map((s) => s.course_id));
+
+      // Cursos asignados
+      const myCourseHits = courses
+        .filter((c) => myTaughtCourseIds.has(c.id) && c.name.toLowerCase().includes(q))
+        .slice(0, 4)
+        .map((c) => ({
+          id: `teacher-course-${c.id}`,
+          label: `📚 Curso: ${c.name}`,
+          sublabel: "Abrir en Mis Clases",
+          group: "Mis Cursos",
+          run: () => navigate("/?m=clases"),
+        }));
+
+      // Tareas asignadas
+      const taskHits = assignments
+        .filter(
+          (a) =>
+            myTaughtCourseIds.has(a.course_id) &&
+            (a.title.toLowerCase().includes(q) || (a.description ?? "").toLowerCase().includes(q)),
+        )
+        .slice(0, 4)
+        .map((a) => ({
+          id: `teacher-task-${a.id}`,
+          label: `📝 Tarea: ${a.title}`,
+          sublabel: a.due_date ? `Vence: ${formatDateTime(a.due_date)}` : "Sin fecha límite",
+          group: "Mis Tareas",
+          run: () => navigate("/?m=tareas"),
+        }));
+
+      entityMatches.push(...myCourseHits, ...taskHits);
+    }
 
     if (isStaff && q.length >= 2) {
       // Students
@@ -159,6 +304,40 @@ export function CommandPalette() {
           run: () => navigate(`/?m=students&search=${encodeURIComponent(s.full_name)}`),
         }));
 
+      // Teachers
+      const teacherHits = teachers
+        .filter(
+          (t) =>
+            t.full_name.toLowerCase().includes(q) ||
+            t.email.toLowerCase().includes(q) ||
+            (t.phone ?? "").toLowerCase().includes(q),
+        )
+        .slice(0, 4)
+        .map((t) => ({
+          id: `teacher-${t.id}`,
+          label: `👨‍🏫 Profesor: ${t.full_name}`,
+          sublabel: `${t.email}${t.phone ? ` · Tel: ${t.phone}` : ""}`,
+          group: "Plantel Docente",
+          run: () => navigate(`/?m=teachers`),
+        }));
+
+      // Enrollments by code
+      const enrollmentHits = enrollments
+        .filter((e) => e.enrollment_code && e.enrollment_code.toLowerCase().includes(q))
+        .slice(0, 4)
+        .map((e) => {
+          const st = students.find((s) => s.id === e.student_id);
+          const c = courses.find((co) => co.id === e.course_id);
+          return {
+            id: `enrollment-${e.id}`,
+            label: `📋 Matrícula: ${e.enrollment_code}`,
+            sublabel: `${st ? st.full_name : "Alumno"} · ${c ? c.name : "Curso"}`,
+            group: "Matrículas",
+            run: () =>
+              navigate(`/?m=enrollments&search=${encodeURIComponent(e.enrollment_code || "")}`),
+          };
+        });
+
       // Courses
       const courseHits = courses
         .filter((c) => c.name.toLowerCase().includes(q))
@@ -171,11 +350,11 @@ export function CommandPalette() {
           run: () => navigate(`/?m=courses`),
         }));
 
-      entityMatches.push(...studentHits, ...courseHits);
+      entityMatches.push(...studentHits, ...teacherHits, ...enrollmentHits, ...courseHits);
     }
 
     return [...entityMatches, ...matchedNav];
-  }, [baseCommands, query, isStaff, students, courses, navigate]);
+  }, [baseCommands, query, isStaff, isStudent, isTeacher, schedules, students, teachers, courses, enrollments, assignments, navigate]);
 
   useEffect(() => setCursor(0), [query]);
 
@@ -208,6 +387,8 @@ export function CommandPalette() {
             placeholder={
               isStaff
                 ? "Buscar sección, alumno o curso… (ej. Matrículas, Carlos, Cobro)"
+                : isTeacher
+                ? "Buscar sección, tus cursos o tareas… (ej. clases, tareas, nómina)"
                 : "Ir a… (ej. tareas, clases, horarios)"
             }
             onChange={(e) => setQuery(e.target.value)}

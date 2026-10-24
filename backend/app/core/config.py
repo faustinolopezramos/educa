@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # Shared secret used to verify inbound provider webhooks. Empty means we
     # cannot authenticate callers, so webhooks are rejected (fail closed).
     webhook_secret: str = ""
+    # Un secreto por proveedor, que si faltan cae en `webhook_secret`. Compartirlo
+    # era peor de lo que parece: Google devuelve su token en una cabecera y Zoom
+    # lo usa como clave de la firma, así que quien viera uno podía falsificar el otro.
+    zoom_webhook_secret: str = ""
+    google_webhook_token: str = ""
 
     # The academy's own wall-clock. A schedule stores "the class runs 18:00–20:00"
     # with no zone attached, because that is how a timetable is planned: local
@@ -70,9 +75,32 @@ class Settings(BaseSettings):
     # rewrites `X-Forwarded-For`. Left false, the login rate limiter counts by
     # the socket's own address, which a client cannot forge.
     trust_proxy_headers: bool = False
+    # Qué cabecera trae la IP real cuando `trust_proxy_headers` está activo. En
+    # Fly.io es `fly-client-ip`, que pone la plataforma y el cliente no puede
+    # falsear. `x-forwarded-for` es la genérica, pero sólo es fiable en su
+    # último tramo: ver `trusted_proxy_hops`.
+    client_ip_header: str = "x-forwarded-for"
+    # Cuántos proxies de confianza hay delante de la API. Cada uno *añade* al
+    # final de `X-Forwarded-For` la dirección de quien le habló, así que la
+    # dirección fiable es la que queda a `hops` posiciones del final; lo que va
+    # a su izquierda lo escribió el cliente. Tomar la primera (lo que se hacía)
+    # dejaba a cualquiera elegir su propia IP y esquivar los límites.
+    trusted_proxy_hops: int = 1
 
     # Optional Redis URL for distributed rate limiting in multi-worker production
     redis_url: str | None = None
+
+    # Pool de conexiones por proceso (sólo producción). Los endpoints son `def`
+    # y corren en el threadpool de Starlette (~40 hilos): con 5+5 conexiones, un
+    # pico como una clase entera entrando a la vez hacía cola hasta 30 s
+    # esperando conexión. Multiplica por `WEB_CONCURRENCY` al dimensionar
+    # contra el límite del pooler de Supabase.
+    db_pool_size: int = 10
+    db_max_overflow: int = 10
+    # Procesos de uvicorn (lo lee el propio uvicorn; aquí sólo para avisar).
+    # Más de uno necesita REDIS_URL: sin él cada proceso lleva su propia cuenta
+    # de intentos y el límite real se multiplica.
+    web_concurrency: int = 1
 
     # Correo saliente (SMTP). Sin SMTP_HOST el correo no se envía: las
     # notificaciones se quedan sólo en la campana. Sirve cualquier proveedor que
@@ -101,6 +129,12 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:soporte@educa.com"
 
+    # Ludi API (Datanuki). Integración de lecciones interactivas, tutoría RAG,
+    # evaluación de pronunciación por voz y gamificación (XP, insignias, partidas live).
+    # Educa actúa como broker/intermediario usando su propia clave con prefijos ext:.
+    ludi_api_key: str = ""
+    ludi_api_url: str = "https://ayteuarwqvrarbwnzowb.supabase.co/functions/v1/public-api/v1"
+
     # Enlace a la aplicación que se añade al pie de los correos. Vacío = sin enlace.
     app_url: str = ""
 
@@ -116,6 +150,12 @@ class Settings(BaseSettings):
     at_risk_sweep_weekday: int = 0
     at_risk_sweep_hour: int = 7
 
+    # Cuenta de administrador de la academia de demostración (`python -m app.seed`).
+    # El seed se niega a correr en producción.
+    seed_admin_email: str = "admin@educa.com"
+    seed_admin_password: str = "admin123"
+    seed_admin_name: str = "Administrador"
+
     # WebAuthn / Passkeys
     webauthn_rp_id: str = "localhost"
     webauthn_origin: str = "http://localhost:5173"
@@ -123,6 +163,21 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def frontend_base_url(self) -> str:
+        """Dirección pública de la aplicación web, sin barra final.
+
+        Es la que va en los enlaces de los correos (recuperar contraseña…).
+        `APP_URL` si está; si no, el primer origen CORS, que en producción es el
+        propio frontend y en desarrollo `localhost:5173`. Nunca se deduce de la
+        petición: su cabecera `Host` la elige quien la envía.
+        """
+        explicit = self.app_url.strip().rstrip("/")
+        if explicit:
+            return explicit
+        origins = self.cors_origins_list
+        return origins[0].rstrip("/") if origins else ""
 
     @property
     def is_production(self) -> bool:
